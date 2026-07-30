@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>주택가 공터</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0d10; }
+  canvas { display: block; }
+  body {
+    font-family: "Malgun Gothic", "맑은 고딕", system-ui, sans-serif;
+    color: #eef2f6;
+  }
+  #hud {
+    position: fixed; left: 20px; bottom: 18px;
+    text-shadow: 0 1px 3px rgba(0,0,0,.75);
+    pointer-events: none; line-height: 1.5;
+  }
+  #hud h1 { font-size: 19px; font-weight: 700; letter-spacing: .02em; }
+  #hud .sub { font-size: 12px; opacity: .72; margin-top: 2px; }
+  #hud .stats { font-size: 11px; opacity: .55; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  #hint {
+    position: fixed; right: 20px; bottom: 18px;
+    font-size: 11px; opacity: .62; pointer-events: none;
+    text-shadow: 0 1px 3px rgba(0,0,0,.75);
+  }
+  #hint b { color: #ffd479; font-weight: 700; }
+  #mode {
+    position: fixed; left: 20px; top: 18px;
+    font-size: 12px; letter-spacing: .01em; pointer-events: none;
+    padding: 6px 11px; border-radius: 3px;
+    background: rgba(10,13,16,.5); border: 1px solid rgba(255,255,255,.13);
+    font-variant-numeric: tabular-nums;
+  }
+  #mode b { letter-spacing: .12em; }
+  #mode .hot { color: #ffd479; }
+  #lockhint {
+    position: fixed; inset: 0; display: flex;
+    align-items: center; justify-content: center;
+    font-size: 13px; letter-spacing: .04em;
+    pointer-events: none; transition: opacity .25s ease;
+    text-shadow: 0 2px 8px rgba(0,0,0,.9);
+  }
+  #boot {
+    position: fixed; inset: 0; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; background: #0b0d10; transition: opacity .5s ease;
+  }
+  #boot.done { opacity: 0; pointer-events: none; }
+  #boot .title { font-size: 15px; letter-spacing: .42em; opacity: .9; }
+  #boot .bar { width: 240px; height: 2px; background: rgba(255,255,255,.12); overflow: hidden; }
+  #boot .bar i { display: block; height: 100%; width: 0%; background: #cfd6de; transition: width .18s ease; }
+  #boot .step { font-size: 11px; opacity: .5; font-variant-numeric: tabular-nums; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "/node_modules/three/build/three.module.js",
+    "three/addons/": "/node_modules/three/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <div id="boot">
+    <div class="title">주 택 가 &nbsp;공 터</div>
+    <div class="bar"><i></i></div>
+    <div class="step">BAKE: 시작</div>
+  </div>
+
+  <div id="mode"></div>
+  <div id="lockhint" style="opacity:0">화면을 클릭하면 마우스로 시점을 조작합니다 &nbsp;(Esc 해제)</div>
+
+  <div id="hud">
+    <h1>주택가 공터</h1>
+    <div class="sub">외부 애셋 0개 — 텍스처 · 형상 · 캐릭터 전부 로드 시점에 코드로 생성</div>
+    <div class="stats"></div>
+  </div>
+  <div id="hint"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

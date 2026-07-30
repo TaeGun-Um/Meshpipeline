@@ -1,0 +1,195 @@
+{
+  "$comment": [
+    "파이프라인 규약의 단일 출처(single source of truth).",
+    "브라우저에서 코드로 그린 것이 게임엔진에서 '그대로' 보이려면 지켜야 하는 불변식을",
+    "기계가 읽을 수 있는 형태로 못 박아둔 것이다.",
+    "",
+    "여기 적힌 값은 전부 실측으로 확정했다. 추측이나 관례가 아니다.",
+    "각 단계(브라우저 익스포트 / 블렌더 변환 / 유니티 임포트)는 이 파일을 읽어",
+    "자기 출력이 규약을 지키는지 스스로 검사한다.",
+    "",
+    "값을 바꾸려면: 먼저 왜 바뀌어야 하는지 실측으로 보이고, 그 다음 여기를 고친다.",
+    "코드에 숫자를 직접 박지 말 것 — 그렇게 흩어져서 좌표계 혼선이 생겼다."
+  ],
+
+  "version": 1,
+
+  "units": {
+    "length": "meter",
+    "$comment": "브라우저·glTF·유니티 모두 미터. 블렌더 FBX는 파일 헤더에 cm 스케일(0.01)을 적고, 유니티가 useFileScale=true 로 정규화한다."
+  },
+
+  "spaces": {
+    "browser": {
+      "engine": "three.js",
+      "handedness": "right",
+      "up": "+Y",
+      "cameraForward": "-Z",
+      "modelFrontLocal": "+Z",
+      "$comment": "기준(reference truth). 캐릭터는 눈·발끝이 로컬 +Z를 향하게 만든다."
+    },
+    "gltf": {
+      "handedness": "right",
+      "up": "+Y",
+      "$comment": "브라우저와 같은 좌표계라 변환이 없다. 그래서 GLB가 기준 보관 형식이다."
+    },
+    "blender": {
+      "up": "+Z",
+      "$comment": "내부적으로 Z-up. glTF 임포터가 Y-up→Z-up으로 돌리고, FBX 익스포터가 되돌린다. 이 왕복에서 Y축 180° 회전이 생긴다."
+    },
+    "unity": {
+      "handedness": "left",
+      "up": "+Y",
+      "cameraForward": "+Z",
+      "$comment": "오른손→왼손 변환에는 축 하나를 반전해야 한다. glTFast는 X를 반전한다(아래 axisFlip)."
+    }
+  },
+
+  "conversions": {
+    "gltfToUnity": {
+      "axisFlip": "X",
+      "$comment": "실측: 브라우저 집 좌표 x=-14.5 → 유니티 x=+14.5, z는 -17.5 그대로. Z가 아니라 X가 반전된다.",
+      "consequences": [
+        "지오메트리만 반전되므로 광원·카메라 방향의 X도 같이 반전해야 그림자가 반대로 안 떨어진다.",
+        "모든 조각이 같은 규칙으로 변환되므로 조각 간 상대 배치는 보존된다.",
+        "씬 전체가 Y축 180° 돌아간 것처럼 보이는 건 정상이며 고칠 대상이 아니다."
+      ]
+    },
+    "blenderFbxRoundTrip": {
+      "extraYawDegrees": 180,
+      "$comment": "glTF Y-up 임포트 + FBX axis_forward='-Z' 익스포트가 겹쳐 모델이 Y축으로 180° 돌아간다. 결과적으로 모델의 시각적 정면이 로컬 -Z가 된다.",
+      "modelFrontLocalAfter": "-Z"
+    }
+  },
+
+  "exportRules": {
+    "exportInputs": [
+      "web/src/core",
+      "web/src/static",
+      "web/src/dynamic",
+      "web/src/export",
+      "web/src/main.js"
+    ],
+    "$commentInputs": "익스포트 결과물에 영향을 주는 소스만 신선도 검사 대상이다. controls.js(입력·물리)는 지오메트리를 만들지 않으므로 제외 — 넣으면 무관한 변경마다 파이프라인이 헛울린다.",
+
+    "exportedAssets": [
+      "ground", "road", "walls", "houses", "poles", "props", "weeds_baked", "character"
+    ],
+    "$commentAssets": "실사용 에셋 목록. weeds.glb(원본 인스턴싱)는 비교 실험용이었고 EXT_mesh_gpu_instancing 때문에 규약을 위반하므로 파이프라인에서 제외한다.",
+
+    "rootTransformMustBeIdentity": true,
+    "$comment1": "에셋의 루트 트랜스폼은 원점이어야 한다. 브라우저에서 물리가 갱신하는 런타임 좌표가 박히면 임포트 측에서 공중에 뜬다(실측: y=1.1479).",
+    "bakeInstancedMeshes": true,
+    "$comment2": "InstancedMesh를 그대로 내보내면 EXT_mesh_gpu_instancing(필수 확장)이 되고 개체별 색(instanceColor)이 유실된다. 정점으로 구워서 COLOR_0 으로 옮긴다.",
+    "normalMapNotBumpMap": true,
+    "$comment3": "glTF에 범프맵은 없다. bumpMap으로 내보내면 EXT_materials_bump(비표준)가 되어 블렌더·유니티가 통째로 버린다. 높이맵 기울기로 노말맵을 만들어 normalTexture로 내보낸다.",
+    "forbiddenExtensionsRequired": ["EXT_mesh_gpu_instancing"],
+    "$comment4": "extensionsRequired 에 이게 들어가면 임포터 지원이 갈린다. 위 bakeInstancedMeshes 로 애초에 안 생기게 한다."
+  },
+
+  "blenderFbxOptions": {
+    "object_types": ["MESH", "ARMATURE", "EMPTY"],
+    "use_selection": false,
+    "apply_unit_scale": true,
+    "global_scale": 1.0,
+    "apply_scale_options": "FBX_SCALE_NONE",
+    "bake_space_transform": false,
+    "axis_forward": "-Z",
+    "axis_up": "Y",
+    "mesh_smooth_type": "FACE",
+    "colors_type": "SRGB",
+    "add_leaf_bones": false,
+    "armature_nodetype": "NULL",
+    "bake_anim": true,
+    "bake_anim_use_all_actions": true,
+    "bake_anim_use_nla_strips": false,
+    "bake_anim_step": 1.0,
+    "bake_anim_simplify_factor": 0.0,
+    "path_mode": "RELATIVE",
+    "embed_textures": false,
+    "purgeCollections": ["glTF_not_exported"],
+    "$comment": [
+      "object_types 에 ARMATURE 가 빠지면 스켈레톤과 스킨 웨이트가 통째로 사라진다.",
+      "embed_textures=true 로 넣으면 유니티가 자동 추출하지 않아 텍스처가 전부 유실된다. 반드시 별도 파일로.",
+      "add_leaf_bones=false — 리프 본이 있으면 유니티 아바타 매핑이 어긋난다.",
+      "glTF_not_exported 컬렉션은 블렌더 glTF 임포터가 본 표시용 Icosphere를 넣는 곳이다.",
+      "이 규약은 FBX 익스포터만 모르므로, 지우지 않으면 정체불명 메시(80삼각형)로 유니티에 들어온다."
+    ]
+  },
+
+  "unityImportRules": {
+    "useFileScale": true,
+    "$comment1": "블렌더 FBX는 단위 스케일 0.01을 파일 헤더에 적는다. false로 끄면 센티미터 값이 그대로 들어와 100배가 된다(실측: 1.775 → 177.48).",
+    "characterAnimationType": "Human",
+    "$comment2": "기본값 Generic 으로는 Avatar가 만들어지지 않아 Mecanim 리타게팅을 쓸 수 없다. 본 이름을 유니티 관례로 지어놨으므로 Human 으로 지정하면 자동 매핑된다.",
+    "loopClips": ["Walk", "Run", "Idle"],
+    "$comment3": "FBX 클립은 기본이 비루프다. 블렌드 트리에서 끊기지 않으려면 루프를 세워야 한다. Air는 단발이라 제외.",
+    "modelYawDegrees": 180,
+    "$comment4": "blenderFbxRoundTrip.extraYawDegrees 의 결과. 이동 방향에 이 값을 더해 돌려야 메시 정면이 진행 방향을 본다.",
+    "preferredRoute": "fbx",
+    "$comment5": "GLB(glTFast)는 스킨·클립까지 잘 받지만 Avatar를 만들지 않는다. 블렌더 경유 FBX만 휴머노이드 아바타가 나온다."
+  },
+
+  "assertions": {
+    "$comment": "각 단계가 자기 출력에 대해 검사하는 항목. 하나라도 깨지면 파이프라인 실패로 취급한다.",
+
+    "characterHeightMeters": { "expected": 1.775, "tolerance": 0.06 },
+    "characterBoneCount": { "expected": 17 },
+    "characterTriangles": { "expected": 228 },
+    "characterSubmeshes": { "expected": 6 },
+    "characterRootBone": { "expected": "Hips" },
+    "characterAvatarIsHuman": { "expected": true },
+
+    "footToRootMeters": { "expected": 0.0, "tolerance": 0.02 },
+    "$comment2": "시각적 발바닥과 루트(=캐릭터컨트롤러 캡슐 바닥)의 차이. 어긋나면 뜨거나 파묻힌다.",
+
+    "rootTranslationMagnitude": { "expected": 0.0, "tolerance": 0.001 },
+
+    "clipSeconds": {
+      "Walk": { "expected": 0.958, "tolerance": 0.03 },
+      "Run": { "expected": 0.585, "tolerance": 0.03 },
+      "Idle": { "expected": 4.363, "tolerance": 0.05 },
+      "Air": { "expected": 0.5, "tolerance": 0.02 },
+      "$comment": "브라우저 위상 속도에서 계산된 값. duration = 2π / (2.1 + speed*1.35). FBX는 24fps로 리샘플되므로 약간 줄어든다."
+    },
+
+    "walkPoseAtQuarterCycleDegrees": {
+      "$comment": "Walk 클립 위상 π/2 에서의 본 각도. 브라우저 수식으로 손계산한 값이며, 축·부호·보간이 한 군데라도 틀어지면 여기서 잡힌다.",
+      "LeftUpperArm": { "expected": -24.72, "tolerance": 1.5 },
+      "LeftUpperLeg": { "expected": 29.08, "tolerance": 1.5 },
+      "RightUpperLeg": { "expected": -29.08, "tolerance": 1.5 }
+    },
+
+    "staticPieceTriangles": {
+      "$comment": [
+        "정적 조각의 삼각형 수. 인스턴스가 안 구워지면 값이 크게 줄어든다(잡초 72000 → 10).",
+        "",
+        "중요: 이 값은 '엔진에서 노드별로 실제 그려지는 삼각형 수'다.",
+        "GLB 헤더를 세는 수치와 다를 수 있다 — glTF 익스포터는 동일 지오메트리를",
+        "메시 하나로 중복 제거하고 여러 노드가 참조하게 만든다.",
+        "props 가 그 예다: 블록·벽돌 58개가 BoxGeometry 2개를 공유하므로",
+        "GLB 헤더는 24삼각형으로 세지만 엔진은 58×12=696으로 센다.",
+        "tools/inspect-glb.mjs 의 삼각형 수는 헤더 기준이라 공유 메시를 과소 계상한다."
+      ],
+      "ground": { "expected": 96800 },
+      "houses": { "expected": 2600 },
+      "props": { "expected": 5604 },
+      "weeds_baked": { "expected": 72000 },
+      "walls": { "expected": 120 },
+      "road": { "expected": 36 },
+      "poles": { "expected": 3568 }
+    },
+
+    "materialTextureSlots": {
+      "$comment": "GLB 경로 기준. normalTexture 가 0이면 범프맵으로 잘못 내보낸 것이다.",
+      "houses": { "baseColorTexture": 12, "metallicRoughnessTexture": 12, "normalTexture": 12 },
+      "ground": { "baseColorTexture": 1, "metallicRoughnessTexture": 1, "normalTexture": 1 }
+    },
+
+    "vertexColorMeshes": {
+      "$comment": "인스턴스를 구우면 개체별 색이 COLOR_0 으로 남아야 한다.",
+      "weeds_baked": { "expected": 1 },
+      "props": { "expected": 1 }
+    }
+  }
+}

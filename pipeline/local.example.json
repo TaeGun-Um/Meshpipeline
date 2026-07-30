@@ -1,0 +1,13 @@
+{
+  "$comment": [
+    "머신별 실행 경로 템플릿. 이 파일을 pipeline/local.json 으로 복사해서 쓴다.",
+    "local.json 은 .gitignore 되어 있다 — 사람마다 경로가 다르고, 공개 저장소에",
+    "로컬 사용자명이 남을 이유도 없다.",
+    "",
+    "환경변수가 우선한다:  BLENDER=... UNITY=... node tools/pipeline.mjs",
+    "요구 버전은 docs/toolchain.md 참고 (Blender 5.2 LTS / Unity 6000.3.11f1)."
+  ],
+
+  "blender": "C:\\path\\to\\blender-5.2.0-windows-x64\\blender.exe",
+  "unity": "C:\\Program Files\\Unity\\Hub\\Editor\\6000.3.11f1\\Editor\\Unity.exe"
+}

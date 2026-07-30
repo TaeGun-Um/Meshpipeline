@@ -1,0 +1,79 @@
+# ─────────────────────────────────────────────────────────────────────────
+# 유니티 모듈 (검증 대상)
+#
+# 커밋하는 것:
+#   Assets/Editor/    파이프라인 진입점·검사 (손으로 쓴 소스)
+#   Assets/Scripts/   런타임 조작·톤매핑·바람 시간
+#   Assets/Shaders/   톤매핑·하늘·정점컬러·바람
+#   Packages/         glTFast 등 패키지 매니페스트
+#   ProjectSettings/  색공간 Linear 등 프로젝트 설정
+#
+# 무시하는 것: 유니티가 만드는 캐시 + BuildScene.All 이 재생성하는 에셋
+# ─────────────────────────────────────────────────────────────────────────
+
+# ── 유니티 캐시·빌드 (1.1GB) ──
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+
+# ── IDE 프로젝트 파일 (유니티가 생성) ──
+.vs/
+.gradle/
+.consulo/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# ── 유니티 부산물 ──
+sysinfo.txt
+*.unitypackage
+*.app
+crashlytics-build.properties
+/[Aa]ssets/[Ss]treamingAssets/aa.meta
+/[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# ── 파이프라인이 재생성하는 에셋 ──
+#
+# 전부 `node tools/pipeline.mjs` (BuildScene.All / AnimatorSetup.Build) 가 만든다.
+# 커밋하면 GUID가 매번 바뀌어 씬 참조가 깨지고 히스토리가 바이너리로 부푼다.
+
+# 브라우저에서 넘어온 GLB + 블렌더가 변환한 FBX + 분리된 텍스처 (30MB)
+/[Aa]ssets/ProceduralImport/
+
+# BuildScene 이 만드는 머티리얼 (VertexColor, VertexColorWind, GradientSky)
+/[Aa]ssets/Materials/
+
+# AnimatorSetup 이 만드는 컨트롤러 (CharacterLocomotion)
+/[Aa]ssets/Animations/
+
+# BuildScene 이 조립하는 씬
+/[Aa]ssets/Scenes/
+
+# 검사 리포트·렌더 PNG (19MB)
+/Reports/
+
+# ── 예외: 생성 파일이지만 커밋한다 ──
+# PipelineContract.g.cs 는 pipeline/contract.json 에서 생성되지만,
+# 없으면 클론 직후 유니티가 컴파일에 실패한다. 파이프라인 단계 1이 재생성하며
+# 드리프트를 알려주므로 손수정이 오래 남을 수 없다.
+!/[Aa]ssets/Editor/PipelineContract.g.cs

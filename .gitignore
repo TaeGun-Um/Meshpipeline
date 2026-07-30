@@ -1,0 +1,52 @@
+# ─────────────────────────────────────────────────────────────────────────
+# 루트 — OS·에디터 잡파일과 모듈 공통 산출물
+#
+# 원칙: 파이프라인이 재생성할 수 있는 것은 커밋하지 않는다.
+#   손으로 쓴 소스 272KB  vs  생성물 1.24GB
+# 모듈별 규칙은 web/.gitignore, unity/.gitignore 에 따로 있다.
+# ─────────────────────────────────────────────────────────────────────────
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# 에디터 / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+
+# 로그·임시
+*.log
+*.tmp
+tmp/
+temp/
+
+# 파이썬 (블렌더 스크립트) 캐시
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Claude Code 세션 로컬 설정 (launch.json 은 공유 대상이라 예외)
+.claude/settings.local.json
+.claude/*.local.*
+
+# 생성 파일이지만 커밋한다 — 이유는 아래
+# tools/contract_gen.py                        (블렌더가 import 로 읽는다)
+# unity/Assets/Editor/PipelineContract.g.cs    (유니티가 컴파일해야 한다)
+#
+# pipeline/contract.json 에서 생성되며 파이프라인 단계 1이 매번 재생성해
+# 드리프트를 알린다. 커밋해 두지 않으면 클론 직후 유니티가 컴파일에 실패한다.
+
+# 머신별 실행 경로 (블렌더·유니티) — local.example.json 을 복사해서 만든다
+pipeline/local.json
