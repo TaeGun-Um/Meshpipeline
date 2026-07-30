@@ -1,8 +1,8 @@
 // 입력 · 캐릭터 물리 · 두 가지 카메라 모드.
 // PLAY: 3인칭 캐릭터 조작 (포인터 락 마우스룩)
 // FLY : 언리얼 에디터식 프리 카메라 (우클릭 드래그로 시선, WASD 비행, Q/E 상하, 휠로 속도)
+// 씬에 의존하지 않는다 — 바닥 높이 함수는 활성 씬이 넘겨준다.
 import * as THREE from 'three';
-import { surfaceHeight } from './static/index.js';
 
 const GRAVITY = 23.0;
 const WALK = 3.3;
@@ -122,8 +122,12 @@ function resolveCollisions(pos, boxes) {
   }
 }
 
-export function createPlayer(character, camera, input, boxes, start = [0, 12.5]) {
-  const pos = new THREE.Vector3(start[0], surfaceHeight(start[0], start[1]), start[1]);
+// world.surfaceHeight(x, z) — 씬이 정하는 바닥 높이. 매 프레임 두 번 호출된다.
+// world.boxes            — 밀어낼 AABB 목록
+// world.spawn            — 시작 위치 [x, z]
+export function createPlayer(character, camera, input, world) {
+  const { surfaceHeight, boxes, spawn } = world;
+  const pos = new THREE.Vector3(spawn[0], surfaceHeight(spawn[0], spawn[1]), spawn[1]);
   const vel = new THREE.Vector3();
   let grounded = true;
   let facing = Math.PI; // 캐릭터가 바라보는 각도

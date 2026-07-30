@@ -1,0 +1,169 @@
+// 씬 감사 — 지금까지 실제로 버그를 잡아낸 점검들만 모았다.
+//
+// ── 왜 이 파일이 있는가 ────────────────────────────────────────────────────
+// 작업하면서 오류를 여러 방식으로 잡았는데, 방식마다 실효성이 크게 달랐다.
+// 효과가 있었던 것만 골라 코드로 굳혀 둔다. 다음에 또 손으로 재현하지 않도록.
+//
+//   실효 있었음
+//     · 베이스라인 스크린샷 + **픽셀** 비교   버그 5건 이상 검출
+//     · 생성 시점의 인자 검증 (재질 없음, 파라미터 오타)  즉시·정확한 위치
+//     · 최적화 전 실측 (무엇이 비싼지 세어보기)   45% 를 차지한 범인 발견
+//     · 규약 실측 (v축 방향, glTF→유니티 축)   추측이 두 번 다 틀렸다
+//
+//   실효 없었음 — 쓰지 말 것
+//     · SHA256 파일 해시 비교
+//       파일 쓰기 경합 때문에 **거짓 실패**를 냈다. RGB·알파가 바이트 단위로
+//       같은데도 해시가 달랐다. 이미지는 이미지로 비교해야 한다 (tools/compare-shots.mjs).
+//     · 셸에서 명령 두 개를 비교하는 식의 점검
+//       cwd 가 바뀌어 두 '에러 문자열' 을 비교하고 통과로 읽은 적이 있다.
+//       비교 전에 대상이 존재하는지를 먼저 단언해야 한다.
+//
+// ── 이 감사가 잡는 것 ──────────────────────────────────────────────────────
+// 스크린샷 비교는 "달라졌다" 는 알려주지만 "왜" 는 모른다. 반대로 이 감사는
+// 화면을 안 보고도 **예산 초과·설정 실수**를 숫자로 잡는다. 둘은 보완재다.
+//
+//   브라우저 콘솔에서:  __audit()
+
+// 화면에 없는 비용을 세는 기준값. 넘으면 경고하지만 실패는 아니다 —
+// 예산은 "여기서부터는 의식하고 넘겨라" 는 선이지 금지선이 아니다.
+const BUDGET = {
+  triangles: 1_200_000,
+  textureMB: 220,
+  drawGroups: 400,
+  programs: 60,
+  buildMs: 20_000,
+};
+
+// 텍스처 한 장의 VRAM. 밉맵이 원본의 1/3 을 더한다.
+function texBytes(t) {
+  const img = t.image;
+  if (!img || !img.width) return 0;
+  return img.width * img.height * 4 * (t.generateMipmaps === false ? 1 : 4 / 3);
+}
+
+export function auditScene({ scene, renderer, stats = {} }) {
+  const notes = [];
+  const warn = (msg) => notes.push(`⚠ ${msg}`);
+
+  let triangles = 0;
+  let meshes = 0;
+  const materials = new Map();
+  const textures = new Map();
+  const bySize = new Map();
+
+  scene.traverse((o) => {
+    if (!o.isMesh) return;
+    meshes++;
+    const g = o.geometry;
+    const n = (g.index ? g.index.count : g.attributes.position?.count ?? 0) / 3;
+    triangles += n * (o.isInstancedMesh ? o.count : 1);
+
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (!m) continue;
+      materials.set(m.uuid, m);
+      for (const k of ['map', 'normalMap', 'roughnessMap', 'emissiveMap', 'alphaMap', 'aoMap']) {
+        const t = m[k];
+        if (!t || textures.has(t.uuid)) continue;
+        textures.set(t.uuid, texBytes(t));
+        const key = t.image ? `${t.image.width}x${t.image.height}` : '?';
+        bySize.set(key, (bySize.get(key) ?? 0) + texBytes(t));
+      }
+    }
+  });
+
+  let texBytesTotal = 0;
+  for (const v of textures.values()) texBytesTotal += v;
+  const textureMB = +(texBytesTotal / 1048576).toFixed(1);
+  triangles = Math.round(triangles);
+
+  // ── 예산 ─────────────────────────────────────────────────────────────────
+  const drawGroups = countGroups(scene);
+  // renderer.info.programs 는 **누적 캐시**다. 스크린샷을 찍거나 렌더 타깃을
+  // 바꾸면 그림자·깊이 변형이 쌓여 늘어난다 (빌드 직후 23 → __lock() 후 43).
+  // 그래서 예산을 넉넉히 잡는다. 정확한 값을 보려면 빌드 직후에 부를 것.
+  const programs = renderer.info.programs?.length ?? 0;
+  if (triangles > BUDGET.triangles) warn(`삼각형 ${fmt(triangles)} > 예산 ${fmt(BUDGET.triangles)}`);
+  if (textureMB > BUDGET.textureMB) warn(`텍스처 ${textureMB}MB > 예산 ${BUDGET.textureMB}MB`);
+  if (drawGroups > BUDGET.drawGroups) warn(`드로우 그룹 ${drawGroups} > 예산 ${BUDGET.drawGroups}`);
+  if (programs > BUDGET.programs) warn(`셰이더 프로그램 ${programs} > 예산 ${BUDGET.programs}`);
+  if (stats.buildMs > BUDGET.buildMs) warn(`빌드 ${fmt(stats.buildMs)}ms > 예산 ${fmt(BUDGET.buildMs)}ms`);
+
+  // ── 파이프라인 위험 ──────────────────────────────────────────────────────
+  //
+  // 아래 넷은 브라우저에서는 멀쩡히 보이는데 glTF 로 내보내면 깨지거나 조용히
+  // 버려지는 것들이다. 파이프라인의 1순위가 "브라우저와 엔진이 같아 보일 것"
+  // 이므로, 화면이 멀쩡하다는 이유로 넘어가면 안 된다.
+  for (const m of materials.values()) {
+    // (1) emissiveIntensity 가 **1이 아니면** KHR_materials_emissive_strength 확장이
+    //     붙는다. 1보다 작아도 붙는다 — 0.22 로 실측했다. 처음에는 '>1' 로 적었다가
+    //     buildings.glb 에서 확장을 발견하고 고쳤다.
+    //     발광 세기는 emissive 색에 곱해 넣고 세기는 1로 둘 것 (core/material.js).
+    if (m.emissive && m.emissiveIntensity !== 1)
+      warn(`${m.name || '이름없음'}: emissiveIntensity=${m.emissiveIntensity} (1이 아니면 glTF 확장이 붙는다)`);
+
+    // (2) texture.repeat != 1 은 KHR_texture_transform 을 만든다. UV 를 지오메트리에
+    //     구워야 한다 (meshkit.scaleUV / metricBox).
+    for (const k of ['map', 'normalMap', 'roughnessMap', 'emissiveMap']) {
+      const t = m[k];
+      if (t && (t.repeat.x !== 1 || t.repeat.y !== 1) && !t.__uvBaked) {
+        warn(`${m.name || '이름없음'}.${k}: repeat=${t.repeat.x},${t.repeat.y} (KHR_texture_transform 위험)`);
+        break;
+      }
+    }
+  }
+
+  // (3) 정점 색을 쓰는데 재질이 vertexColors 를 안 켰다 — 색이 통째로 무시된다.
+  scene.traverse((o) => {
+    if (!o.isMesh || !o.geometry.attributes.color) return;
+    const ms = Array.isArray(o.material) ? o.material : [o.material];
+    if (ms.some((m) => m && !m.vertexColors)) warn(`${o.name || '이름없음'}: color 속성이 있는데 vertexColors 가 꺼져 있다`);
+  });
+
+  // (4) 크기 0 이거나 NaN 이 섞인 지오메트리. 화면에서는 안 보이지만 익스포터가 죽는다.
+  scene.traverse((o) => {
+    if (!o.isMesh) return;
+    const p = o.geometry.attributes.position;
+    if (!p || p.count === 0) { warn(`${o.name || '이름없음'}: 빈 지오메트리`); return; }
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    const bb = o.geometry.boundingBox;
+    if ([bb.min.x, bb.min.y, bb.min.z, bb.max.x, bb.max.y, bb.max.z].some(Number.isNaN))
+      warn(`${o.name || '이름없음'}: 좌표에 NaN`);
+  });
+
+  // ── 어디에 돈이 들었나 ───────────────────────────────────────────────────
+  //
+  // "최적화 전에 먼저 센다" 는 규칙이 이 목록이다. 추측으로 줄이면 엉뚱한
+  // 곳을 건드린다 — 실제로 파사드 시트 10장이 텍스처 전체의 61% 였다.
+  const texTop = [...bySize.entries()]
+    .map(([size, b]) => [size, +(b / 1048576).toFixed(1)])
+    .sort((a, b) => b[1] - a[1]);
+
+  return {
+    scene: stats.scene,
+    triangles,
+    meshes,
+    materials: materials.size,
+    textures: textures.size,
+    textureMB,
+    drawGroups,
+    programs,
+    buildMs: stats.buildMs,
+    textureBySize: Object.fromEntries(texTop),
+    ok: notes.length === 0,
+    notes,
+  };
+}
+
+// 드로우 콜의 하한. 메시 하나가 material 배열을 쓰면 그룹 수만큼 그린다.
+function countGroups(scene) {
+  let n = 0;
+  scene.traverse((o) => {
+    if (!o.isMesh) return;
+    n += Array.isArray(o.material) ? Math.max(1, o.geometry.groups.length) : 1;
+  });
+  return n;
+}
+
+function fmt(n) {
+  return Number(n).toLocaleString('en-US');
+}

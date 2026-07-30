@@ -16,6 +16,58 @@ export function boxGeometry(w, h, d, offset = null) {
   return g;
 }
 
+// 텍스처가 미터 단위로 타일링되는 박스.
+//
+// BoxGeometry 의 UV는 면마다 0..1 이다. 그대로 쓰면 13m 벽에도 텍스처가 딱 한 장
+// 늘어나 콘크리트가 벽지처럼 보인다. 면의 실제 크기로 UV를 늘려서 tile 미터마다
+// 텍스처가 한 번 반복되게 만든다.
+//
+// 이걸 material 쪽 texture.repeat 으로 하면 크기가 다른 박스마다 머티리얼을
+// 복제해야 하고, glTF 로 나갈 때 KHR_texture_transform 확장이 붙는다.
+export function metricBox(w, h, d, offset = null, tile = 0) {
+  const g = new THREE.BoxGeometry(w, h, d);
+
+  if (tile > 0) {
+    const uv = g.attributes.uv;
+    // BoxGeometry 면 순서: +X, -X, +Y, -Y, +Z, -Z — 면당 정점 4개
+    const spans = [
+      [d, h],
+      [d, h],
+      [w, d],
+      [w, d],
+      [w, h],
+      [w, h],
+    ];
+    for (let f = 0; f < 6; f++) {
+      const [su, sv] = spans[f];
+      for (let i = f * 4; i < f * 4 + 4; i++) {
+        uv.setXY(i, (uv.getX(i) * su) / tile, (uv.getY(i) * sv) / tile);
+      }
+    }
+    uv.needsUpdate = true;
+  }
+
+  if (offset) g.translate(offset[0], offset[1], offset[2]);
+  return g;
+}
+
+// UV를 지오메트리에 직접 곱한다. 텍스처 반복을 material 쪽(texture.repeat)이
+// 아니라 정점에 굽는 용도.
+//
+// texture.repeat 은 glTF 로 나갈 때 KHR_texture_transform 확장이 된다. 표준
+// 확장이지만 FBX 왕복까지 살아남는지는 임포터에 달렸고, 무엇보다 반복 수가 다른
+// 조각마다 머티리얼을 복제해야 한다. UV에 구우면 조각이 몇 개든 머티리얼 하나를
+// 공유하고, 확장도 필요 없다 — UV는 지오메트리라 어느 포맷에서도 그대로 간다.
+export function scaleUV(geo, sx, sy) {
+  const uv = geo.attributes.uv;
+  if (!uv) return geo;
+  for (let i = 0; i < uv.count; i++) {
+    uv.setXY(i, uv.getX(i) * sx, uv.getY(i) * sy);
+  }
+  uv.needsUpdate = true;
+  return geo;
+}
+
 // ── 병합 ───────────────────────────────────────────────────────────────────
 
 // 여러 지오메트리를 하나로 합친다. 각 조각은 미리 최종 위치로 변환돼 있어야 한다.
@@ -103,6 +155,49 @@ export function mergeParts(parts, { extras = [] } = {}) {
   geo.computeBoundingSphere();
 
   return { geometry: geo, materials: mats };
+}
+
+// 같은 재질의 지오메트리 몇 개를 하나로 잇는다 (머티리얼 그룹 없음).
+//
+// mergeParts 와 다른 점: 그룹을 만들지 않는다. InstancedMesh 는 단일 머티리얼만
+// 받으므로 부위를 합칠 때 그룹이 있으면 안 된다. 지상 교통의 차체·캐빈처럼
+// "한 재질인데 조각이 여럿" 인 경우에 쓴다.
+export function mergeGeometries(geos) {
+  let vTotal = 0;
+  let iTotal = 0;
+  for (const g of geos) {
+    vTotal += g.attributes.position.count;
+    iTotal += g.index ? g.index.count : g.attributes.position.count;
+  }
+  const pos = new Float32Array(vTotal * 3);
+  const nor = new Float32Array(vTotal * 3);
+  const uv = new Float32Array(vTotal * 2);
+  const idx = new Uint32Array(iTotal);
+  let vo = 0;
+  let io = 0;
+
+  for (const g of geos) {
+    const n = g.attributes.position.count;
+    pos.set(g.attributes.position.array.subarray(0, n * 3), vo * 3);
+    if (g.attributes.normal) nor.set(g.attributes.normal.array.subarray(0, n * 3), vo * 3);
+    if (g.attributes.uv) uv.set(g.attributes.uv.array.subarray(0, n * 2), vo * 2);
+    if (g.index) {
+      for (let i = 0; i < g.index.count; i++) idx[io + i] = g.index.getX(i) + vo;
+      io += g.index.count;
+    } else {
+      for (let i = 0; i < n; i++) idx[io + i] = vo + i;
+      io += n;
+    }
+    vo += n;
+  }
+
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  out.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  out.setIndex(new THREE.BufferAttribute(idx, 1));
+  out.computeBoundingSphere();
+  return out;
 }
 
 // ── 인스턴싱 굽기 (정적 메시용) ────────────────────────────────────────────
@@ -212,4 +307,85 @@ export function bakeInstancedDescendants(root) {
       inst.visible = true;
     }
   };
+}
+
+// ── 텍스처 반복을 UV로 굽기 ─────────────────────────────────────────────────
+//
+// `texture.repeat` 은 브라우저에서는 완벽하게 동작하지만, glTF 로 내보내면
+// **KHR_texture_transform** 확장이 된다. 그 확장을 못 읽는 임포터는 변환을
+// 통째로 무시하므로, 14번 반복돼야 할 벽돌이 엔진에서는 딱 한 장 늘어난 채로
+// 나온다. 브라우저와 엔진이 같아 보여야 한다는 것이 이 파이프라인의 1순위라
+// 그냥 두면 안 된다.
+//
+// 셰이더가 하는 계산은 `uv * repeat + offset` 이다. offset 이 0 이면 UV 에 미리
+// 곱해 두고 repeat 을 1 로 되돌리는 것으로 **완전히 동일한 결과**가 나온다.
+// 밉맵·비등방 필터링도 UV의 미분이 같으므로 그대로다.
+//
+// 도시 씬은 처음부터 scaleUV/metricBox 로 UV를 구워서 이 문제가 없었지만,
+// 공터 씬은 22개 재질이 repeat 을 쓰고 있었고 8개 오브젝트 중 5개가 실제로
+// 확장을 내보내고 있었다. 규칙으로 지키게 하는 대신 여기서 구조적으로 막는다.
+//
+// ── 안전 조건 ──────────────────────────────────────────────────────────────
+// 아래 넷 중 하나라도 어긋나면 UV 하나로는 표현할 수 없으므로 예외를 던진다.
+// 조용히 건너뛰면 "확장이 없어졌다" 고 믿는 채로 화면만 깨진다.
+//
+//   1. offset 이 0 이어야 한다        — 아니면 UV 평행이동까지 필요
+//   2. rotation 이 0 이어야 한다      — 아니면 UV 회전까지 필요
+//   3. 한 재질 안의 맵들이 같은 반복  — 아니면 UV 채널이 둘 필요
+//   4. 공유 지오메트리가 한 배율만    — 아니면 지오메트리를 복제해야 한다
+const REPEAT_MAPS = ['map', 'roughnessMap', 'normalMap', 'emissiveMap', 'alphaMap', 'aoMap'];
+
+export function bakeTextureRepeat(root) {
+  const need = new Map(); // geometry.uuid -> { geo, sx, sy }
+  const textures = new Set();
+
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (!m) continue;
+
+      // 이 재질이 요구하는 배율을 모은다
+      let sx = null;
+      let sy = null;
+      for (const k of REPEAT_MAPS) {
+        const t = m[k];
+        if (!t) continue;
+        if (t.offset.x !== 0 || t.offset.y !== 0) {
+          throw new Error(`bakeTextureRepeat: ${m.name || '이름없음'}.${k} 에 offset 이 있다 — UV로 구울 수 없다`);
+        }
+        if (t.rotation !== 0) {
+          throw new Error(`bakeTextureRepeat: ${m.name || '이름없음'}.${k} 에 rotation 이 있다 — UV로 구울 수 없다`);
+        }
+        if (sx !== null && (t.repeat.x !== sx || t.repeat.y !== sy)) {
+          throw new Error(`bakeTextureRepeat: ${m.name || '이름없음'} 의 맵마다 반복이 다르다`);
+        }
+        sx = t.repeat.x;
+        sy = t.repeat.y;
+        textures.add(t);
+      }
+      if (sx === null || (sx === 1 && sy === 1)) continue;
+
+      const prev = need.get(o.geometry.uuid);
+      if (prev && (prev.sx !== sx || prev.sy !== sy)) {
+        throw new Error(
+          `bakeTextureRepeat: 지오메트리 하나가 배율 ${prev.sx},${prev.sy} 와 ${sx},${sy} 를 동시에 요구한다`
+        );
+      }
+      need.set(o.geometry.uuid, { geo: o.geometry, sx, sy });
+    }
+  });
+
+  // 지오메트리 단위로 한 번씩만 곱한다 (318개 메시가 32개 지오메트리를 공유한다)
+  for (const { geo, sx, sy } of need.values()) scaleUV(geo, sx, sy);
+
+  // UV 에 실렸으니 텍스처 쪽 반복은 되돌린다. 순서가 중요하다 — 먼저 되돌리면
+  // 위 루프가 배율 1을 읽어 아무것도 안 곱한다.
+  let reset = 0;
+  for (const t of textures) {
+    if (t.repeat.x === 1 && t.repeat.y === 1) continue;
+    t.repeat.set(1, 1);
+    t.needsUpdate = true;
+    reset++;
+  }
+  return { geometries: need.size, textures: reset };
 }

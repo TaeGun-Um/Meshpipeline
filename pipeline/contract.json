@@ -65,7 +65,8 @@
   "exportRules": {
     "exportInputs": [
       "web/src/core",
-      "web/src/static",
+      "web/src/shared",
+      "web/src/scenes",
       "web/src/dynamic",
       "web/src/export",
       "web/src/main.js"

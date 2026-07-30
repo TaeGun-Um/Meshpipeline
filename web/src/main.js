@@ -1,13 +1,21 @@
+// 오케스트레이션 — 렌더러·카메라·입력·모드 전환·검증 하네스.
+// "어떤 장소인가" 는 전부 활성 씬이 정한다 (scenes/index.js 의 계약 참고).
 import * as THREE from 'three';
 import { makeRandom } from './core/rng.js';
+import { auditScene } from './core/audit.js';
 import * as TEX from './core/textures.js';
-import * as W from './static/index.js';
+import { activeScene } from './scenes/index.js';
 import { createCharacter } from './dynamic/character.js';
 import { bakeClips } from './dynamic/clips.js';
-import { MODE, createInput, createPlayer, createFlyCamera, collectColliders } from './controls.js';
+import { MODE, createInput, createPlayer, createFlyCamera } from './controls.js';
 import { exportGLB, bakeInstances } from './export/gltf.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-const SEED = 20260730;
+const SCENE = activeScene();
+const SEED = SCENE.meta.seed;
 
 const boot = document.getElementById('boot');
 const bar = boot.querySelector('.bar i');
@@ -30,32 +38,85 @@ const scene = new THREE.Scene();
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = SCENE.meta.render.shadows;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.06;
+renderer.toneMappingExposure = SCENE.meta.render.exposure;
 document.body.appendChild(renderer.domElement);
 
-const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 900);
-camera.position.set(0, 2.0, 17);
+const lens = SCENE.meta.lens;
+const camera = new THREE.PerspectiveCamera(lens.fov, innerWidth / innerHeight, lens.near, lens.far);
+camera.position.set(...SCENE.meta.camera.pos);
+// target 은 프리캠 전용 씬에서 시작 시선을 정한다. 3인칭 씬은 첫 프레임에
+// 스프링암이 카메라를 덮어쓰므로 있으나 없으나 같다.
+if (SCENE.meta.camera.target) camera.lookAt(...SCENE.meta.camera.target);
+
+// ── 후처리 ─────────────────────────────────────────────────────────────────
+//
+// 씬이 meta.post.bloom 을 선언하면 EffectComposer 경로로 그린다.
+//   씬(HDR 렌더타깃) → 블룸 → OutputPass(ACES 톤매핑 + sRGB) → 캔버스
+//
+// 이 순서가 중요하다. three 는 렌더 타깃에 그릴 때 머티리얼 셰이더의 톤매핑을
+// 건너뛰고 OutputPass 에서 한 번만 적용한다. 그래서 블룸은 톤매핑 전 HDR 값을
+// 보게 되고, 밝은 발광면만 골라 번지게 된다. 톤매핑 후에 블룸을 걸면 이미 눌린
+// 값을 번지게 해서 네온이 흐릿한 회색으로 뜬다.
+//
+// HalfFloat + samples:4 로 타깃을 직접 만드는 이유: 기본 캔버스의 MSAA는
+// 렌더 타깃에 그리는 순간 적용되지 않으므로, 타깃 쪽에 샘플 수를 줘야 계단이 안 진다.
+const bloomCfg = SCENE.meta.post?.bloom || null;
+let composer = null;
+
+if (bloomCfg) {
+  const target = new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
+    type: THREE.HalfFloatType,
+    samples: 4,
+  });
+  composer = new EffectComposer(renderer, target);
+  composer.setPixelRatio(renderer.getPixelRatio());
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(
+    new UnrealBloomPass(
+      new THREE.Vector2(innerWidth, innerHeight),
+      bloomCfg.strength,
+      bloomCfg.radius,
+      bloomCfg.threshold
+    )
+  );
+  composer.addPass(new OutputPass());
+}
+
+// 후처리가 있으면 컴포저로, 없으면 곧바로 캔버스에 그린다.
+function draw() {
+  if (composer) composer.render();
+  else renderer.render(scene, camera);
+}
 
 const input = createInput(renderer.domElement);
 
-let mode = MODE.PLAY;
+// 씬이 meta.player:false 를 선언하면 캐릭터도 3인칭 조작도 만들지 않고
+// 프리 카메라 하나로만 돌아간다. 도시처럼 "걸어다니는 것"이 목적이 아닌 씬에서는
+// 캐릭터가 스케일 기준으로도 쓸모가 없고, 물리·충돌체를 유지할 이유도 없다.
+const HAS_PLAYER = SCENE.meta.player !== false;
+
+let mode = HAS_PLAYER ? MODE.PLAY : MODE.FLY;
 let player = null;
 let flycam = null;
-let weeds = null;
+let world = null; // 활성 씬이 build()에서 돌려준 것 (built · tick · stats)
+let hero = null; // 캐릭터 (하네스가 포즈를 고정하려면 필요하다). player 없으면 null
 let charClips = []; // 캐릭터 애니메이션 클립 (익스포트에 함께 실린다)
 const built = {}; // 익스포트 점검용으로 주요 오브젝트를 붙들어 둔다
 
 const HINTS = {
   [MODE.PLAY]:
     'WASD 이동 · Shift 달리기 · Space 점프 · 마우스 시점 · 휠 거리 &nbsp;|&nbsp; <b>F</b> 프리캠',
-  [MODE.FLY]:
-    '<b>우클릭 드래그</b> 시선 · WASD 비행 · Q/E 하강·상승 · 휠 속도 · Shift 부스트 &nbsp;|&nbsp; <b>F</b> 복귀',
+  [MODE.FLY]: HAS_PLAYER
+    ? '<b>우클릭 드래그</b> 시선 · WASD 비행 · Q/E 하강·상승 · 휠 속도 · Shift 부스트 &nbsp;|&nbsp; <b>F</b> 복귀'
+    : '<b>우클릭 드래그</b> 시선 · WASD 비행 · Q/E 하강·상승 · 휠 속도 · Shift 부스트 · Ctrl 미세이동',
 };
 
 function setMode(next) {
+  // 플레이어가 없는 씬은 프리캠 외의 모드가 없다
+  if (!HAS_PLAYER) next = MODE.FLY;
   mode = next;
   hintEl.innerHTML = HINTS[mode];
   if (mode === MODE.FLY) {
@@ -71,62 +132,67 @@ async function build() {
   const rng = makeRandom(SEED);
   TEX.setAnisotropy(renderer.capabilities.getMaxAnisotropy());
 
-  await step('하늘 · 광원', 5, () => {
-    const dome = W.createSky(scene);
-    W.createLights(scene);
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    const envScene = new THREE.Scene();
-    envScene.add(dome.clone());
-    scene.environment = pmrem.fromScene(envScene, 0, 1, 1000).texture;
-    pmrem.dispose();
-  });
+  // 카메라를 넘기는 이유: 비처럼 "카메라 주위에만 존재하는" 것이 있다.
+  // 도시 전체에 뿌리면 부피가 8천만 m³ 라 보이는 밀도를 채울 수 없다.
+  world = await SCENE.build({ scene, renderer, rng, step, camera });
+  Object.assign(built, world.built);
 
-  const mats = await step('공용 재질', 16, () => W.buildMaterials(rng));
-  built.ground = await step('지형 (흙 · 자갈)', 34, () => W.createGround(scene));
-  built.road = await step('도로 · 경계석', 46, () => W.createRoad(scene));
-  const walls = await step('담장', 54, () => W.createWalls(scene, mats));
-  const houses = await step('주택 9채', 68, () => W.createHouses(scene, rng, mats));
-  built.poles = await step('전신주 · 전선', 76, () => W.createPoles(scene, mats));
-  weeds = await step('잡초', 88, () => W.createWeeds(scene, rng));
-  built.props = await step('소품', 94, () => W.createProps(scene, rng, mats));
-  built.walls = walls;
-  built.houses = houses;
-  built.weeds = weeds.mesh;
+  let colliderCount = 0;
 
-  const character = await step('캐릭터 · 스켈레톤 · 클립', 99, () => {
-    const c = createCharacter();
-    scene.add(c.root);
-    built.character = c.root;
-    // 절차적 포즈를 키프레임으로 구워둔다 (익스포트 시 함께 내보낸다)
-    charClips = bakeClips(c.rig);
-    const boxes = collectColliders([houses, walls]);
-    player = createPlayer(c, camera, input, boxes, [0, 12.6]);
-    flycam = createFlyCamera(camera, input);
-    return { c, boxes };
-  });
+  if (HAS_PLAYER) {
+    await step('캐릭터 · 스켈레톤 · 클립', 99, () => {
+      const c = createCharacter();
+      scene.add(c.root);
+      built.character = c.root;
+      hero = c;
+      // 절차적 포즈를 키프레임으로 구워둔다 (익스포트 시 함께 내보낸다)
+      charClips = bakeClips(c.rig);
+      const boxes = world.colliders;
+      colliderCount = boxes.length;
+      player = createPlayer(c, camera, input, {
+        boxes,
+        spawn: SCENE.meta.spawn,
+        surfaceHeight: SCENE.surfaceHeight,
+      });
+      // 캐릭터 트랜스폼은 player.update 가 써 준다. 한 번 돌려 두지 않으면
+      // 첫 프레임까지 원점에 서 있고, 그 사이에 찍은 스크린샷이 어긋난다.
+      player.update(0, { camera: false });
+    });
+  }
+
+  flycam = createFlyCamera(camera, input);
+  flycam.syncFromCamera();
 
   bar.style.width = '100%';
   stepEl.textContent = 'BAKE: 완료';
   await yieldFrame();
 
   const buildMs = performance.now() - t0;
+  // 삼각형 수는 후처리 없이 센다. 컴포저를 거치면 전체화면 사각형이 섞여 들어온다.
   renderer.render(scene, camera);
   const tris = renderer.info.render.triangles;
 
   statsEl.innerHTML = [
+    SCENE.meta.name,
     `생성 ${buildMs.toFixed(0)}ms`,
     `삼각형 ${tris.toLocaleString('ko-KR')}`,
-    `잡초 ${weeds.count.toLocaleString('ko-KR')}포기`,
+    ...(world.stats || []),
     `텍스처 ${TEX.textureStats.count}장`,
-    `충돌체 ${character.boxes.length}개`,
+    ...(HAS_PLAYER ? [`충돌체 ${colliderCount}개`] : []),
     `외부 애셋 0개 · seed ${SEED}`,
   ].join(' · ');
 
-  setMode(MODE.PLAY);
+  setMode(mode);
   boot.classList.add('done');
   setTimeout(() => boot.remove(), 600);
 
-  window.__stats = { buildMs, tris, weeds: weeds.count, colliders: character.boxes.length };
+  window.__stats = {
+    scene: SCENE.meta.id,
+    buildMs,
+    tris,
+    textures: TEX.textureStats.count,
+    colliders: colliderCount,
+  };
   window.__ready = true;
 }
 
@@ -143,10 +209,6 @@ function frame() {
     setMode(mode === MODE.PLAY ? MODE.FLY : MODE.PLAY);
   }
 
-  if (weeds?.mat.userData.shader) {
-    weeds.mat.userData.shader.uniforms.uTime.value = t;
-  }
-
   if (mode === MODE.PLAY) {
     const s = player.update(dt);
     modeEl.innerHTML = `<b>PLAY</b> · 3인칭 &nbsp; ${s.speed.toFixed(1)} m/s${
@@ -154,13 +216,20 @@ function frame() {
     }${s.grounded ? '' : ' <span class="hot">공중</span>'}`;
     lockEl.style.opacity = input.locked ? '0' : '1';
   } else {
-    player.update(dt, { input: false, camera: false }); // 캐릭터는 대기 동작만
+    player?.update(dt, { input: false, camera: false }); // 캐릭터는 대기 동작만
     const f = flycam.update(dt);
-    modeEl.innerHTML = `<b>FLY</b> · 프리 카메라 &nbsp; 속도 ${f.speedLevel}/8 (${f.speed.toFixed(1)} m/s)`;
+    const alt = camera.position.y;
+    modeEl.innerHTML = `<b>FLY</b> · 프리 카메라 &nbsp; 속도 ${f.speedLevel}/8 (${f.speed.toFixed(
+      1
+    )} m/s) &nbsp; 고도 ${alt.toFixed(0)}m`;
     lockEl.style.opacity = '0';
   }
 
-  renderer.render(scene, camera);
+  // 씬 갱신은 **카메라가 확정된 뒤**에 한다. 비처럼 카메라 위치를 참조하는
+  // 것이 있어서, 먼저 돌리면 한 프레임 뒤처진 자리에 뿌려진다.
+  world?.tick?.(t, dt);
+
+  draw();
 }
 
 // 포인터 락: PLAY는 클릭으로, FLY는 우클릭을 누르는 동안만 (언리얼과 동일)
@@ -176,6 +245,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  composer?.setSize(innerWidth, innerHeight);
 });
 
 // ── 결정론적 스크린샷 하네스 ───────────────────────────────────────────────
@@ -190,6 +260,7 @@ window.__shot = async ({
   pos = null,
   target = null,
   time = 0,
+  pose = {}, // { phase, speed, grounded, facing } — 캐릭터 포즈·방향 고정
 } = {}) => {
   const keepW = renderer.domElement.width;
   const keepH = renderer.domElement.height;
@@ -197,15 +268,32 @@ window.__shot = async ({
   const keepPos = camera.position.clone();
   const keepQuat = camera.quaternion.clone();
 
-  if (weeds?.mat.userData.shader) weeds.mat.userData.shader.uniforms.uTime.value = time;
+  if (hero) {
+    hero.setPose(pose);
+    // yaw 는 player가 매 프레임 목표각으로 보간한다. 찍는 시점에 따라 중간값이
+    // 나오므로 정착값(π — 카메라를 등지고 서는 기본 자세)으로 못박는다.
+    hero.root.rotation.y = pose.facing ?? Math.PI;
+  }
 
   renderer.setPixelRatio(1);
   renderer.setSize(w, h, false);
+  // 후처리 타깃도 같은 크기로 맞춘다. 안 하면 블룸이 화면 크기 기준으로 남아
+  // 스크린샷마다 번짐 반경이 달라진다.
+  if (composer) {
+    composer.setPixelRatio(1);
+    composer.setSize(w, h);
+  }
   camera.aspect = w / h;
   if (pos) camera.position.set(pos[0], pos[1], pos[2]);
   if (target) camera.lookAt(target[0], target[1], target[2]);
   camera.updateProjectionMatrix();
-  renderer.render(scene, camera);
+
+  // 애니메이션을 고정 시각으로 되돌린다 — 스크린샷이 결정론적이어야 한다.
+  // **카메라를 옮긴 뒤에** 해야 한다. 비는 카메라 주위에만 존재하므로 먼저
+  // 돌리면 이전 카메라 자리에 뿌려져 화면에 하나도 안 잡힌다.
+  world?.tick?.(time, 0);
+
+  draw();
 
   const gl = renderer.getContext();
   const px = new Uint8Array(w * h * 4);
@@ -231,6 +319,10 @@ window.__shot = async ({
 
   renderer.setPixelRatio(keepPR);
   renderer.setSize(keepW, keepH, false);
+  if (composer) {
+    composer.setPixelRatio(keepPR);
+    composer.setSize(keepW, keepH);
+  }
   camera.aspect = keepW / keepH;
   camera.position.copy(keepPos);
   camera.quaternion.copy(keepQuat);
@@ -248,7 +340,7 @@ window.__sim = (codes, frames = 60, dt = 1 / 60) => {
   }
   for (const c of codes) input.keys.delete(c);
   return {
-    player: player.pos.toArray().map((v) => +v.toFixed(3)),
+    player: player ? player.pos.toArray().map((v) => +v.toFixed(3)) : null,
     camera: camera.position.toArray().map((v) => +v.toFixed(3)),
   };
 };
@@ -267,6 +359,39 @@ window.__export = async (key, { bake = false, limit = Infinity, name } = {}) => 
   const t0 = performance.now();
   const r = await exportGLB(target, file, { animations });
   return { ...r, ms: +(performance.now() - t0).toFixed(0) };
+};
+
+// ── 회귀 검증 ──────────────────────────────────────────────────────────────
+//
+// shots/views.json 에 적힌 모든 뷰를 렌더한다. 카메라 좌표를 손으로 넘기지 않는
+// 것이 핵심이다 — 예전에 좌표를 콘솔에만 두는 바람에 베이스라인 9장이 전부
+// 재현 불가능해졌다. 자세한 사정은 views.json 의 _readme 참고.
+//
+//   await __lock()          현재 씬의 모든 뷰를 shots/<이름>.png 로 렌더
+//   await __lock('base')    shots/baseline_<이름>.png 로 렌더 (기준 갱신)
+// 예산·파이프라인 위험을 숫자로 점검한다. 자세한 내용은 core/audit.js 머리말.
+window.__audit = () => auditScene({ scene, renderer, stats: window.__stats });
+
+window.__lock = async (prefix = '') => {
+  const views = await fetch('/shots/views.json').then((r) => r.json());
+  const set = views[SCENE.meta.id];
+  if (!set) throw new Error(`views.json 에 '${SCENE.meta.id}' 항목이 없다`);
+
+  const tag = SCENE.meta.id === 'night-city' ? 'nc_' : '';
+  const done = [];
+  for (const [name, cfg] of Object.entries(set)) {
+    if (name.startsWith('_')) continue;
+    const file = `${prefix === 'base' ? 'baseline_' : ''}${tag}${name}`;
+    // pose 를 함께 넘긴다. 캐릭터가 있는 씬은 대기 동작이 매 프레임 돌기
+    // 때문에, 포즈를 못박지 않으면 같은 씬을 두 번 찍어도 픽셀이 달라진다
+    // (실측: 공터 wide 에서 258픽셀). 회귀 검증이 성립하려면 화면에 영향을
+    // 주는 상태가 전부 views.json 에 적혀 있어야 한다.
+    await window.__shot({
+      name: file, pos: cfg.pos, target: cfg.target, time: cfg.time ?? 0, pose: cfg.pose ?? {},
+    });
+    done.push(file);
+  }
+  return done;
 };
 
 build()

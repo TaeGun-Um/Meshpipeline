@@ -1,24 +1,27 @@
 // 하늘과 광원.
+//
+// 광원 구성이 야간 도시와 정반대다. 낮은 태양 하나가 전부를 밝히고 나머지는
+// 보조지만, 밤 도시는 환경광이 거의 없고 발광 표면이 대부분을 만든다.
+// 그 차이가 씬마다 광원 모듈이 따로 있는 이유다.
 import * as THREE from 'three';
-import * as TEX from '../core/textures.js';
-
-// ── 하늘 · 빛 ──────────────────────────────────────────────────────────────
+import { createSkyDome } from '../../shared/sky.js';
+import { SKY_STOPS } from './textures.js';
 
 export function createSky(scene) {
-  const tex = TEX.skyTexture();
-  const dome = new THREE.Mesh(
-    new THREE.SphereGeometry(420, 32, 24),
-    // fog: false — 안개가 하늘까지 덮으면 그라디언트가 통째로 회색으로 날아간다
-    new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, depthWrite: false, fog: false })
-  );
-  dome.name = 'sky';
-  scene.add(dome);
+  const dome = createSkyDome(scene, SKY_STOPS, {
+    radius: 420,
+    segments: 32,
+    rings: 24,
+    gradientHeight: 256,
+  });
   // 프리캠으로 높이 올라가면 지형 평면의 끝이 보인다. 안개로 가장자리를 지운다.
   scene.fog = new THREE.Fog(0xd2cdc0, 62, 210);
   return dome;
 }
 
 export function createLights(scene) {
+  // 광원 세기는 실측으로 맞춘 값이다. three 의 물리 단위(2.5)를 그대로 Unity에
+  // 넣으면 +77 과다 노출, π로 나누면 −55.7 과소 노출이 났다.
   const hemi = new THREE.HemisphereLight(0x9dbbdd, 0x6b5b48, 0.42);
   scene.add(hemi);
 

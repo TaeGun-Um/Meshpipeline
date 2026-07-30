@@ -1,6 +1,6 @@
 // 소품 — 블록/벽돌 무더기, 타이어, 드럼통, 잡석, 표지판, 관목.
 import * as THREE from 'three';
-import * as TEX from '../core/textures.js';
+import * as TEX from './textures.js';
 import { texMaterial } from './materials.js';
 import { LOT, groundHeight } from './terrain.js';
 

@@ -3,7 +3,8 @@ import { mulberry32 } from './rng.js';
 
 // cells는 2의 거듭제곱. 좌표를 cells로 wrap하므로, 샘플 좌표 범위가 cells의
 // 정수배가 되도록 잡으면 이음선 없이 타일링된다.
-export function noiseField(seed, cells) {
+// tiledFbm 전용 내부 헬퍼 — 밖에서 쓸 일이 없다
+function noiseField(seed, cells) {
   const rnd = mulberry32(seed);
   const m = cells - 1;
   const g = new Float32Array(cells * cells);

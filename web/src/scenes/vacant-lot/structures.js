@@ -1,6 +1,6 @@
 // 인공 구조물 — 담장, 주택, 전신주·전선.
 import * as THREE from 'three';
-import * as TEX from '../core/textures.js';
+import * as TEX from './textures.js';
 import { texMaterial } from './materials.js';
 import { LOT, groundHeight } from './terrain.js';
 

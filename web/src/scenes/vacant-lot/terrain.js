@@ -1,8 +1,8 @@
 // 지형과 도로.
 // 높이 함수는 잡초·소품 배치의 기준이라 단일 출처로 여기 둔다.
 import * as THREE from 'three';
-import { worldFbm, smoothstep } from '../core/noise.js';
-import * as TEX from '../core/textures.js';
+import { worldFbm, smoothstep } from '../../core/noise.js';
+import * as TEX from './textures.js';
 import { texMaterial } from './materials.js';
 
 

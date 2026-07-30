@@ -1,7 +1,11 @@
-// 모든 재질을 로드 시점에 캔버스로 굽는다. 이미지 파일은 하나도 읽지 않는다.
-// 각 텍스처는 색상 / 거칠기 / 범프 3장을 한 번의 픽셀 루프에서 같이 생성한다.
+// 텍스처 굽는 엔진. 이미지 파일은 하나도 읽지 않는다.
+//
+// 이 파일에는 "어떻게 굽는가"만 있다. "무엇을 굽는가"(흙·벽돌·젖은 아스팔트 같은
+// 재질 레시피)는 씬이 소유한다 — scenes/<씬>/textures.js 참고.
+// 레시피를 여기 두면 씬을 늘릴 때마다 공용 모듈이 부풀고, 어느 재질이 어느 장소
+// 것인지 알 수 없게 된다.
 import * as THREE from 'three';
-import { tiledFbm, lerp, clamp, smoothstep } from './noise.js';
+import { clamp } from './noise.js';
 
 let ANISO = 4;
 export function setAnisotropy(n) {
@@ -10,13 +14,14 @@ export function setAnisotropy(n) {
 
 export const textureStats = { count: 0, pixels: 0 };
 
-// 정수 해시 — 벽돌/블록 한 장 단위의 색 편차용
-function hash2(a, b) {
+// 정수 해시 — 벽돌 한 장, 창문 한 칸처럼 이산 단위의 색 편차용
+export function hash2(a, b) {
   let h = (a * 374761393 + b * 668265263) | 0;
   h = ((h ^ (h >>> 13)) * 1274126177) | 0;
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
+// bake / radialTexture 내부 전용
 function toTexture(canvas, srgb, rx, ry) {
   const t = new THREE.CanvasTexture(canvas);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -33,58 +38,96 @@ function toTexture(canvas, srgb, rx, ry) {
 // 톤매핑이 없는 엔진(Unity Built-in)에서는 표면이 새카맣게 죽는다.
 const NORMAL_STRENGTH = 1.4;
 
-function bake(size, rx, ry, fn) {
+// 픽셀 루프 한 번으로 색상·거칠기·노말을 함께 만든다.
+//
+//   size         정수 하나(정방형) 또는 [폭, 높이]
+//   fn(u, v, o)  — o 에 써서 출력한다
+//     o.c  [r,g,b]  0..255 색상 (sRGB)
+//     o.r  0..1     거칠기
+//     o.h  0..1     높이 (2차 패스에서 노말맵으로 변환)
+//     o.e  [r,g,b]  0..255 발광 — opts.emissive 를 켰을 때만 읽는다
+//
+// ── v 축 방향 (실측으로 확인) ───────────────────────────────────────────────
+//   **v = 0 이 물체의 위쪽이다.**
+// v 는 캔버스의 행 인덱스(0 = 이미지 맨 위)이고, CanvasTexture 의 flipY=true 가
+// 이미지를 뒤집어 UV v=0 이 이미지 아래를 가리키게 만든다. 두 번 뒤집혀서
+// 결과적으로 **작은 v 가 위**가 된다.
+//
+// 이걸 반대로 알고 점포 정면(어두운 기단이 위로) 과 인물 광고판(입이 눈 위로)을
+// 거꾸로 그린 적이 있다. 위아래가 다른 텍스처를 만들 때는 `const up = 1 - v;`
+// 처럼 이름을 붙여 쓰는 편이 헷갈리지 않는다.
+//
+// 비정방형을 지원하는 이유: 세로 간판(1:6)이나 가로 배너(2:1)를 정방형으로 굽고
+// UV로 늘리면 글자가 찌그러진다. 텍스처 비율을 형상에 맞추면 그럴 일이 없다.
+//
+// opts.emissive 를 켜면 emissiveMap 을 추가로 굽는다. 기본은 끔 — 켜면 텍스처가
+// 장당 3장에서 4장으로 늘어나고, 발광이 없는 씬에서는 낭비다.
+export function bake(size, rx, ry, fn, opts = {}) {
+  const [sw, sh] = Array.isArray(size) ? size : [size, size];
+  const emissive = !!opts.emissive;
   const mk = () => {
     const c = document.createElement('canvas');
-    c.width = c.height = size;
+    c.width = sw;
+    c.height = sh;
     return c;
   };
   const cc = mk();
   const cr = mk();
   const cn = mk();
+  const ce = emissive ? mk() : null;
   const g1 = cc.getContext('2d');
   const g2 = cr.getContext('2d');
   const g3 = cn.getContext('2d');
-  const i1 = g1.createImageData(size, size);
-  const i2 = g2.createImageData(size, size);
-  const i3 = g3.createImageData(size, size);
+  const g4 = emissive ? ce.getContext('2d') : null;
+  const i1 = g1.createImageData(sw, sh);
+  const i2 = g2.createImageData(sw, sh);
+  const i3 = g3.createImageData(sw, sh);
+  const i4 = emissive ? g4.createImageData(sw, sh) : null;
   const d1 = i1.data;
   const d2 = i2.data;
   const d3 = i3.data;
-  const o = { c: [0, 0, 0], r: 0.85, h: 0.5 };
+  const d4 = emissive ? i4.data : null;
+  const o = { c: [0, 0, 0], r: 0.85, h: 0.5, e: [0, 0, 0] };
 
-  // 1차: 색·거칠기를 쓰면서 높이는 따로 모은다
-  const height = new Float32Array(size * size);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      fn(x / size, y / size, o);
-      const i = (y * size + x) * 4;
+  // 1차: 색·거칠기(·발광)를 쓰면서 높이는 따로 모은다
+  const height = new Float32Array(sw * sh);
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      if (emissive) o.e[0] = o.e[1] = o.e[2] = 0;
+      fn(x / sw, y / sh, o);
+      const i = (y * sw + x) * 4;
       d1[i] = o.c[0];
       d1[i + 1] = o.c[1];
       d1[i + 2] = o.c[2];
       d1[i + 3] = 255;
       d2[i] = d2[i + 1] = d2[i + 2] = o.r * 255;
       d2[i + 3] = 255;
-      height[y * size + x] = clamp(o.h, 0, 1);
+      if (emissive) {
+        d4[i] = o.e[0];
+        d4[i + 1] = o.e[1];
+        d4[i + 2] = o.e[2];
+        d4[i + 3] = 255;
+      }
+      height[y * sw + x] = clamp(o.h, 0, 1);
     }
   }
 
   // 2차: 높이맵 -> 탄젠트 공간 노말맵.
   // glTF에는 범프맵이 없다. 범프로 내보내면 EXT_materials_bump(비표준 확장)가 되어
   // 블렌더도 Unity도 통째로 버린다. 노말맵은 glTF 표준이라 그대로 살아간다.
-  // 인덱스를 size로 wrap해서 이음선 없는 타일링을 유지한다.
-  for (let y = 0; y < size; y++) {
-    const yUp = (y - 1 + size) % size;
-    const yDn = (y + 1) % size;
-    for (let x = 0; x < size; x++) {
-      const xL = (x - 1 + size) % size;
-      const xR = (x + 1) % size;
-      const dx = (height[y * size + xR] - height[y * size + xL]) * NORMAL_STRENGTH;
-      const dy = (height[yDn * size + x] - height[yUp * size + x]) * NORMAL_STRENGTH;
+  // 인덱스를 폭·높이로 각각 wrap해서 이음선 없는 타일링을 유지한다.
+  for (let y = 0; y < sh; y++) {
+    const yUp = (y - 1 + sh) % sh;
+    const yDn = (y + 1) % sh;
+    for (let x = 0; x < sw; x++) {
+      const xL = (x - 1 + sw) % sw;
+      const xR = (x + 1) % sw;
+      const dx = (height[y * sw + xR] - height[y * sw + xL]) * NORMAL_STRENGTH;
+      const dy = (height[yDn * sw + x] - height[yUp * sw + x]) * NORMAL_STRENGTH;
       const nx = -dx;
       const ny = dy;
       const inv = 1 / Math.sqrt(nx * nx + ny * ny + 1);
-      const i = (y * size + x) * 4;
+      const i = (y * sw + x) * 4;
       d3[i] = (nx * inv * 0.5 + 0.5) * 255;
       d3[i + 1] = (ny * inv * 0.5 + 0.5) * 255;
       d3[i + 2] = (inv * 0.5 + 0.5) * 255;
@@ -95,293 +138,79 @@ function bake(size, rx, ry, fn) {
   g1.putImageData(i1, 0, 0);
   g2.putImageData(i2, 0, 0);
   g3.putImageData(i3, 0, 0);
+  if (emissive) g4.putImageData(i4, 0, 0);
 
-  textureStats.count += 3;
-  textureStats.pixels += size * size * 3;
+  const n = emissive ? 4 : 3;
+  textureStats.count += n;
+  textureStats.pixels += sw * sh * n;
 
-  return {
+  const set = {
     map: toTexture(cc, true, rx, ry),
     roughnessMap: toTexture(cr, false, rx, ry),
     normalMap: toTexture(cn, false, rx, ry),
   };
-}
-
-export function setRepeat(set, rx, ry) {
-  set.map.repeat.set(rx, ry);
-  set.roughnessMap.repeat.set(rx, ry);
-  set.normalMap.repeat.set(rx, ry);
+  if (emissive) set.emissiveMap = toTexture(ce, true, rx, ry);
   return set;
 }
 
-// ── 마른 흙바닥: 자갈, 밝게 마른 얼룩, 삭은 잔풀 자리 ────────────────────────
-export function dirtTextures() {
-  const coarse = tiledFbm(1001, 4, 5);
-  const patch = tiledFbm(1002, 2, 3);
-  const grit = tiledFbm(1003, 64, 2);
-  const fine = tiledFbm(1004, 32, 3);
 
-  return bake(512, 7, 7, (u, v, o) => {
-    const t = coarse(u, v);
-    const p = patch(u, v);
-    const f = fine(u, v);
-    const m = clamp(t * 0.72 + f * 0.36, 0, 1);
-
-    let r = lerp(68, 150, m);
-    let g = lerp(54, 128, m);
-    let b = lerp(40, 99, m);
-
-    const pale = smoothstep(0.58, 0.88, p) * 0.55;
-    r = lerp(r, 178, pale);
-    g = lerp(g, 162, pale);
-    b = lerp(b, 133, pale);
-
-    const dry = smoothstep(0.6, 0.92, 1 - p) * smoothstep(0.38, 0.72, f) * 0.5;
-    r = lerp(r, 122, dry);
-    g = lerp(g, 114, dry);
-    b = lerp(b, 74, dry);
-
-    const gr = grit(u, v);
-    let h = m * 0.6 + f * 0.4;
-    let rough = 0.97 - m * 0.1;
-    // 자갈은 아주 절제해서. 밝게 키우면 흙이 아니라 눈밭처럼 보인다.
-    if (gr > 0.82) {
-      const k = (gr - 0.82) / 0.18;
-      r += 26 * k;
-      g += 24 * k;
-      b += 21 * k;
-      h += 0.3 * k;
-      rough -= 0.1 * k;
-    } else if (gr < 0.24) {
-      const k = (0.24 - gr) / 0.24;
-      r -= 30 * k;
-      g -= 26 * k;
-      b -= 22 * k;
-      h -= 0.24 * k;
-    }
-
-    o.c[0] = r;
-    o.c[1] = g;
-    o.c[2] = b;
-    o.r = clamp(rough, 0.5, 1);
-    o.h = clamp(h, 0, 1);
-  });
-}
-
-// ── 아스팔트 ───────────────────────────────────────────────────────────────
-export function asphaltTextures() {
-  const agg = tiledFbm(2001, 96, 2);
-  const blotch = tiledFbm(2002, 6, 4);
-
-  return bake(512, 10, 3, (u, v, o) => {
-    const a = agg(u, v);
-    const bl = blotch(u, v);
-    const base = 62 + bl * 26;
-    let r = base;
-    let g = base + 1;
-    let b = base + 4;
-    let rough = 0.84 + bl * 0.1;
-
-    if (a > 0.8) {
-      const k = (a - 0.8) / 0.2;
-      r += 30 * k;
-      g += 29 * k;
-      b += 28 * k;
-      rough -= 0.14 * k;
-    } else if (a < 0.2) {
-      const k = (0.2 - a) / 0.2;
-      r -= 14 * k;
-      g -= 14 * k;
-      b -= 13 * k;
-    }
-
-    o.c[0] = r;
-    o.c[1] = g;
-    o.c[2] = b;
-    o.r = clamp(rough, 0.45, 1);
-    o.h = a * 0.7 + bl * 0.3;
-  });
-}
-
-// ── 붉은 벽돌 ──────────────────────────────────────────────────────────────
-export function brickTextures() {
-  const grain = tiledFbm(3001, 48, 3);
-  const stain = tiledFbm(3002, 4, 3);
-  const rows = 16;
-  const cols = 8;
-
-  return bake(512, 2, 2, (u, v, o) => {
-    const ry = v * rows;
-    const ri = Math.floor(ry);
-    const fy = ry - ri;
-    const off = ri % 2 ? 0.5 : 0;
-    const rx = u * cols + off;
-    const ci = Math.floor(rx);
-    const fx = rx - ci;
-
-    const gn = grain(u, v);
-    const st = stain(u, v);
-
-    if (fx < 0.045 || fx > 0.955 || fy < 0.1 || fy > 0.9) {
-      const m = 152 + gn * 30 - st * 24;
-      o.c[0] = m;
-      o.c[1] = m - 3;
-      o.c[2] = m - 10;
-      o.r = 0.96;
-      o.h = 0.22 + gn * 0.12;
-      return;
-    }
-
-    const h1 = hash2(ci, ri);
-    let r = 136 + h1 * 46 + gn * 22 - 11;
-    let g = 66 + h1 * 28 + gn * 14 - 7;
-    let b = 54 + h1 * 20 + gn * 12 - 6;
-
-    const dark = smoothstep(0.62, 0.96, st) * 0.42;
-    r = lerp(r, 82, dark);
-    g = lerp(g, 56, dark);
-    b = lerp(b, 48, dark);
-
-    o.c[0] = r;
-    o.c[1] = g;
-    o.c[2] = b;
-    o.r = clamp(0.88 - h1 * 0.08, 0.5, 1);
-    o.h = clamp(0.72 + gn * 0.22, 0, 1);
-  });
-}
-
-// ── 시멘트 블록 담장 ───────────────────────────────────────────────────────
-export function blockTextures() {
-  const grain = tiledFbm(4001, 44, 3);
-  const stain = tiledFbm(4002, 3, 4);
-  const rows = 6;
-  const cols = 3;
-
-  return bake(512, 1, 1, (u, v, o) => {
-    const ry = v * rows;
-    const ri = Math.floor(ry);
-    const fy = ry - ri;
-    const off = ri % 2 ? 0.5 : 0;
-    const rx = u * cols + off;
-    const ci = Math.floor(rx);
-    const fx = rx - ci;
-
-    const gn = grain(u, v);
-    const st = stain(u, v);
-
-    if (fx < 0.028 || fx > 0.972 || fy < 0.055 || fy > 0.945) {
-      const m = 112 + gn * 22 - st * 20;
-      o.c[0] = m;
-      o.c[1] = m;
-      o.c[2] = m - 4;
-      o.r = 0.97;
-      o.h = 0.2 + gn * 0.1;
-      return;
-    }
-
-    const h1 = hash2(ci * 7, ri * 13);
-    let base = 128 + h1 * 20 + gn * 24 - 12;
-    // 아래쪽으로 갈수록 물때가 올라온 느낌
-    const damp = smoothstep(0.4, 1.0, v) * 0.4 + smoothstep(0.5, 0.95, st) * 0.32;
-    base = lerp(base, 86, damp);
-
-    o.c[0] = base;
-    o.c[1] = base + 1;
-    o.c[2] = base - 5;
-    o.r = clamp(0.95 - h1 * 0.05, 0.6, 1);
-    o.h = clamp(0.66 + gn * 0.24, 0, 1);
-  });
-}
-
-// ── 도장 외벽 ──────────────────────────────────────────────────────────────
-export function wallTextures(seed, rgb) {
-  const grain = tiledFbm(seed, 28, 4);
-  const grime = tiledFbm(seed + 1, 5, 4);
-
-  return bake(256, 3, 3, (u, v, o) => {
-    const gn = grain(u, v);
-    const gm = grime(u, v);
-    const k = (gn - 0.5) * 26;
-    const soil = smoothstep(0.62, 0.95, gm) * 0.3;
-
-    o.c[0] = lerp(rgb[0] + k, rgb[0] * 0.62, soil);
-    o.c[1] = lerp(rgb[1] + k, rgb[1] * 0.62, soil);
-    o.c[2] = lerp(rgb[2] + k, rgb[2] * 0.6, soil);
-    o.r = clamp(0.82 + gn * 0.14, 0.5, 1);
-    o.h = 0.4 + gn * 0.5;
-  });
-}
-
-// ── 칼라강판 지붕 ──────────────────────────────────────────────────────────
-export function roofTextures(seed, rgb) {
-  const grain = tiledFbm(seed, 36, 3);
-  const rust = tiledFbm(seed + 1, 6, 4);
-
-  return bake(256, 4, 4, (u, v, o) => {
-    const corr = Math.sin(v * Math.PI * 2 * 16);
-    const shade = 1 + corr * 0.12;
-    const gn = grain(u, v);
-    const rs = smoothstep(0.68, 0.95, rust(u, v));
-
-    let r = rgb[0] * shade + gn * 16 - 8;
-    let g = rgb[1] * shade + gn * 16 - 8;
-    let b = rgb[2] * shade + gn * 16 - 8;
-    r = lerp(r, 122, rs * 0.5);
-    g = lerp(g, 74, rs * 0.5);
-    b = lerp(b, 46, rs * 0.5);
-
-    o.c[0] = r;
-    o.c[1] = g;
-    o.c[2] = b;
-    o.r = clamp(0.52 + rs * 0.4 + gn * 0.1, 0.3, 1);
-    o.h = 0.5 + corr * 0.35;
-  });
-}
-
-// ── 녹슨 철판 (드럼통, 표지판) ─────────────────────────────────────────────
-export function rustTextures() {
-  const grain = tiledFbm(6001, 40, 4);
-  const blot = tiledFbm(6002, 7, 4);
-
-  return bake(256, 2, 2, (u, v, o) => {
-    const gn = grain(u, v);
-    const bl = blot(u, v);
-    const rs = smoothstep(0.35, 0.85, bl);
-    let r = lerp(96, 148, gn);
-    let g = lerp(92, 138, gn);
-    let b = lerp(88, 130, gn);
-    r = lerp(r, 128 + gn * 40, rs);
-    g = lerp(g, 66 + gn * 26, rs);
-    b = lerp(b, 38 + gn * 16, rs);
-
-    o.c[0] = r;
-    o.c[1] = g;
-    o.c[2] = b;
-    o.r = clamp(0.45 + rs * 0.45, 0.3, 1);
-    o.h = 0.4 + gn * 0.3 + rs * 0.25;
-  });
-}
-
-// ── 하늘 그라디언트 (구면 배경용) ──────────────────────────────────────────
-export function skyTexture() {
-  const size = 256;
+// 방사형 감쇠 한 장. 중심이 흰색이고 바깥으로 검게 사라진다.
+//
+// 쓰임: 가로등·간판 아래 "빛 웅덩이". 광원을 못 늘리는 상황에서 표면이 밝아
+// 보이게 만드는 가장 값싼 방법이고, 실제로 동적 조명 이전의 게임들이 쓴 방법이다.
+// 가산합성으로 바닥에 깔면 젖은 노면에 빛이 고인 것처럼 보인다.
+//
+// power 가 클수록 중심에 몰린다. 1.0 은 원뿔처럼 딱딱하고, 2~3 이 빛답다.
+export function radialTexture(size = 256, power = 2.4) {
   const cv = document.createElement('canvas');
-  cv.width = 16;
-  cv.height = size;
+  cv.width = cv.height = size;
   const ctx = cv.getContext('2d');
-  const grad = ctx.createLinearGradient(0, 0, 0, size);
-  grad.addColorStop(0.0, '#3f76b8');
-  grad.addColorStop(0.42, '#84a9d2');
-  grad.addColorStop(0.62, '#c3cfd6');
-  grad.addColorStop(0.78, '#dcd2c0');
-  grad.addColorStop(1.0, '#c9b8a2');
+  const img = ctx.createImageData(size, size);
+  const d = img.data;
+  const c = (size - 1) / 2;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (x - c) / c;
+      const dy = (y - c) / c;
+      const r = Math.min(1, Math.sqrt(dx * dx + dy * dy));
+      const v = Math.pow(1 - r, power) * 255;
+      const i = (y * size + x) * 4;
+      d[i] = d[i + 1] = d[i + 2] = v;
+      d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+
+  const t = new THREE.CanvasTexture(cv);
+  // 타일링하면 안 된다 — 가장자리가 이어지면 웅덩이가 격자로 반복된다
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = ANISO;
+  t.needsUpdate = true;
+  textureStats.count += 1;
+  textureStats.pixels += size * size;
+  return t;
+}
+
+// 수직 그라디언트 한 장. 하늘돔 배경에 쓴다.
+// stops: [[0..1 위치, '#rrggbb'], ...]
+export function gradientTexture(stops, height = 256) {
+  const w = 16;
+  const cv = document.createElement('canvas');
+  cv.width = w;
+  cv.height = height;
+  const ctx = cv.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 0, height);
+  for (const [at, color] of stops) grad.addColorStop(at, color);
   ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 16, size);
+  ctx.fillRect(0, 0, w, height);
 
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = THREE.ClampToEdgeWrapping;
   t.wrapT = THREE.ClampToEdgeWrapping;
   textureStats.count += 1;
-  textureStats.pixels += 16 * size;
+  textureStats.pixels += w * height;
   return t;
 }

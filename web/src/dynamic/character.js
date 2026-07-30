@@ -111,6 +111,14 @@ export function createCharacter() {
     applyPose(rig, { phase: state.phase, speed, grounded });
   }
 
+  // 위상을 절대값으로 못박는다. 스크린샷 하네스 전용 —
+  // 대기 동작(호흡)이 프레임마다 진행돼서 이게 없으면 같은 씬을 두 번 찍어도
+  // 캐릭터 부분만 픽셀이 어긋난다.
+  function setPose({ phase = 0, speed = 0, grounded = true } = {}) {
+    state.phase = phase;
+    applyPose(rig, { phase, speed, grounded });
+  }
+
   return {
     root,
     mesh,
@@ -118,6 +126,7 @@ export function createCharacter() {
     skeleton,
     materials,
     update,
+    setPose,
     eyeHeight: 1.62,
     get phase() {
       return state.phase;

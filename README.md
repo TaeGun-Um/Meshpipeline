@@ -3,6 +3,22 @@
 외부 3D 애셋을 **하나도 쓰지 않고** 코드(수식·셰이더)로만 3D 씬을 만들고,
 그 결과가 게임엔진에서 **브라우저에서 본 것과 같게** 보이는지 자동으로 검증하는 프로젝트다.
 
+저장소에는 이미지나 모델 파일이 하나도 없다. 씬은 지우지 않고 쌓는다.
+
+| # | 씬 | 무엇 | 삼각형 | 텍스처 |
+|---|---|---|---|---|
+| 1 | `vacant-lot` 주택가 공터 | 낮 · 3인칭 · 기준 씬. 좌표계·조명 규약을 여기서 확정했다 | 182,428 | 63MB |
+| 2 | `night-city` 나이트시티 | 사이버펑크 야간 도시 · 프리캠 · 구역·매싱·1층 점포 | 807,714 | 189MB |
+
+삼각형은 씬이 들고 있는 지오메트리 총량이다 (`__audit()`). 한 프레임에 실제로
+그리는 수는 그림자 패스 때문에 이보다 많다.
+
+```bash
+node web/server.mjs
+# http://localhost:5173                    활성 씬 (마지막에 만든 것)
+# http://localhost:5173/?scene=vacant-lot  이전 씬 다시 띄우기
+```
+
 ```
 브라우저 (three.js)          블렌더 (헤드리스)         유니티 (배치모드)
   수식 → 지오메트리    ─GLB─▶  glTF → FBX 변환   ─FBX─▶  임포트 → 씬 조립
@@ -79,6 +95,7 @@ node tools/pipeline.mjs --accept   # 새 스펙을 승인 (아래 참고)
 | [docs/architecture.md](docs/architecture.md) | **아키텍처** — 계층 구조, 의존 방향, 왜 이렇게 나눴는가 |
 | [docs/pipeline.md](docs/pipeline.md) | 파이프라인 6단계, 규약(contract), 검사 항목 |
 | [docs/modules.md](docs/modules.md) | 기능 모듈 — 텍스처·지오메트리·스켈레탈·익스포트·임포트 |
+| [docs/verification.md](docs/verification.md) | **검증** — 무엇이 버그를 잡았고 무엇이 시간만 썼는가 |
 | [docs/toolchain.md](docs/toolchain.md) | 언어·프레임워크·엔진 버전과 설치 상태 |
 | [docs/references.md](docs/references.md) | 학습 자료와 실측 기록 |
 
@@ -87,7 +104,26 @@ node tools/pipeline.mjs --accept   # 새 스펙을 승인 (아래 참고)
 ```
 pipeline/contract.json      규약의 단일 출처 — 모든 단계가 이걸 읽는다
 tools/                      파이프라인 도구 (Node + 블렌더 파이썬)
-web/                        브라우저 — 기준 구현
+web/
+  src/core/                 엔진. 씬을 하나도 모른다
+  src/shared/               둘 이상의 씬이 쓰는 레시피
+  src/scenes/<씬>/          장소별 구성 (지우지 않고 쌓는다)
+  src/dynamic/              리그·포즈·클립·스킨
+  src/export/               GLB 익스포트
+  shots/views.json          회귀 검증용 카메라 설정 — 기준 이미지의 '입력'
+  shots/baseline_*.png      기준 스크린샷 (커밋하지 않는다 — __lock('base') 로 재생성)
 unity/                      유니티 프로젝트 — 검증 대상
 docs/                       문서
 ```
+
+### 씬을 새로 추가하는 방법
+
+1. `web/src/scenes/<id>/index.js` 에서 `core/scene.js` 의 `Scene` 을 상속하고
+   `surfaceHeight()` 와 `createWorld()` 를 구현한다
+2. 그 모듈을 `export default new MyScene()` 으로 내보낸다
+3. `web/src/scenes/index.js` 의 `SAVED` 배열에 추가한다 (기존 항목은 건드리지 않는다)
+4. 재질은 `new THREE.Material` 로 직접 만들지 말고 마스터에서 `instance()` 로 뽑는다
+   (값이 같으면 공유되고, 파라미터 이름 오타가 즉시 잡힌다)
+5. `web/shots/views.json` 에 뷰를 등록하고 브라우저에서 `await __lock('base')` 로
+   기준을 잡는다. 이후 `node tools/verify.mjs <id>` 가 회귀를 잡아준다
+   ([docs/verification.md](docs/verification.md))

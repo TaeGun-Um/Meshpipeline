@@ -1,6 +1,6 @@
 // 산포물 — 잡초. 인스턴싱 + 노이즈 기반 밀도.
 import * as THREE from 'three';
-import { worldFbm, lerp, clamp } from '../core/noise.js';
+import { worldFbm, lerp, clamp } from '../../core/noise.js';
 import { LOT, groundHeight } from './terrain.js';
 
 // ── 잡초 ───────────────────────────────────────────────────────────────────
