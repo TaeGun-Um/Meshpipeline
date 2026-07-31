@@ -10,6 +10,9 @@ import {
   bladeTextures,
   billboardTextures,
   portraitTextures,
+  stripTextures,
+  boxTextures,
+  clothTextures,
 } from '../../shared/glyphs.js';
 import {
   TexturedSurface,
@@ -32,6 +35,10 @@ const SIGN_KINDS = [
   { kind: 'banner', seed: 9100, make: bannerTextures },
   { kind: 'blade', seed: 9300, make: bladeTextures },
   { kind: 'billboard', seed: 9500, make: billboardTextures },
+  // 새 유형 셋 — 비율부터 다르다. 비율이 같으면 결국 같은 판이다
+  { kind: 'strip', seed: 9900, make: stripTextures },
+  { kind: 'box', seed: 9950, make: boxTextures },
+  { kind: 'cloth', seed: 9980, make: clothTextures },
   // 초대형 인물 광고판 — 타워 한 면을 20~60m 덮는다
   { kind: 'mega', seed: 9700, make: portraitTextures },
 ];

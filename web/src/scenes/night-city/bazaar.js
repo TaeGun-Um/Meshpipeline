@@ -479,21 +479,63 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
     // 구역별 생성기가 공통 podium() 을 우회하면서 간판 경로가 통째로
     // 끊긴 것을 못 봤다 (docs/status.md 1.1).
 
-    // 1) 층마다 가로 배너 — 겹쳐 쌓이는 것이 요점
+    // ── 1) 층마다 가로 간판 (사용자 지적으로 다시 씀) ──────────────────────
+    //
+    // 전에는 `w: f.w * 0.55~0.95` 로 요청했다. 55m 짜리 병합 파사드에 높이
+    // 2m 짜리를 걸면 **가로로 여섯 배 늘어난 배너**가 된다.
+    //
+    // 이제 폭은 signage.js 가 비율에서 정한다 (ASPECT). 그러면 배너 하나가
+    // 8m 안팎이 되므로 **긴 면은 여러 장으로 채운다** — 실제 상가도 그렇다.
+    // 간판 한 장이 건물 폭만 한 경우는 없고, 가게마다 하나씩 걸린다.
+    //
+    // 그리고 긴 면에는 **전광판 띠**(16:1)를 섞는다. 늘어난 배너로 때우던
+    // 자리를, 원래 길게 태어난 유형이 맡는다.
     let stack = top - 1.2;
     const rows = Math.max(2, Math.round(4 * detail));
+    // 한 줄에 몇 장 걸리나 — 면이 길수록 많이. 8m 에 한 장꼴
+    const perRow = Math.max(1, Math.min(5, Math.round(f.w / 9)));
     for (let k = 0; k < rows; k++) {
       const bh = rng.range(1.2, 2.2);
       if (stack - bh < SHOP_FLOOR * 0.8) break;
       if (rng.chance(0.22)) { stack -= bh + 0.3; continue; }
+      // 이 줄은 전광판 띠인가. 긴 면에서만, 그리고 한 건물에 한두 줄만
+      const ticker = f.w > 22 && rng.chance(0.3);
+      if (ticker) {
+        signs.push({
+          kind: 'strip', rect: r, side,
+          y: stack - bh / 2, w: 0, h: bh * 0.62,
+          scheme: rng.int(0, 5),
+        });
+      } else {
+        for (let m = 0; m < perRow; m++) {
+          signs.push({
+            kind: 'banner', rect: r, side,
+            y: stack - bh / 2, w: 0, h: bh,
+            scheme: rng.int(0, 5),
+          });
+        }
+      }
+      stack -= bh + rng.range(0.25, 0.7);
+    }
+
+    // 1-b) 천 배너 — 어두운 것 하나. 네온만 있으면 네온이 안 읽힌다
+    if (f.w >= 10 && rng.chance(0.5 * detail)) {
       signs.push({
-        kind: 'banner', rect: r, side,
-        y: stack - bh / 2,
-        w: f.w * rng.range(0.55, 0.95),
-        h: bh,
+        kind: 'cloth', rect: r, side,
+        y: SHOP_FLOOR * rng.range(1.1, 1.5),
+        w: rng.range(0.9, 1.4), h: 0,
         scheme: rng.int(0, 5),
       });
-      stack -= bh + rng.range(0.25, 0.7);
+    }
+
+    // 1-c) 상자간판 — 출입구 높이. 옆에서 걸어와도 읽힌다
+    if (f.w >= 12 && rng.chance(0.55 * detail)) {
+      signs.push({
+        kind: 'box', rect: r, side,
+        y: SHOP_FLOOR * rng.range(0.95, 1.25),
+        w: 0, h: rng.range(1.5, 2.3),
+        scheme: rng.int(0, 5),
+      });
     }
 
     // 2) 돌출 세로 간판 여럿 — 거리를 걸을 때 앞으로 이어지는 리듬
