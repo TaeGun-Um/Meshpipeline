@@ -47,6 +47,8 @@ import { applySkin, facadeRelief } from './facade.js';
 import { districtAt, pickArchetypeIn } from './district.js';
 import { pickMassing, footprint, cylinderMass } from './massing.js';
 import { wharfBlock } from './wharf.js';
+import { pickMarketKind, marketBlock, marketSideOf, resetMarketTally } from './market.js';
+import { hash2 } from '../../core/textures.js';
 import { LANDMARK_BLOCKS } from './landmark.js';
 import { buildBay, ALCOVE, SHOP_H, showcase } from './shopfront.js';
 
@@ -434,6 +436,8 @@ export function createTowers(scene, rng, mats, blocks) {
   let tallest = 0;
   let beaconIdx = 0;
   let lotIdx = 0;
+  // 번화가 유형 집계를 비운다. 씬을 다시 지으면 누적되면 안 된다.
+  resetMarketTally();
   // streetFaces 건강 지표 — 이 함수가 간판 1,602->9 사고를 냈다.
   // 면한 면의 **비율**을 세면 붕괴가 절대 개수보다 먼저 드러난다.
   let faceOpen = 0;
@@ -573,7 +577,26 @@ export function createTowers(scene, rng, mats, blocks) {
       if (D.name === '상업') {
         // 난수 소비를 맞춘다 — 건너뛰면 뒤의 모든 생성이 밀린다
         rng.int(2, 3);
-        const bz = bazaarBlock(b, r, rng, mats, D, faces, detail, signs);
+        // ── 번화가는 한 종류가 아니다 (사용자 지시) ──────────────────────
+        // "번화가는 시장, 명품전시관, 유흥가, 암거리시장, 지하상가 등이
+        //  있어야 할 것"
+        //
+        // 적층 상가(bazaar)가 기준이고, 필지 일부가 특수 유형이 된다.
+        // **좌표 해시로 정한다** — 난수를 쓰면 확률 하나만 바꿔도 도시
+        // 전체가 밀린다 (blockProgram·alleyFor 와 같은 이유).
+        // 필지 **중심 좌표**로 해싱한다. lotIdx 를 쓰면 그건 블록을 가로지르는
+        // 전역 카운터라, 주거나 공업을 건드리는 순간 번화가 유형이 통째로
+        // 밀린다 — "좌표 해시" 가 되려면 좌표를 써야 한다.
+        // 어느 번화가인가가 무엇이 서는지를 정한다 (market.marketSideOf).
+        // 안쪽은 시장·명품관, 북쪽(기업·슬럼에 접한 띠)은 유흥가·지하상가·암거래.
+        const mc = rectCenter(r);
+        const mk = pickMarketKind(
+          hash2(Math.round(mc.x), Math.round(mc.z)),
+          rectSize(r),
+          marketSideOf(blk.ix)
+        );
+        const mb = mk ? marketBlock(b, mk, r, rng, mats, signs, pools) : null;
+        const bz = mb || bazaarBlock(b, r, rng, mats, D, faces, detail, signs);
         if (bz.top > tallest) tallest = bz.top;
         anchors.push({ rect: r, solid: solidOf(r, b.takeMark()), top: bz.top, zone: D.name, faces });
         districts.add(D.name);

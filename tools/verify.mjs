@@ -25,6 +25,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { compare } from './compare-shots.mjs';
+import { luminance } from './lumi.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SHOTS = join(ROOT, 'web', 'shots');
@@ -33,6 +34,20 @@ const SHOTS = join(ROOT, 'web', 'shots');
 // 요구하면 실용성이 없을 것 같지만, 실제로는 같은 기기에서 항상 0 이 나왔다.
 // 0 이 아니면 무언가 진짜로 바뀐 것이다.
 const TOLERANCE = 0;
+
+// ── 뷰가 아무것도 안 보고 있으면 잡는다 ────────────────────────────────────
+//
+// 픽셀 회귀의 맹점: **검은 화면 두 장은 완벽히 일치한다.** 도시 구조를 바꾸면
+// 손으로 찍은 카메라 좌표가 건물 속으로 들어가거나 불 없는 구석을 보게
+// 되는데, 그래도 "전부 일치" 가 나온다.
+//
+// 이 세션에서만 다섯 번 겪었다 — 대지 병합으로 corpo·deck·walk 가, 배치
+// 지도로 bazaar 가, 밝기 수정으로 edge 가 그렇게 됐다. 그동안 회귀 검사는
+// **검은 화면을 성실히 지키고** 있었다.
+//
+// 중앙값을 본다. 평균은 네온 몇 개에 끌려 올라가지만 중앙값은 "화면의 절반이
+// 무엇인가" 를 말한다. 밤 씬이라 기준을 낮게 잡되, 0 에 가까우면 잡는다.
+const MIN_MEDIAN = 1.5;
 
 const views = JSON.parse(readFileSync(join(SHOTS, 'views.json'), 'utf8'));
 const want = process.argv[2];
@@ -59,6 +74,17 @@ for (const scene of scenes) {
     // 비교하고 "같다" 로 읽어 통과시킨 적이 있다.
     if (!existsSync(base)) { console.log(`  ${name.padEnd(8)} 기준 없음 — __lock('base') 필요`); missing++; continue; }
     if (!existsSync(cur))  { console.log(`  ${name.padEnd(8)} 현재 샷 없음 — __lock() 필요`); missing++; continue; }
+
+    // 기준선이 아무것도 안 보고 있으면 비교 자체가 무의미하다
+    const lum = luminance(cur);
+    if (lum.중앙 < MIN_MEDIAN) {
+      console.log(
+        `  ${name.padEnd(8)} **거의 검은 화면** (중앙 ${lum.중앙}, 평균 ${lum.평균}) — ` +
+        `카메라가 건물 속이거나 불 없는 곳을 본다. 재조준 필요`
+      );
+      failed++;
+      continue;
+    }
 
     const r = compare(base, cur);
     if (r.reason) { console.log(`  ${name.padEnd(8)} ${r.reason}`); failed++; continue; }

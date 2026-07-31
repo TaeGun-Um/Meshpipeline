@@ -16,6 +16,8 @@
 // 사용: node tools/lumi.mjs shots/a.png shots/b.png ...
 import { readFileSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 
 function decodePNG(path) {
   const buf = readFileSync(path);
@@ -88,9 +90,14 @@ export function luminance(path) {
   };
 }
 
-const args = process.argv.slice(2);
-if (args.length) {
-  for (const a of args) {
+// ── 직접 실행할 때만 CLI 로 동작한다 ──────────────────────────────────────
+// 이 가드가 없으면 **import 하는 쪽의 인자를 파일 경로로 읽는다.**
+// verify.mjs 가 `node tools/verify.mjs night-city` 로 돌 때 lumi 가
+// 'night-city' 를 PNG 로 열려다 죽었다. 모듈은 import 만으로 아무 일도
+// 하지 않아야 한다.
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+if (isMain) {
+  for (const a of process.argv.slice(2)) {
     console.log(a.padEnd(34), JSON.stringify(luminance(a)));
   }
 }
