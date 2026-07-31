@@ -488,7 +488,7 @@ export function createTowers(scene, rng, mats, blocks) {
     // 잘려야 한다 — 아케이드는 길고 유흥가는 좁다 (market.marketPlan).
     const plan = BD.name === '상업' ? marketPlan(rng, blk, BD) : null;
     const { lots, alleys: blkAlleys } = plan
-      ? { lots: plan.map((q) => q.rect), alleys: [] }
+      ? { lots: plan.lots.map((q) => q.rect), alleys: plan.alleys }
       : blockLots(rng, blk, BD);
     let planIdx = 0;
     // 구역 이름을 붙여 넘긴다. 골목 벽 높이가 구역별 건물 높이를 따라야 하는데
@@ -497,7 +497,7 @@ export function createTowers(scene, rng, mats, blocks) {
     alleys.push(...blkAlleys);
 
     for (const rect of lots) {
-      const planned = plan ? plan[planIdx++] : null;
+      const planned = plan ? plan.lots[planIdx++] : null;
       // 필지 사이 간격. 좁아야 한다 — 레퍼런스의 밀도는 건물이 서로 맞닿아
       // 있는 데서 온다. 2.6m 씩 띄우면 블록마다 골목이 생겨 성글어 보인다.
       const r = shrink(rect, rng.range(0.35, 1.4));

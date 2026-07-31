@@ -670,7 +670,15 @@ function pick(rng, w, room) {
 }
 
 // 조각 하나를 긴 축을 따라 띠로 나눈다. 각 띠가 유형 하나다.
-function planSlab(rng, slab, side, near, out) {
+// 번화가 골목 — 띠 사이를 벌린다.
+//
+// **번화가에 가장 필요하다.** 적층 상가가 붙어 서면 그 사이 틈이 곧 뒷골목이고,
+// 3기의 밀도가 만든 자리라는 것이 city.md 의 설정이기도 하다.
+// 벽은 안 세운다 — 양옆 띠의 건물 옆면이 이미 벽이다 (layout.splitToTarget 머리말).
+const MKT_ALLEY = 0.34;
+const MKT_GAP = [3.2, 4.8];
+
+function planSlab(rng, slab, side, near, out, alleys) {
   const w = slab.x1 - slab.x0;
   const d = slab.z1 - slab.z0;
   const alongX = w >= d;
@@ -683,8 +691,8 @@ function planSlab(rng, slab, side, near, out) {
     const m = alongX ? (slab.z0 + slab.z1) / 2 : (slab.x0 + slab.x1) / 2;
     const a = alongX ? { ...slab, z1: m } : { ...slab, x1: m };
     const b = alongX ? { ...slab, z0: m } : { ...slab, x0: m };
-    planSlab(rng, a, side, near, out);
-    planSlab(rng, b, side, near, out);
+    planSlab(rng, a, side, near, out, alleys);
+    planSlab(rng, b, side, near, out, alleys);
     return;
   }
 
@@ -698,8 +706,22 @@ function planSlab(rng, slab, side, near, out) {
     // 거기 아무것도 못 선다
     const want = rng.range(lo, Math.min(hi, room));
     const take = room - want < lo * 0.8 ? room : want;
-    const a0 = (alongX ? slab.x0 : slab.z0) + t;
-    const a1 = a0 + take;
+    // 앞 띠와 사이를 벌릴까 — 그 틈이 골목이다.
+    // **암거래 옆은 늘 벌린다.** 틈에 낀 것처럼 보여야 암거래다.
+    const gapNow = t > 0 && (kind === 'black' || rng.chance(MKT_ALLEY))
+      ? rng.range(MKT_GAP[0], MKT_GAP[1]) : 0;
+    const a0 = (alongX ? slab.x0 : slab.z0) + t + gapNow;
+    const a1 = a0 + take - gapNow;
+    if (a1 - a0 < 9) { t += take; continue; }
+    if (gapNow) {
+      alleys.push({
+        alongX: !alongX, // 띠를 가르는 틈이라 축이 반대다
+        w: gapNow,
+        rect: alongX
+          ? { x0: a0 - gapNow, x1: a0, z0: slab.z0, z1: slab.z1 }
+          : { x0: slab.x0, x1: slab.x1, z0: a0 - gapNow, z1: a0 },
+      });
+    }
     out.push({
       kind: kind === 'bazaar' ? null : kind,
       rect: alongX
@@ -715,8 +737,9 @@ export function marketPlan(rng, blk, D) {
   const side = marketSideOf(blk.ix);
   const near = corpoDistance(blk.ix, blk.iz);
   const out = [];
-  for (const slab of buildableSlabs(blk, D)) planSlab(rng, slab, side, near, out);
-  return out;
+  const alleys = [];
+  for (const slab of buildableSlabs(blk, D)) planSlab(rng, slab, side, near, out, alleys);
+  return { lots: out, alleys };
 }
 
 export function marketBlock(b, kind, r, rng, mats, signs, pools) {

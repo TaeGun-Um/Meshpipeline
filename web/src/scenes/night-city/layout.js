@@ -534,6 +534,8 @@ export function buildableSlabs(blk, D = null) {
     x0: root.x0 + walk, x1: root.x1 - walk,
     z0: root.z0 + walk, z1: root.z1 - walk,
   };
+  // 보행로는 완충을 두고 파낸다. 차양·돌출 간판은 필지 밖으로 나가므로
+  // 길 폭 그대로 파내면 그것들이 길을 먹는다 (WALK_CLEAR 머리말).
   const walks = (blk.walks || []).map((g) => ({
     x0: g.rect.x0 - WALK_CLEAR, x1: g.rect.x1 + WALK_CLEAR,
     z0: g.rect.z0 - WALK_CLEAR, z1: g.rect.z1 + WALK_CLEAR,
@@ -541,65 +543,26 @@ export function buildableSlabs(blk, D = null) {
   return walks.length ? subtractStrips(buildable, walks) : [buildable];
 }
 
+// 블록 하나를 필지들과 골목으로 나눈다.
+//
+// D 는 구역(district.js). 인도 폭·필지 잘기·골목 밀도를 구역이 정한다.
+// 순환 참조를 피하려고 **인자로 받는다** — district.js 가 layout 의 상수를
+// 쓰므로 layout 이 district 를 import 하면 순환이 된다.
 export function blockLots(rng, blk, D = null) {
-  // 대지 사각형은 **부르는 쪽이 준다.** parcel.js 가 district 를 보고
-  // layout 이 district 를 보면 순환이 되므로, blockList 가 만들어 넘긴다.
-  const root = blk.rect || blockRect(blk.ix, blk.iz);
-  const walk = D?.sidewalk ?? SIDEWALK_W;
-
-  // ── 골목 폐기 (사용자 지시) ─────────────────────────────────────────────
-  //
-  // "곳곳이 도사리고 있는 괴상한 이상한 '골목'을 없에, 너무 조잡하고
-  //  왜있는지 모르겠음 저 상태로는."
-  //
-  // 맞는 지적이다. 실제 골목의 벽은 **양옆 건물의 옆면**인데, 필지 후퇴가
-  // 제각각이라 그 옆면이 들쭉날쭉했다. 그래서 alley.js 는 두께 0.35m 짜리
-  // **독립 벽 박스**를 두 장 세워 통로처럼 보이게 했다. 가까이서 보면
-  // 20m 짜리 골판지가 공터에 서 있는 것이다 — 건물이 아니다.
-  //
-  // 곁가지 피해도 있었다. subtractAlley 가 필지를 잘라 얇은 조각을 만들어,
-  // "건물이 띄엄띄엄 협소하다" 는 인상에 같이 기여했다.
-  //
-  // 코드는 지우지 않는다. 되살리려면 조건이 하나다 —
-  // **골목 벽이 독립 구조물이 아니라 양옆 건물의 옆면이어야 한다.**
-  // 그러려면 두 필지가 골목을 사이에 두고 벽면을 맞춰 서야 하고, 그건
-  // 필지 분할 쪽 일이지 골목 쪽 일이 아니다.
-  const a = ALLEYS_ON ? alleyFor(blk.ix, blk.iz, root, D?.alleyRate) : null;
-
-  // 건물이 설 수 있는 범위 — 인도를 먼저 빼놓는다
-  const buildable = {
-    x0: root.x0 + walk, x1: root.x1 - walk,
-    z0: root.z0 + walk, z1: root.z1 - walk,
-  };
-
   const grain = D?.grain;
 
-  // ── 보행로를 먼저 빼낸다 ────────────────────────────────────────────────
-  //
-  // **순서가 중요하다.** 필지를 나눈 뒤 사이를 벌리면 그건 길이 아니라
-  // 빈틈이다 (골목에서 이미 겪었다). 띠를 먼저 파내고 남은 조각을 각각
-  // 쪼개야 길 양옆에 건물 **정면**이 선다.
-  //
-  // 대지가 준다 — parcel.js 가 병합할 때 어느 띠를 사람에게 남길지 정했다.
-  // 여기서 다시 계산하면 두 곳이 어긋난다.
-  // 완충을 두고 파낸다. 차양·돌출 간판·벽감은 **필지 밖으로 나가는** 것들이라
-  // 길 폭 그대로 파내면 그것들이 길을 먹는다 — 실제로 34채가 최대 2.5m 먹었고
-  // 새로 넣은 배치 검사가 잡았다.
-  //
-  // status.md 규칙 3: "여유는 항상 기준보다 명확히 커야 한다".
-  const walks = (blk.walks || []).map((g) => ({
-    x0: g.rect.x0 - WALK_CLEAR, x1: g.rect.x1 + WALK_CLEAR,
-    z0: g.rect.z0 - WALK_CLEAR, z1: g.rect.z1 + WALK_CLEAR,
-  }));
-  const slabs = walks.length ? subtractStrips(buildable, walks) : [buildable];
-  if (!a) return { lots: slabs.flatMap((q) => subdivideRect(rng, q, grain)), alleys: [] };
+  // 골목 밀도는 구역이 정한다. 옛 alleyRate 를 그대로 쓴다 — 뜻이 같다
+  // ("이 구역에 뒷길이 얼마나 흔한가"). 다만 이제 **벽이 아니라 틈**이다.
+  const ar = (D?.alleyRate ?? 0) * 0.55;
 
-  // 골목이 켜져 있으면 그것도 같이 파낸다 (지금은 꺼져 있다)
-  const parts = slabs.flatMap((q) => subtractAlley(q, a));
-  if (!parts.length) {
-    return { lots: slabs.flatMap((q) => subdivideRect(rng, q, grain)), alleys: [] };
+  const lots = [];
+  const gaps = [];
+  for (const q of buildableSlabs(blk, D)) {
+    const r2 = subdivideRect(rng, q, grain, ar);
+    lots.push(...r2.lots);
+    gaps.push(...r2.gaps);
   }
-  return { lots: parts.flatMap((q) => subdivideRect(rng, q, grain)), alleys: [a] };
+  return { lots, alleys: gaps };
 }
 
 // ── grain 은 깊이가 아니라 목표 크기다 ─────────────────────────────────────
@@ -637,13 +600,13 @@ const LOT_TARGET = [110, 72, 48, 32];
 // 바꾸면서 `LOT_TARGET[Math.min(undefined, 3)]` = undefined 가 되고,
 // splitToTarget 이 NaN 으로 나눈다. **아무도 안 부르는 코드라 안 터졌을 뿐**
 // 이다. 지우고, 대신 grain 이 없으면 명확히 터뜨린다.
-function subdivideRect(rng, root, grain) {
+function subdivideRect(rng, root, grain, alleyRate = 0) {
   // 난수는 그대로 소비한다 — 소비를 건너뛰면 뒤의 모든 생성이 밀린다
   rng.next();
   if (typeof grain !== 'number') {
     throw new Error('subdivideRect: 구역이 grain 을 정해야 한다 (district.js)');
   }
-  return splitToTarget(rng, root, LOT_TARGET[Math.min(grain, LOT_TARGET.length - 1)]);
+  return splitToTarget(rng, root, LOT_TARGET[Math.min(grain, LOT_TARGET.length - 1)], alleyRate);
 }
 
 // 이보다 작으면 더 쪼개지 않는다.
@@ -663,10 +626,30 @@ const MIN_LOT = 24;
 //
 // 축마다 자를 횟수를 **먼저 세고** 한 번에 나눈다. 그러면 결과가 언제나
 // target 언저리에 모인다.
-function splitToTarget(rng, r, target) {
+// ── 골목은 벽이 아니라 틈이다 (사용자 지시로 되살림) ──────────────────────
+//
+// "번화가 보행로 외에도 건물과 건물 사이에 조금씩은 골목이 있으면 좋겠음"
+// "기존의 골목은 이상하게 생겼잖아. 잘 수정해"
+//
+// 옛 골목이 이상했던 이유는 벽이 **독립 구조물**이었기 때문이다. 필지 후퇴가
+// 제각각이라 건물 옆면이 들쭉날쭉했고, 그래서 두께 0.35m 짜리 판을 따로
+// 세웠다 — 공터에 선 골판지가 됐다.
+//
+// 그때 되살릴 조건을 하나 적어 뒀다:
+//   "골목 벽이 독립 구조물이 아니라 **양옆 건물의 옆면**이어야 한다."
+//
+// **그 조건이 지금 충족된다.** splitToTarget 은 잘린 자리를 공유하는 필지를
+// 만들고, marketPlan 은 띠를 나란히 놓는다. 인접 필지의 벽면이 이미 맞춰져
+// 있다 (실측: 간격 중앙값 1.5m).
+//
+// 그러니 벽을 세우지 않는다. **자른 자리를 조금 더 벌리기만 한다.**
+// 벽은 양옆 건물이 이미 갖고 있다.
+const ALLEY_GAP = [3.4, 5.2];
+
+function splitToTarget(rng, r, target, alleyRate = 0) {
   const nx = Math.max(1, Math.round((r.x1 - r.x0) / target));
   const nz = Math.max(1, Math.round((r.z1 - r.z0) / target));
-  if (nx === 1 && nz === 1) return [r];
+  if (nx === 1 && nz === 1) return { lots: [r], gaps: [] };
 
   // 경계선을 흔든다. 균등 격자로 자르면 필지가 전부 같은 크기가 되고,
   // 그러면 밀도의 인상("큰 것 옆에 작은 것")이 안 나온다.
@@ -682,15 +665,38 @@ function splitToTarget(rng, r, target) {
   const xs = cuts(r.x0, r.x1, nx);
   const zs = cuts(r.z0, r.z1, nz);
 
+  // 어느 자른 자리를 골목으로 벌릴까. 안쪽 경계만 후보다 —
+  // 바깥 경계를 벌리면 골목이 아니라 그냥 물러선 건물이다.
+  const gapAt = (n) => {
+    const g = new Array(n + 1).fill(0);
+    for (let i = 1; i < n; i++) if (rng.chance(alleyRate)) g[i] = rng.range(ALLEY_GAP[0], ALLEY_GAP[1]);
+    return g;
+  };
+  const gx = gapAt(nx);
+  const gz = gapAt(nz);
+
+  const gaps = [];
   const out = [];
   for (let i = 0; i < nx; i++) {
     for (let j = 0; j < nz; j++) {
-      const lot = { x0: xs[i], x1: xs[i + 1], z0: zs[j], z1: zs[j + 1] };
+      const lot = {
+        x0: xs[i] + gx[i] / 2, x1: xs[i + 1] - gx[i + 1] / 2,
+        z0: zs[j] + gz[j] / 2, z1: zs[j + 1] - gz[j + 1] / 2,
+      };
       // MIN_LOT 아래는 버리지 않고 옆에 붙인다. 버리면 대지에 구멍이 난다.
       if (lot.x1 - lot.x0 < MIN_LOT * 0.7 || lot.z1 - lot.z0 < MIN_LOT * 0.7) continue;
       out.push(lot);
     }
   }
-  return out.length ? out : [r];
+  // 벌린 자리를 골목으로 신고한다. 벽은 안 세운다 — 양옆 건물이 갖고 있다.
+  for (let i = 1; i < nx; i++) {
+    if (gx[i] < 1) continue;
+    gaps.push({ alongX: false, rect: { x0: xs[i] - gx[i] / 2, x1: xs[i] + gx[i] / 2, z0: r.z0, z1: r.z1 }, w: gx[i] });
+  }
+  for (let j = 1; j < nz; j++) {
+    if (gz[j] < 1) continue;
+    gaps.push({ alongX: true, rect: { x0: r.x0, x1: r.x1, z0: zs[j] - gz[j] / 2, z1: zs[j] + gz[j] / 2 }, w: gz[j] });
+  }
+  return out.length ? { lots: out, gaps } : { lots: [r], gaps: [] };
 }
 

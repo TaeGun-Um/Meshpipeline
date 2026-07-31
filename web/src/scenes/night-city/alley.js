@@ -269,7 +269,7 @@ function serviceDoor(b, x, z, rot, rng, mats, pools) {
 //
 // 골목이 '위가 뚫린 통로' 가 아니라 '덮인 협곡' 으로 읽히게 만드는 요소다.
 // 하늘을 조금 가리기만 해도 공간이 훨씬 좁게 느껴진다.
-function overhead(b, a, rng, mats) {
+function overhead(b, a, rng, mats, halfW = ALLEY_WIDTH / 2) {
   const s = rectSize(a.rect);
   const c = rectCenter(a.rect);
   const long = a.alongX ? s.w : s.d;
@@ -281,8 +281,7 @@ function overhead(b, a, rng, mats) {
     const y = CURB_HEIGHT + rng.range(5.5, 11);
     const px = a.alongX ? c.x + along : c.x;
     const pz = a.alongX ? c.z : c.z + along;
-    const halfW = ALLEY_WIDTH / 2;
-
+  
     // 케이블 — 살짝 처지게 여러 토막으로. 직선으로 이으면 팽팽한 철사로 보인다
     const sag = rng.range(0.25, 0.7);
     const seg = 5;
@@ -389,11 +388,10 @@ function backDoorSign(b, x, z, rot, rng, mats, pools) {
 // 골목 벽은 건물의 뒷면이라 정면 같은 창 격자가 없다. 대신 환기창·비상구
 // 창처럼 **띄엄띄엄한 작은 빛**을 둔다. 이게 있으면 벽이 단순한 판이 아니라
 // 사람이 있는 건물의 뒷면으로 읽히고, 위로 갈수록 성기게 두면 높이도 읽힌다.
-function alleyWindows(b, a, rng, mats, wallH) {
+function alleyWindows(b, a, rng, mats, wallH, halfW) {
   const c = rectCenter(a.rect);
   const sz = rectSize(a.rect);
   const long = a.alongX ? sz.w : sz.d;
-  const halfW = ALLEY_WIDTH / 2;
 
   for (const side of [-1, 1]) {
     const rot = a.alongX
@@ -524,6 +522,9 @@ export function createAlleys(scene, rng, mats, alleys) {
     const c = rectCenter(r);
     const s = rectSize(r);
     const long = a.alongX ? s.w : s.d;
+    // 틈마다 폭이 다르다 (3.4~5.2m). 전역 ALLEY_WIDTH 를 쓰면 소품이
+    // 벽에 파묻히거나 공중에 뜬다 — 벽이 이제 **건물 옆면**이라 정확해야 한다.
+    const halfW = (a.w ?? ALLEY_WIDTH) / 2;
 
     // 바닥 — 인도가 아니라 젖은 아스팔트. 골목은 포장이 다르다.
     // blockPlates 가 깐 보도판 위에 2cm 올려 덮는다 (Z-파이팅 방지).
@@ -541,29 +542,19 @@ export function createAlleys(scene, rng, mats, alleys) {
     //
     // 길이도 양끝을 물려서 대로로 튀어나오지 않게 한다. 튀어나오면 인도
     // 한복판에 벽이 서 있는 꼴이 된다.
-    const WALL_T = 0.35;
-    const INSET = 0.8;
-    const wallLen = (a.alongX ? s.w : s.d) - INSET * 2;
-    for (const side of [-1, 1]) {
-      const u = (ALLEY_WIDTH / 2 + WALL_T / 2) * side;
-      const g = a.alongX
-        ? metricBox(wallLen, wallH, WALL_T, [c.x, CURB_HEIGHT + wallH / 2, c.z + u], 8)
-        : metricBox(WALL_T, wallH, wallLen, [c.x + u, CURB_HEIGHT + wallH / 2, c.z], 8);
-      b.add(g, mats.alleyWallMat);
-    }
-
-    // 막다른 끝의 막음벽. 없으면 골목이 통로가 아니라 뚫린 틈이 된다.
-    // 평면이 아니라 두께 있는 박스로 만든다 — 옆에서 보면 평면은 사라진다.
-    if (a.kind === 'dead') {
-      const H = 16;
-      if (a.alongX) {
-        const ex = a.fromLow ? r.x1 : r.x0;
-        b.box(0.6, H, s.d, [ex, CURB_HEIGHT + H / 2, c.z], mats.panelMat);
-      } else {
-        const ez = a.fromLow ? r.z1 : r.z0;
-        b.box(s.w, H, 0.6, [c.x, CURB_HEIGHT + H / 2, ez], mats.panelMat);
-      }
-    }
+    // ── 벽을 세우지 않는다 (사용자 지시로 다시 만듦) ────────────────────
+    //
+    // 옛 골목은 여기서 두께 0.35m · 높이 최대 26m 짜리 **독립 벽 박스**를
+    // 두 장 세웠다. 필지 후퇴가 제각각이라 건물 옆면이 들쭉날쭉했고, 그걸
+    // 못 쓰니 가짜 벽을 세운 것이다. 가까이서 보면 공터에 선 골판지였고,
+    // 사용자가 "괴상하다" 며 없애라고 했다.
+    //
+    // 이제 골목은 **필지를 자른 자리를 벌린 틈**이다 (layout.splitToTarget).
+    // 양옆 필지가 경계선을 공유하므로 그 건물들의 옆면이 이미 벽이다.
+    // 그래서 여기서는 **아무 벽도 그리지 않는다** — 소품만 붙인다.
+    //
+    // 그게 원래 골목에서 좋았던 부분이기도 하다. 쓰레기통·비상계단·배관·
+    // 실외기·뒷문·빨래는 그대로 살아 있고, 사고였던 것은 벽뿐이었다.
 
     // 양쪽 벽에 붙는 것들. 골목을 따라가며 번갈아 놓는다.
     //
@@ -574,7 +565,7 @@ export function createAlleys(scene, rng, mats, alleys) {
     while (t < long - 2) {
       const along = -long / 2 + t;
       // 벽면 위치와 벽이 바라보는 방향(골목 안쪽)
-      const wallU = (ALLEY_WIDTH / 2) * side;
+      const wallU = (halfW) * side;
       const x = a.alongX ? c.x + along : c.x + wallU;
       const z = a.alongX ? c.z + wallU : c.z + along;
       // 벽에서 골목 안쪽을 보는 각
@@ -659,8 +650,8 @@ export function createAlleys(scene, rng, mats, alleys) {
       alleyMouth(b, mx + dir[0] * 0.9, mz + dir[1] * 0.9, dir, rng, mats, pools);
     }
 
-    alleyWindows(b, a, rng, mats, wallH);
-    overhead(b, a, rng, mats);
+    alleyWindows(b, a, rng, mats, wallH, halfW);
+    overhead(b, a, rng, mats, halfW);
   }
 
   return { group: b.build(scene), pools, count: alleys.length };
