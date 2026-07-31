@@ -43,7 +43,26 @@ const RESERVED = new Set(LANDMARK_BLOCKS.map((l) => `${l.ix},${l.iz}`));
 //   공업   부지째로 쓴다
 //   주거   1기에 빨리 똑같이 지은 곳이라 격자를 지킨다. 드물게만
 //   슬럼   **계획이 없다.** 계획이 없는 곳에 계획적 병합이 있을 수 없다
-const MERGE = { 기업: 0.9, 상업: 0.75, 공업: 0.7, 주거: 0.48, 슬럼: 0 };
+const MERGE = { 기업: 0.98, 상업: 0.94, 공업: 0.94, 주거: 0.86, 슬럼: 0.42 };
+
+// ── 대지 모양 ──────────────────────────────────────────────────────────────
+//
+// 처음에는 2x2 가 최대였다. 실측해 보니 **대지 96개 중 58개가 1칸**이었다 —
+// 60%가 병합이 안 됐다는 뜻이고, 그래서 도로가 여전히 지면의 33.2%를 먹고
+// 건물이 "띄엄띄엄 협소하게" 서 있었다. 사용자 지적 그대로다.
+//
+// 도로 **폭**을 줄이는 방법도 있지만 그건 안 한다. 폭은 SPANS 가 만든 것이고
+// 거기엔 내력이 있다 (1차 74m — 마차 / 3차 104m — 트럭). 폭을 건드리면
+// 도시의 나이테가 지워진다. 대신 **띠를 더 많이 닫는다.**
+//
+// [폭, 깊이, 임계] — 큰 것부터 시도한다. 작은 것을 먼저 잡으면 3x3 이 될
+// 자리가 2x1 로 먼저 잘려 나간다. 임계는 rate 에 곱해지는 누적 분위수라
+// 큰 모양일수록 좁은 구간을 갖는다.
+const SHAPES = [
+  [3, 3, 0.34], [3, 2, 0.50], [2, 3, 0.64],
+  [2, 2, 0.80], [3, 1, 0.86], [1, 3, 0.92],
+  [2, 1, 0.96], [1, 2, 1.00],
+];
 
 let CACHE = null;
 
@@ -85,18 +104,31 @@ function build() {
       const rate = free(ix, iz) ? (MERGE[D.name] ?? 0) : 0;
       const h = hash2(ix * 53 + 11, iz * 97 + 7);
 
-      // 2x2 -> 2x1 -> 1x2 -> 1x1 순으로 시도한다. 큰 것을 먼저 봐야
-      // 2x2 가 될 수 있는 자리가 2x1 로 먼저 잘려나가지 않는다.
-      if (h < rate * 0.45 &&
-          same(ix, iz, ix + 1, iz) && same(ix, iz, ix, iz + 1) && same(ix, iz, ix + 1, iz + 1)) {
-        claim([[ix, iz], [ix + 1, iz], [ix, iz + 1], [ix + 1, iz + 1]], D);
-      } else if (h < rate * 0.75 && same(ix, iz, ix + 1, iz)) {
-        claim([[ix, iz], [ix + 1, iz]], D);
-      } else if (h < rate && same(ix, iz, ix, iz + 1)) {
-        claim([[ix, iz], [ix, iz + 1]], D);
-      } else {
-        claim([[ix, iz]], D);
+      // SHAPES 를 큰 것부터 훑는다. h 는 고정이므로 `h < rate*t` 를 처음
+      // 만족하는 모양이 이 칸에 허락된 최대치이고, 그게 지형상 안 되면
+      // 다음(더 작은) 모양으로 자연히 물러난다.
+      let done = false;
+      for (const [w, d] of SHAPES.filter(([, , t]) => h < rate * t)) {
+        // 고가도로가 타는 띠는 못 지운다. same() 의 acrossHighway 는 **맞닿은
+        // 두 칸**만 보므로 3칸짜리에는 구멍이 있다 — 씨앗이 HIGHWAY_BAND-2 면
+        // 세 번째 칸이 띠를 건너뛰어 넘어가고, 고가도로가 다시 건물 위를
+        // 지난다. 여기서 폭 전체를 본다.
+        if (ix < HIGHWAY_BAND && ix + w - 1 >= HIGHWAY_BAND) continue;
+        const cells = [];
+        let ok = true;
+        for (let dz = 0; dz < d && ok; dz++) {
+          for (let dx = 0; dx < w && ok; dx++) {
+            if (dx === 0 && dz === 0) { cells.push([ix, iz]); continue; }
+            if (!same(ix, iz, ix + dx, iz + dz)) ok = false;
+            else cells.push([ix + dx, iz + dz]);
+          }
+        }
+        if (!ok) continue;
+        claim(cells, D);
+        done = true;
+        break;
       }
+      if (!done) claim([[ix, iz]], D);
     }
   }
   return { owner, list };
@@ -158,9 +190,16 @@ export function roadOpenZ(band, t) {
 
 // 진단용 — 병합이 얼마나 됐나.
 export function parcelTally() {
-  const t = { '1칸': 0, '2칸': 0, '4칸': 0 };
+  const t = {};
   for (const p of parcels()) {
     t[p.cells.length + '칸'] = (t[p.cells.length + '칸'] || 0) + 1;
   }
-  return { 대지수: parcels().length, ...t };
+  const list = parcels();
+  const single = t['1칸'] || 0;
+  return {
+    대지수: list.length,
+    ...t,
+    // 이 비율 하나가 "격자로 보이나 단지로 보이나" 를 가른다
+    '1칸비율': +(single / list.length).toFixed(2),
+  };
 }

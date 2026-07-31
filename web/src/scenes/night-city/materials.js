@@ -228,7 +228,11 @@ export function buildMaterials() {
     craneMat: SolidSurface.instance({ color: 0x8a4a1c, roughness: 0.7, metalness: 0.3 }, 'Crane'),
     // 광장 포장 — 인도와 달라야 광장으로 읽힌다 (밝고 매끈)
     plazaMat: surf(sidewalkSet, 0.5, { roughness: 0.34 }),
-    plazaStepMat: SolidSurface.instance({ color: 0x9a96a2, roughness: 0.6 }, 'PlazaStep'),
+    // 0x9a96a2 는 이 씬에서 가장 밝은 큰 면이었다. 광장 전체가 그 색이라
+    // 눈높이에서 **탁자 상판**으로 읽혔고, 그 위에 선 타워가 "탁자 위 기둥"
+    // 이라는 인상을 만들었다 (사용자 지적). 화강암 정도로 낮춘다 —
+    // 광장이 인도와 다르다는 신호는 색이 아니라 **한 단 높다는 것**이 준다.
+    plazaStepMat: SolidSurface.instance({ color: 0x5e5b66, roughness: 0.62 }, 'PlazaStep'),
     // 빈 대지 — 갈라진 아스팔트
     lotMat: surf(asphaltSet, 0.7, { roughness: 0.86 }),
     // 수목. 잎을 하나하나 만들 거리가 아니라 덩어리로 처리한다.

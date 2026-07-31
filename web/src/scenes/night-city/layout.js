@@ -460,9 +460,25 @@ export function blockLots(rng, blk, D = null) {
   const root = blk.rect || blockRect(blk.ix, blk.iz);
   const walk = D?.sidewalk ?? SIDEWALK_W;
 
-  // 골목은 **블록 전체**를 기준으로 정한다. 인도를 뺀 안쪽만 보면 골목이
-  // 도로까지 닿지 않아 입구가 없는 골목이 된다.
-  const a = alleyFor(blk.ix, blk.iz, root, D?.alleyRate);
+  // ── 골목 폐기 (사용자 지시) ─────────────────────────────────────────────
+  //
+  // "곳곳이 도사리고 있는 괴상한 이상한 '골목'을 없에, 너무 조잡하고
+  //  왜있는지 모르겠음 저 상태로는."
+  //
+  // 맞는 지적이다. 실제 골목의 벽은 **양옆 건물의 옆면**인데, 필지 후퇴가
+  // 제각각이라 그 옆면이 들쭉날쭉했다. 그래서 alley.js 는 두께 0.35m 짜리
+  // **독립 벽 박스**를 두 장 세워 통로처럼 보이게 했다. 가까이서 보면
+  // 20m 짜리 골판지가 공터에 서 있는 것이다 — 건물이 아니다.
+  //
+  // 곁가지 피해도 있었다. subtractAlley 가 필지를 잘라 얇은 조각을 만들어,
+  // "건물이 띄엄띄엄 협소하다" 는 인상에 같이 기여했다.
+  //
+  // 코드는 지우지 않는다. 되살리려면 조건이 하나다 —
+  // **골목 벽이 독립 구조물이 아니라 양옆 건물의 옆면이어야 한다.**
+  // 그러려면 두 필지가 골목을 사이에 두고 벽면을 맞춰 서야 하고, 그건
+  // 필지 분할 쪽 일이지 골목 쪽 일이 아니다.
+  const ALLEYS = false;
+  const a = ALLEYS ? alleyFor(blk.ix, blk.iz, root, D?.alleyRate) : null;
 
   // 건물이 설 수 있는 범위 — 인도를 먼저 빼놓는다
   const buildable = {
@@ -480,15 +496,37 @@ export function blockLots(rng, blk, D = null) {
   return { lots: parts.flatMap((p) => subdivideRect(rng, p, grain)), alleys: [a] };
 }
 
-// grain: 분할 깊이를 구역이 강제한다 (null 이면 예전처럼 난수로 정한다).
-//   0 통짜 한 동 (기업)   1 큰 덩어리 (공업)
-//   2 보통 (주거)         3 잘게 (번화가)
+// ── grain 은 깊이가 아니라 목표 크기다 ─────────────────────────────────────
+//
+// 원래 grain 은 **분할 횟수**였다. 블록이 언제나 66m 이던 시절에는 그래도
+// 됐다 — 깊이 2 면 필지가 대략 33m 라고 셈이 섰다.
+//
+// 대지 병합이 들어오면서 그 가정이 깨졌다. 3x3 대지는 한 변이 266m 다.
+// 거기에 깊이 0(기업)을 적용하면 **266m 짜리 필지 하나**가 나온다. 실제로
+// 병합을 3x3 까지 늘린 직후 건물이 316 -> 168 채로 반토막 났고, 감사의
+// 비율 지표가 그걸 잡았다 (건물당 사람 24.5 > 22).
+//
+// 이 프로젝트 단골 결함의 또 다른 얼굴이다: **한 값이 다른 값에서 파생되는데
+// 그 관계가 코드에 안 적혀 있다.** 이제 구역은 "몇 번 자를까" 가 아니라
+// "필지가 몇 미터였으면 좋겠나" 를 말한다. 대지가 커지면 자동으로 더 잘린다.
+//
+//   0 기업 110m — corpoCluster 가 이 안에서 다시 타워를 나눈다
+//   1 공업  72m — 창고·공장동은 원래 크다
+//   2 주거  48m — 슬래브 한 동
+//   3 상업  32m — 적층 상가. 잘아야 골목 같은 밀도가 난다
+//
+// 처음에 130/90/62/40 으로 잡았다가 건물이 316 -> 137 채로 무너졌다.
+// 원인은 **1칸 대지**다. 1칸의 건축 가능 폭은 66 - 인도 4.6x2 = 57m 인데
+// 주거 목표가 62 면 round(57/62)=1, 즉 **한 번도 안 잘린다.** 전에는 같은
+// 자리에서 4 필지가 나왔다. 목표를 필지 하나 크기로만 보고 **가장 작은
+// 대지에서 몇 개가 나오는지**를 안 봤다.
+const LOT_TARGET = [110, 72, 48, 32];
+
 function subdivideRect(rng, root, grain = null) {
   const mode = rng.next();
   if (grain !== null) {
     // 난수는 그대로 소비한다 — 소비를 건너뛰면 뒤의 모든 생성이 밀린다
-    if (grain <= 0) return [root];
-    return split(rng, root, grain);
+    return splitToTarget(rng, root, LOT_TARGET[Math.min(grain, LOT_TARGET.length - 1)]);
   }
   // 통짜 한 동 (메가빌딩). 레퍼런스의 주인공은 폭 60~100m 짜리 거대 덩어리다.
   // 이 확률을 0.1 까지 낮췄더니 도시가 잘게 쪼개져 "빌딩 숲" 이 아니라
@@ -513,6 +551,46 @@ function subdivideRect(rng, root, grain = null) {
 // 24m 는 사무소 한 채의 최소 정면에 가깝고, 66m 블록이 최대 두 필지로만
 // 갈린다는 뜻이기도 하다.
 const MIN_LOT = 24;
+
+// 목표 크기에 맞춰 자른다.
+//
+// **이분할로 하면 안 된다.** 재귀로 반씩 자르면 결과가 target 과 target/2
+// 사이를 널뛴다 — 148m 를 목표 62 로 자르면 74 에서 멈추거나 한 번 더
+// 잘려 37 이 된다. 둘 다 62 가 아니다. 처음에 그렇게 짰다가 필지 수가
+// 오히려 줄어드는 걸 보고 알았다.
+//
+// 축마다 자를 횟수를 **먼저 세고** 한 번에 나눈다. 그러면 결과가 언제나
+// target 언저리에 모인다.
+function splitToTarget(rng, r, target) {
+  const nx = Math.max(1, Math.round((r.x1 - r.x0) / target));
+  const nz = Math.max(1, Math.round((r.z1 - r.z0) / target));
+  if (nx === 1 && nz === 1) return [r];
+
+  // 경계선을 흔든다. 균등 격자로 자르면 필지가 전부 같은 크기가 되고,
+  // 그러면 밀도의 인상("큰 것 옆에 작은 것")이 안 나온다.
+  const cuts = (lo, hi, n) => {
+    const out = [lo];
+    for (let i = 1; i < n; i++) {
+      const even = lo + ((hi - lo) * i) / n;
+      out.push(even + ((hi - lo) / n) * rng.range(-0.18, 0.18));
+    }
+    out.push(hi);
+    return out;
+  };
+  const xs = cuts(r.x0, r.x1, nx);
+  const zs = cuts(r.z0, r.z1, nz);
+
+  const out = [];
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < nz; j++) {
+      const lot = { x0: xs[i], x1: xs[i + 1], z0: zs[j], z1: zs[j + 1] };
+      // MIN_LOT 아래는 버리지 않고 옆에 붙인다. 버리면 대지에 구멍이 난다.
+      if (lot.x1 - lot.x0 < MIN_LOT * 0.7 || lot.z1 - lot.z0 < MIN_LOT * 0.7) continue;
+      out.push(lot);
+    }
+  }
+  return out.length ? out : [r];
+}
 
 function split(rng, r, depth) {
   const w = r.x1 - r.x0;

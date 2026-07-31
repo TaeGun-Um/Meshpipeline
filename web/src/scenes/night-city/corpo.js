@@ -510,6 +510,110 @@ function crownOf(b, r, top, rng, mats, st) {
   return deck + H;
 }
 
+// ── 기단 저층부 ────────────────────────────────────────────────────────────
+//
+// ── 사용자 지적 ───────────────────────────────────────────────────────────
+// "어느 세계의 어느 나라가 1층 로비를 이렇게 해서 위에 건물들을 기둥마냥
+//  세우냐고.. 무슨양식인데.."
+//
+// 맞는 말이었다. 그때 기단은 이랬다.
+//   · 민짜 상자 하나 (창이 없다)
+//   · 얇은 띠 하나
+//   · 네 면에 깊이 0.3m 짜리 발광 띠 넷 — 로비가 아니라 **줄무늬**다
+//
+// 즉 사람 눈높이에 문도, 기둥도, 처마도, 창도 없었다. 밑은 새하얀 광장 단이라
+// 탁자 상판으로 읽히고, 그 위에 타워가 얹혀 있으니 정확히 "탁자 위의 기둥" 이다.
+//
+// 저층부가 저층부이려면 **그 자체가 건물**이어야 한다. 다섯을 넣는다.
+//
+//   1) 필로티 열주   1층을 안으로 물리고 기둥열이 위를 받는다. 기둥이 실제로
+//                    무언가를 떠받치면 "기둥마냥" 이 뒤집힌다 — 위가 얹힌 게
+//                    아니라 아래가 받치는 것이 된다
+//   2) 물린 유리면   기둥 뒤로 로비 유리. 깊이가 있어야 실내로 읽힌다
+//   3) 기단 본체     2층 위로는 **창이 있는** 벽. clad 를 그대로 쓴다
+//   4) 주 출입구     한 면에 캐노피와 넓은 문. 어디로 들어가는지 보여야 한다
+//   5) 옥상 파라펫   기단 지붕이 난간을 갖는다. 그래야 '지붕' 이지 '뚜껑' 이 아니다
+function podiumBuilding(b, r, podH, rng, mats, st, pools, entrySide) {
+  const Y = CURB_HEIGHT;
+  const GROUND = FLOOR_HEIGHT * 2.2; // 로비 층고. 높아야 과시가 된다
+  const RECESS = 2.2;                // 유리면이 기둥 뒤로 물러난 깊이
+
+  // 1) 물린 1층 — 유리 상자. 기둥은 이 바깥에 선다
+  const core = shrink(r, RECESS);
+  b.add(rectBox(core, 0, Y + GROUND, PANEL_TILE), mats[st.skin]);
+  for (const side of SIDES) {
+    const f = frameOf(core, side);
+    if (f.w < 6) continue;
+    // 2) 로비 유리 — 면 전체. 전에는 폭의 80%짜리 띠 하나였다.
+    //
+    // **밝은 로비는 출입구 쪽 한 면뿐이다.** 처음에 네 면을 다 밝히니
+    // 250m 짜리 새하얀 벽이 됐다 — 로비가 아니라 조명 상자다. 나머지 면은
+    // 어두운 유리로 둔다. 실제로도 밤에 불이 켜진 곳은 로비 한 곳이고,
+    // 그 대비가 "여기가 입구" 를 말해 준다.
+    const lit = side === entrySide;
+    const [gx, gz] = f.at(0, 0.1);
+    const [gw, gd] = f.size(f.w * 0.98, 0.16);
+    b.add(
+      autoBox(gw, GROUND * 0.82, gd, [gx, Y + GROUND * 0.47, gz], 0.02),
+      lit ? mats.lobbyLitMat : mats.vitrineGlassMat
+    );
+    // 멀리온 — 없으면 통짜 발광판이다
+    const n = Math.max(4, Math.round(f.w / 3.4));
+    for (let i = 0; i <= n; i++) {
+      const u = -f.w * 0.49 + f.w * 0.98 * (i / n);
+      const [mx, mz] = f.at(u, 0.2);
+      const [mw, md] = f.size(0.16, 0.26);
+      b.box(mw, GROUND * 0.82, md, [mx, Y + GROUND * 0.47, mz], mats.frameMat);
+    }
+  }
+
+  // 1) 필로티 열주 — 기단 모서리 선 위. 위를 실제로 받는다
+  const cs = rectSize(r);
+  const cc = rectCenter(r);
+  const COL = 1.0;
+  for (const side of SIDES) {
+    const f = frameOf(r, side);
+    if (f.w < 6) continue;
+    const n = Math.max(2, Math.round(f.w / 8.5));
+    for (let i = 0; i <= n; i++) {
+      const u = -f.w / 2 + f.w * (i / n);
+      const [px, pz] = f.at(u, -COL / 2);
+      b.box(COL, Y + GROUND, COL, [px, (Y + GROUND) / 2, pz], mats[st.band]);
+    }
+  }
+
+  // 3) 기단 본체 — 1층 위로. **창이 있다.** clad 가 설비층까지 넣어 준다
+  const bodyTop = Y + podH;
+  if (bodyTop > Y + GROUND + FLOOR_HEIGHT) {
+    clad(b, r, Y + GROUND, bodyTop, mats, st, rng);
+  }
+
+  // 5) 옥상 파라펫 + 처마. 기단 지붕이 난간을 가져야 '지붕' 이다
+  b.add(rectBox(shrink(r, -0.8), bodyTop - 0.9, 0.9, PANEL_TILE), mats[st.band]);
+  b.add(rectBox(shrink(r, 0.6), bodyTop, 1.3, PANEL_TILE), mats[st.band]);
+
+  // 4) 주 출입구 — 한 면에만. 캐노피가 있어야 "여기가 입구" 가 읽힌다
+  const f = frameOf(r, entrySide);
+  if (f.w >= 10) {
+    const [cx, cz] = f.at(0, 3.4);
+    const [cw, cd] = f.size(Math.min(f.w * 0.42, 22), 7.0);
+    b.box(cw, 0.7, cd, [cx, Y + GROUND * 0.72, cz], mats[st.band]);
+    b.add(upPlane(cw * 0.94, cd * 0.94, [cx, Y + GROUND * 0.72 - 0.38, cz]), mats.deckUnderMat);
+    // 캐노피를 매다는 인장재
+    for (const su of [-0.3, 0.3]) {
+      const [ax, az] = f.at(f.w * su, 0.2);
+      const [bx2, bz2] = f.at(f.w * su, 6.4);
+      b.add(tubeBetween([ax, Y + GROUND * 0.98, az], [bx2, Y + GROUND * 0.72 + 0.35, bz2], 0.06, 4), mats.metalMat);
+    }
+    pools.push({ kind: 'floor', x: cx, y: Y + 0.06, z: cz, rx: 9, rz: 9, tint: rgb01(0xd8e8ff, 0.5) });
+  }
+  // 열주 밑 그림자를 밝힌다. 안 그러면 1층이 검은 띠가 된다
+  pools.push({
+    kind: 'floor', x: cc.x, y: Y + 0.04, z: cc.z,
+    rx: cs.w * 0.52, rz: cs.d * 0.52, tint: rgb01(st.tint, 0.22),
+  });
+}
+
 // ── 세로 대형 광고판 ───────────────────────────────────────────────────────
 //
 // 레퍼런스의 얼굴이다. DATA INC, KIROSHI — 20~30층을 세로로 흐른다.
@@ -572,22 +676,7 @@ export function corpoCluster(b, lot, rng, mats, height, pools, signs, label) {
   // ── 1) 공유 기단 ────────────────────────────────────────────────────────
   // 타워들이 여기서 솟는다. 이것 하나로 "따로 선 건물들" 이 "한 단지" 가 된다.
   const podH = FLOOR_HEIGHT * rng.int(3, 5);
-  b.add(rectBox(yard, 0, podH, PANEL_TILE), mats[st.skin]);
-  b.add(rectBox(shrink(yard, -0.7), Y + podH - 1.0, 1.0, PANEL_TILE), mats[st.band]);
-  // 기단 로비 — 네 면에 밝은 띠.
-  //
-  // frameOf 는 {w, at, size} 를 돌려준다. 처음에 f.x / f.ox 를 썼다가
-  // undefined * 0.2 = **NaN** 이 좌표에 들어갔다. 화면에는 아무 표시도
-  // 안 나고 감사의 NaN 검사만 잡아냈다 — 익스포터가 죽는 종류다.
-  for (const side of SIDES) {
-    const f = frameOf(yard, side);
-    const [lw, ld] = f.size(f.w * 0.8, 0.3);
-    const [lx, lz] = f.at(0, 0.2);
-    b.add(
-      autoBox(lw, FLOOR_HEIGHT * 1.6, ld, [lx, Y + FLOOR_HEIGHT * 0.9, lz], 0.02),
-      mats.lobbyLitMat
-    );
-  }
+  podiumBuilding(b, yard, podH, rng, mats, st, pools, front);
   pools.push({
     kind: 'floor', x: (yard.x0 + yard.x1) / 2, y: Y + 0.05, z: (yard.z0 + yard.z1) / 2,
     rx: ys.w * 0.6, rz: ys.d * 0.6, tint: rgb01(st.tint, 0.3),
