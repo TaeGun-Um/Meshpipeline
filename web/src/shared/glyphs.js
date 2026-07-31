@@ -194,6 +194,25 @@ const PICTS = [
 // (tube*1.5/박스폭) 박스가 작을수록 선이 굵어져 그림이 덩어리로 뭉갰다.
 // 선화는 박스 크기와 무관하게 같은 비율의 선이어야 한다.
 const PICT_W = 0.042;
+
+// 밖으로 내보낸다 — **점포 정면도 같은 어휘를 써야 한다.**
+// 간판만 픽토그램을 갖고 점포 정면은 단색 띠면, 화면 면적의 대부분은
+// 여전히 아무 말도 하지 않는다 (실제로 그랬다: 사용자가 "간판 바꿨다며?
+// 바뀐게 없는데" 라고 했고, 화면을 덮은 것은 점포 정면이었다).
+export const PICT_COUNT = 10;
+export function pictAt(id, u, v, w = PICT_W) {
+  if (u < 0 || u > 1 || v < 0 || v > 1) return 0;
+  const d = PICTS[id % PICTS.length](u, v);
+  if (d > w) return 0;
+  return d < w * 0.40 ? 2 : 1;
+}
+export function glyphAt(id, fx, fy) {
+  return glyphInk(id, fx, fy);
+}
+export function latinAt(seed, u, v, cols) {
+  return latinInk(seed, u, v, cols);
+}
+
 function pictInk(id, u, v) {
   if (u < 0 || u > 1 || v < 0 || v > 1) return 0;
   const d = PICTS[id % PICTS.length](u, v);

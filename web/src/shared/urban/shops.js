@@ -9,7 +9,8 @@
 // 팔레트(S)는 씬이 주입한다 — urban/index.js 의 주석 참고.
 import { bake, hash2 } from '../../core/textures.js';
 import { tiledFbm, clamp } from '../../core/noise.js';
-import { rgb255 } from '../neon.js';
+import { NEON, rgb255 } from '../neon.js';
+import { pictAt, glyphAt, latinAt, PICT_COUNT } from '../glyphs.js';
 
 export function shopTextures(S) {
   return {
@@ -97,12 +98,36 @@ export function shopTextures(S) {
     // 1층 점포를 단색 발광 평면 하나로 처리하면 "형광 페인트 칠한 판자" 가 된다.
     // 두 씬에서 두 번 그렇게 나왔다. 통짜 색면이 문제이므로 구조를 텍스처에 넣는다:
     //   아래쪽 기단(어두움) · 세로 창틀 · 유리 안쪽 진열대 실루엣 · 위쪽 간판 띠
+    // ── 점포 정면 ─────────────────────────────────────────────────────────
+    //
+    // ── 왜 다시 만들었나 (사용자 지적) ──────────────────────────────────
+    // "간판 바꿨다며? 바뀐게 없는데"
+    //
+    // 맞는 관찰이었다. 간판(shared/glyphs.js)은 고쳤지만 **화면을 덮은 것은
+    // 이것**이다. 적층 상가 파사드를 층마다 뒤덮은 알록달록한 가로 띠가
+    // 여기서 나온다.
+    //
+    // 그리고 그 띠에는 **내용이 하나도 없었다.** 위 18%가 단색 발광 스트립
+    // 하나였고, 그게 층마다 칸마다 반복됐다. 그것이 "색깔놀이" 의 정체다.
+    //
+    // 이제 간판과 **같은 어휘**를 쓴다 — 네온 튜브 테두리, 픽토그램,
+    // 표의문자, 라틴 줄. 그리고 칸마다 색이 다르다. 전에는 텍스처 하나에
+    // 색 하나여서 네 칸이 전부 같은 색이었다.
     shopfront(seed, tintHex) {
-      const tint = rgb255(tintHex);
+      const base = rgb255(tintHex);
       const noise = tiledFbm(seed + 5, 22, 3);
       const BAYS = 4;
-      const PLINTH = 0.14;
-      const HEADER = 0.82;
+      const PLINTH = 0.12;
+      const HEADER = 0.70;   // 간판 띠를 키웠다. 0.82 로는 그림이 안 들어간다
+      const AWNING = 0.66;   // 간판 아래 차양선
+
+      // 칸마다 다른 색. 기본 색조를 중심으로 이웃 네온으로 흔든다 —
+      // 실제 상가는 가게마다 간판 색이 다르고, 그 불규칙이 번화가의 인상이다.
+      const HUES = [NEON.warm, NEON.cool, NEON.magenta, NEON.cyan, NEON.amber, NEON.green, NEON.pink];
+      const bayHue = (i) => {
+        const h = hash2(seed * 13 + i * 71, 401);
+        return h < 0.34 ? base : rgb255(HUES[(h * HUES.length) | 0]);
+      };
 
       return bake(
         [512, 256],
@@ -110,70 +135,111 @@ export function shopTextures(S) {
         1,
         (u, v, o) => {
           const gn = noise(u, v);
-          // v=0 이 위다 (core/textures.js 의 bake 주석 참고). 아래에서부터 쌓는
-          // 레이아웃이라 뒤집어 쓴다.
+          // v=0 이 위다 (core/textures.js 의 bake 주석). 아래에서 쌓는 레이아웃이다
           const up = 1 - v;
+          const bi = Math.min(BAYS - 1, Math.floor(u * BAYS));
+          const bu = u * BAYS - bi;          // 칸 안 가로 0..1
+          const tint = bayHue(bi);
+          const sid = seed + bi * 977;
+
+          const ink = (col, lvl) => {
+            const k = lvl === 2 ? 1.0 : 0.68;
+            const wash = lvl === 2 ? 0.40 : 0;
+            o.c[0] = col[0] * 0.14; o.c[1] = col[1] * 0.14; o.c[2] = col[2] * 0.14;
+            o.r = 0.32; o.h = 0.86;
+            o.e[0] = clamp(col[0] * k + 255 * wash, 0, 255);
+            o.e[1] = clamp(col[1] * k + 255 * wash, 0, 255);
+            o.e[2] = clamp(col[2] * k + 255 * wash, 0, 255);
+          };
 
           if (up < PLINTH) {
             const k = S.frame[0] * 1.3 + gn * 10;
-            o.c[0] = k;
-            o.c[1] = k;
-            o.c[2] = k + 4;
-            o.r = 0.8;
-            o.h = 0.5;
+            o.c[0] = k; o.c[1] = k; o.c[2] = k + 4;
+            o.r = 0.8; o.h = 0.5;
             return;
           }
 
+          // ── 간판 띠 ─────────────────────────────────────────────────
           if (up > HEADER) {
-            // 간판 띠
-            o.c[0] = tint[0] * 0.14;
-            o.c[1] = tint[1] * 0.14;
-            o.c[2] = tint[2] * 0.14;
-            o.r = 0.5;
-            o.h = 0.75;
-            const k = 0.5 + gn * 0.2;
-            o.e[0] = tint[0] * k;
-            o.e[1] = tint[1] * k;
-            o.e[2] = tint[2] * k;
+            const hv = (up - HEADER) / (1 - HEADER); // 띠 안 세로 0..1
+            // 바탕 — 어둡다. 네온은 어두운 판 위에 있어야 네온이다
+            o.c[0] = tint[0] * 0.10; o.c[1] = tint[1] * 0.10; o.c[2] = tint[2] * 0.10;
+            o.r = 0.45; o.h = 0.72;
+            o.e[0] = tint[0] * 0.16; o.e[1] = tint[1] * 0.16; o.e[2] = tint[2] * 0.16;
+
+            // 칸을 가르는 세로 관 — 가게 경계
+            if (bu < 0.035 || bu > 0.965) { ink(tint, 1); return; }
+
+            // 테두리 관 (칸 안쪽)
+            const edge = Math.min(bu - 0.035, 0.965 - bu, hv * 0.42, (1 - hv) * 0.42);
+            if (edge < 0.030) { ink(tint, 2); return; }
+            if (Math.abs(edge - 0.062) < 0.013) { ink(tint, 1); return; }
+
+            // 픽토그램 — 무엇을 파는가. 왼쪽 3할
+            const pid = (hash2(sid, 77) * PICT_COUNT) | 0;
+            const pu = (bu - 0.10) / 0.24;
+            const pv = (hv - 0.12) / 0.76;
+            const pk = pictAt(pid, pu, pv, 0.075);
+            if (pk) { ink(tint, pk); return; }
+            if (pu >= 0 && pu <= 1 && pv >= 0 && pv <= 1) return;
+
+            // 라틴 줄 — 아래쪽
+            if (hv < 0.32) {
+              const lu = (bu - 0.38) / 0.54;
+              if (lu >= 0 && lu <= 1) {
+                if (latinAt(sid + 5, lu, (hv - 0.06) / 0.24, 7)) ink(tint, 1);
+              }
+              return;
+            }
+
+            // 표의문자 — 위쪽
+            const gu = (bu - 0.38) / 0.54;
+            const gv = (hv - 0.38) / 0.50;
+            if (gu < 0 || gu > 1 || gv < 0 || gv > 1) return;
+            const GC = 3;
+            const cx = Math.min(GC - 1, Math.floor(gu * GC));
+            const fx = (gu * GC - cx - 0.10) / 0.80;
+            const fy = (gv - 0.06) / 0.88;
+            if (fx < 0 || fx > 1 || fy < 0 || fy > 1) return;
+            const gid = (hash2(cx * 7 + sid, 913) * 4096) | 0;
+            if (glyphAt(gid, fx, fy)) ink(tint, 2);
+            return;
+          }
+
+          // ── 차양선 ──────────────────────────────────────────────────
+          // 간판과 유리 사이. 이 한 줄이 있으면 둘이 다른 물건으로 읽힌다
+          if (up > AWNING) {
+            const k = S.frame[0] * 0.9;
+            o.c[0] = k; o.c[1] = k; o.c[2] = k + 3;
+            o.r = 0.7; o.h = 0.95;
             return;
           }
 
           // 세로 창틀
-          const fb = u * BAYS - Math.floor(u * BAYS);
-          if (fb < 0.045 || fb > 0.955) {
-            o.c[0] = S.frame[0];
-            o.c[1] = S.frame[1];
-            o.c[2] = S.frame[2];
-            o.r = 0.62;
-            o.h = 0.92;
+          if (bu < 0.045 || bu > 0.955) {
+            o.c[0] = S.frame[0]; o.c[1] = S.frame[1]; o.c[2] = S.frame[2];
+            o.r = 0.62; o.h = 0.92;
             return;
           }
 
           // 유리 — 실내 발광. 위가 밝고 아래로 어둡다 (천장 조명).
           // 0.42~0.92 로 잡았다가 되돌렸다. 점포 정면은 면적이 커서 그 밝기면
           // 블룸 임계값을 통째로 넘어 흰 상자가 된다.
-          const t = (up - PLINTH) / (HEADER - PLINTH);
+          const t = (up - PLINTH) / (AWNING - PLINTH);
           let level = 0.26 + t * 0.3;
 
-          // 실내 물체 실루엣.
-          // fbm 을 그대로 쓰면 유기적 얼룩이 되어 "유리에 낀 무언가" 로 보인다.
+          // 실내 물체 실루엣. fbm 을 그대로 쓰면 "유리에 낀 무언가" 가 된다.
           // 상점 안에 있는 것은 선반·상자라 실루엣이 직각이어야 한다.
           const SX = 14;
           const SY = 5;
           const sx = Math.floor(u * SX);
           const sy = Math.floor(t * SY);
-          // 아래 칸일수록 물건이 많다 (선반은 바닥부터 찬다)
           if (hash2(sx * 19 + seed, sy * 31 + seed) < 0.5 - sy * 0.09) level *= 0.16;
-          // 선반 자체 (가로 띠)
           if (t * SY - sy < 0.09) level *= 0.3;
-
           level *= 0.84 + gn * 0.32;
 
-          o.c[0] = tint[0] * 0.12;
-          o.c[1] = tint[1] * 0.12;
-          o.c[2] = tint[2] * 0.12;
-          o.r = 0.2;
-          o.h = 0.2;
+          o.c[0] = tint[0] * 0.12; o.c[1] = tint[1] * 0.12; o.c[2] = tint[2] * 0.12;
+          o.r = 0.2; o.h = 0.2;
           o.e[0] = clamp(tint[0] * level, 0, 255);
           o.e[1] = clamp(tint[1] * level, 0, 255);
           o.e[2] = clamp(tint[2] * level, 0, 255);
