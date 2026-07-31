@@ -234,6 +234,7 @@ class NightCity extends Scene {
         ...alleys.pools,
         ...holoG.pools,
         ...vert.pools,
+        ...landmarks.pools,
       ])
     );
     built.lightPools = pools.group;

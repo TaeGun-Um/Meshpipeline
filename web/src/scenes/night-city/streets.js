@@ -23,6 +23,7 @@ import {
   onIntersection,
   blockIndexAt,
 } from './layout.js';
+import { OPEN_GROUND } from './landmark.js';
 
 const ASPHALT_TILE = 9.0;
 const SIDEWALK_TILE = 2.6;
@@ -95,7 +96,10 @@ function blockPlates(b, mats, programs) {
     const cz = (R.z0 + R.z1) / 2;
     const bw = R.x1 - R.x0;
     const bd = R.z1 - R.z0;
-    const construction = programs.get(`${p.ix},${p.iz}`) === 'construction';
+    // 가운데를 비워야 하는 블록. 공사장 구덩이와 **지하상가 중앙홀**이다.
+    // 둘 다 지면 아래가 본체라, 그 위에 불투명한 판을 덮으면 통째로 안 보인다.
+    const key = `${p.ix},${p.iz}`;
+    const construction = programs.get(key) === 'construction' || OPEN_GROUND.has(key);
 
     // ── 공사장도 연석은 있다 (실측으로 고침) ─────────────────────────────
     // 원래는 공사장 블록의 판을 통째로 건너뛰었다. 구덩이 위에 보도블록이
