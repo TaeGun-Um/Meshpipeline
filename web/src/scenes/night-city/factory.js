@@ -23,11 +23,8 @@
 import * as THREE from 'three';
 import { autoBox, tubeBetween, lathe } from '../../core/profile.js';
 import {
+  faceFrame,
   SIDES,
-  outward,
-  faceWidth,
-  faceAnchor,
-  alongZ,
   shrink,
   rectBox,
   rectCenter,
@@ -183,16 +180,6 @@ function loadingDock(b, f, u, rng, mats, pools) {
 }
 
 // 면 위의 국소 좌표계
-function frameOf(r, side) {
-  const o = outward(side);
-  const a = faceAnchor(r, side);
-  const az = alongZ(side);
-  return {
-    w: faceWidth(r, side),
-    at: (u, d) => (az ? [a.x + o.ox * d, a.z + u] : [a.x + u, a.z + o.oz * d]),
-    size: (wu, wd) => (az ? [wd, wu] : [wu, wd]),
-  };
-}
 
 // ── 파이프 랙 ──────────────────────────────────────────────────────────────
 //
@@ -239,7 +226,7 @@ export function factoryBlock(b, r, rng, mats, faces, detail, pools) {
   // 높은 채광창 띠 — 공장의 유일한 창. 눈높이가 아니라 지붕 밑이다.
   for (const side of SIDES) {
     if (!faces[side]) continue;
-    const f = frameOf(r, side);
+    const f = faceFrame(r, side);
     if (f.w < 5) continue;
     const [gw, gd] = f.size(f.w * 0.9, 0.14);
     const [gx, gz] = f.at(0, 0.08);

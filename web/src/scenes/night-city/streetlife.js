@@ -20,14 +20,13 @@ import {
   roads,
   CITY_HALF,
   CURB_HEIGHT,
-
   onIntersection,
   blockIndexAt,
 } from './layout.js';
 import { claim, TIER } from './siteplan.js';
 import { roadOpen, roadOpenZ } from './parcel.js';
 import { districtAt } from './district.js';
-import { blockCenter, coreDistance, detailAt } from './layout.js';
+import { detailAt } from './layout.js';
 
 const SPACING = 13; // 시설물 간격 (m)
 // 연석에서 인도 안쪽으로 1.6m.

@@ -32,13 +32,11 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import {
   CITY_HALF,
-  blockCenter,
-  coreDistance,
   roads,
   onIntersection,
   blockIndexAt,
 } from './layout.js';
-import { districtAt } from './district.js';
+import { districtAt, byZone } from './district.js';
 import { claim, TIER } from './siteplan.js';
 import { roadOpen, roadOpenZ } from './parcel.js';
 
@@ -69,7 +67,13 @@ const CLEAR_INTERSECTION = 16;
 //   기업   지하·전용 주차장으로 들어간다. 갓길이 비어 있다.
 //   상업   가장 빽빽하다. 배달·손님 차가 늘 붙어 있다.
 //   공업   대형 차량이 드문드문.
-const DENSITY = { 상업: 0.82, 기업: 0.22, 주거: 0.66, 공업: 0.44 };
+// byZone 이 강제한다 (district.byZone 머리말). 전에는 슬럼·부둣가가 빠진 채
+// `?? 0.5` 라 부둣가가 주거 다음으로 빽빽했다.
+const DENSITY = byZone('갓길 주차', {
+  상업: 0.82, 기업: 0.22, 주거: 0.66, 공업: 0.44,
+  슬럼: 0.12,   // 차를 살 형편이 아니다. 있는 것도 굴러가는지 모른다
+  부둣가: 0.06, // 여기 서는 것은 승용차가 아니라 트레일러다 (야드 안에 있다)
+});
 
 // 차 크기. 세단 · 밴 · 소형. 주행 차량보다 종류를 늘린다 —
 // 세워둔 차는 오래 보게 되므로 전부 같은 실루엣이면 바로 티가 난다.

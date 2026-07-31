@@ -23,14 +23,13 @@
 import { upPlane } from '../../core/boxfaces.js';
 import { claim, TIER } from './siteplan.js';
 import { districtAt } from './district.js';
-import { parcels, blockRect, roadOpen, roadOpenZ } from './parcel.js';
-import { coreDistance } from './layout.js';
+import { parcels, roadOpen, roadOpenZ } from './parcel.js';
+
 import {
   GRID,
   CITY_HALF,
   CURB_HEIGHT,
   SIDEWALK_W,
-  blockCenter,
   roads,
   onIntersection,
 } from './layout.js';

@@ -25,7 +25,7 @@
 import * as THREE from 'three';
 import { autoBox, tubeBetween } from '../../core/profile.js';
 import { SIDES, shrink, rectBox, upPlane, rectCenter, rectSize } from '../../core/boxfaces.js';
-import { NEON, rgb01 } from '../../shared/neon.js';
+import { rgb01 } from '../../shared/neon.js';
 import { neon, neonSoft } from '../../shared/masters.js';
 import { PANEL_TILE, CURB_HEIGHT } from './layout.js';
 

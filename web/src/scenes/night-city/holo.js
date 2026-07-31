@@ -37,16 +37,20 @@ import {
   GRID,
   blockRect,
   CURB_HEIGHT,
-  blockCenter,
-  coreDistance,
   detailAt,
   blockIndexAt,
 } from './layout.js';
-import { districtAt } from './district.js';
+import { districtAt, byZone } from './district.js';
 import { roadAt } from './layout.js';
 
 // 구역별 홀로그램 밀도. 0 이면 그 구역엔 하나도 없다.
-const RATE = { 상업: 1.0, 기업: 0.85, 주거: 0.12, 공업: 0 };
+// byZone 이 강제한다 (district.byZone 머리말). 0 이 **의도한 0** 인지
+// 표에서 빠져 `?? 0` 이 된 것인지 코드만 보고는 구별할 수 없었다.
+const RATE = byZone('홀로 광고', {
+  상업: 1.0, 기업: 0.85, 주거: 0.12, 공업: 0,
+  슬럼: 0,   // 광고주가 없다. 여기 사는 사람에게 팔 것이 없다
+  부둣가: 0, // 광고할 상대가 없다. 사람이 안 지나간다
+});
 
 // ── 부유 광고판 ────────────────────────────────────────────────────────────
 //

@@ -26,6 +26,13 @@ export const BLOCK_SIZE = 66;
 // 그래서 이제 도로는 상수가 아니라 **블록 판 사이에 남은 공간**이다.
 // 아래 roads() 하나가 유일한 출처이고, 이 숫자는 바깥 경계 도로에만 쓴다
 // (그쪽은 마주 볼 블록이 없어 다른 근거가 없다).
+// ── 골목 스위치 (사용자 지시로 폐기) ──────────────────────────────────────
+//
+// **골목이 있나 없나를 판단하는 곳은 여기 하나뿐이다.** 소비자가 둘이므로
+// (blockLots 가 필지를 자르고, allAlleyRects 가 입구를 비운다) 각자 판단하게
+// 두면 한쪽만 꺼지는 사고가 난다 — 실제로 그렇게 됐다.
+export const ALLEYS_ON = false;
+
 const NOMINAL_STREET = 22;
 export const PITCH = BLOCK_SIZE + NOMINAL_STREET; // 88 — 기본 피치
 
@@ -36,7 +43,6 @@ export const PITCH = BLOCK_SIZE + NOMINAL_STREET; // 88 — 기본 피치
 //
 // 그래서 detailAt() 으로 중심에서 멀수록 디테일을 줄인다 — 아래 참고.
 export const GRID = 12;
-export const CITY_HALF = (GRID * PITCH) / 2; // 528
 
 export const CURB_HEIGHT = 0.16;
 
@@ -128,6 +134,20 @@ const CENTERS = (() => {
 
 // 도시 반폭 — 구간 합에서 나온다. GRID*PITCH/2 가 아니다.
 export const CITY_SPAN = CENTERS.total / 2;
+
+// ── CITY_HALF 는 CITY_SPAN 과 같은 값이다 (결합 오류 하나 더) ──────────────
+//
+// 전에는 `CITY_HALF = GRID * PITCH / 2 = 528` 이었다. 구간별 격자(SPANS)가
+// 들어오면서 실제 반폭은 CENTERS.total/2 = **511** 이 됐는데 이 상수만
+// 안 따라갔다. 17m 차이를 열두 모듈이 "도시 끝" 으로 믿고 있었다.
+//
+//   crowd    -CITY_HALF+6 부터 걷게 하므로 **사람이 도시 밖 11m 를 걸었다**
+//   port     매립 비탈이 CITY_HALF+2 에서 시작해 도시 끝과 17m 벌어졌다
+//   streets  차선 점선을 +-528 까지 그렸다 (도로가 없는 곳까지)
+//
+// 이름은 열두 모듈이 쓰므로 그대로 두고 **값만 진실에 맞춘다.**
+// 9·11·12·13번과 정확히 같은 뿌리다 — 파생 상수가 원본을 안 따라갔다.
+export const CITY_HALF = CITY_SPAN;
 
 export function blockCenter(i) {
   return CENTERS.centers[Math.max(0, Math.min(GRID - 1, i))];
@@ -395,7 +415,16 @@ function alleyRateAt(ix, iz) {
 let ALLEY_CACHE = null;
 export function allAlleyRects() {
   if (ALLEY_CACHE) return ALLEY_CACHE;
+  // 스위치를 **여기서도** 봐야 한다.
+  //
+  // 골목을 끌 때 blockLots 만 껐더니, 이 함수는 계속 67개 골목 사각형을
+  // 돌려주고 있었다. index.js 가 그걸 받아 골목 입구마다 땅을 비워 뒀으므로
+  // **있지도 않은 골목 67곳 앞에서 가로등·시설물이 비켜서 있었다.**
+  // 화면에는 "왠지 여기만 허전한 자리" 로만 나타나서 알아채기 어렵다.
+  //
+  // 같은 사실(골목이 있나)을 두 곳에서 따로 판단하면 반드시 이렇게 된다.
   ALLEY_CACHE = [];
+  if (!ALLEYS_ON) return ALLEY_CACHE;
   for (let ix = 0; ix < GRID; ix++) {
     for (let iz = 0; iz < GRID; iz++) {
       const a = alleyFor(ix, iz, blockRect(ix, iz), alleyRateAt(ix, iz));
@@ -477,8 +506,7 @@ export function blockLots(rng, blk, D = null) {
   // **골목 벽이 독립 구조물이 아니라 양옆 건물의 옆면이어야 한다.**
   // 그러려면 두 필지가 골목을 사이에 두고 벽면을 맞춰 서야 하고, 그건
   // 필지 분할 쪽 일이지 골목 쪽 일이 아니다.
-  const ALLEYS = false;
-  const a = ALLEYS ? alleyFor(blk.ix, blk.iz, root, D?.alleyRate) : null;
+  const a = ALLEYS_ON ? alleyFor(blk.ix, blk.iz, root, D?.alleyRate) : null;
 
   // 건물이 설 수 있는 범위 — 인도를 먼저 빼놓는다
   const buildable = {
@@ -522,26 +550,22 @@ export function blockLots(rng, blk, D = null) {
 // 대지에서 몇 개가 나오는지**를 안 봤다.
 const LOT_TARGET = [110, 72, 48, 32];
 
-function subdivideRect(rng, root, grain = null) {
-  const mode = rng.next();
-  if (grain !== null) {
-    // 난수는 그대로 소비한다 — 소비를 건너뛰면 뒤의 모든 생성이 밀린다
-    return splitToTarget(rng, root, LOT_TARGET[Math.min(grain, LOT_TARGET.length - 1)]);
+// ── 죽은 분기를 지웠다 (코드리뷰) ─────────────────────────────────────────
+// 전에는 `grain === null` 이면 난수로 분할 깊이를 정하는 길이 따로 있었다.
+// 그런데 구역 여섯이 전부 grain 을 정의하고 blockLots 의 호출자는 towers.js
+// 하나뿐이라 **그 길은 한 번도 지나가지 않았다.**
+//
+// 더 나쁜 것은 그 길이 이제 고장나 있었다는 점이다. grain 을 목표 크기로
+// 바꾸면서 `LOT_TARGET[Math.min(undefined, 3)]` = undefined 가 되고,
+// splitToTarget 이 NaN 으로 나눈다. **아무도 안 부르는 코드라 안 터졌을 뿐**
+// 이다. 지우고, 대신 grain 이 없으면 명확히 터뜨린다.
+function subdivideRect(rng, root, grain) {
+  // 난수는 그대로 소비한다 — 소비를 건너뛰면 뒤의 모든 생성이 밀린다
+  rng.next();
+  if (typeof grain !== 'number') {
+    throw new Error('subdivideRect: 구역이 grain 을 정해야 한다 (district.js)');
   }
-  // 통짜 한 동 (메가빌딩). 레퍼런스의 주인공은 폭 60~100m 짜리 거대 덩어리다.
-  // 이 확률을 0.1 까지 낮췄더니 도시가 잘게 쪼개져 "빌딩 숲" 이 아니라
-  // "기둥 밭" 처럼 보였다. 사용자가 다시 "원래 건물들도 좀 크기 키우던지"
-  // 라고 해서 0.26 -> 0.42 로 올린다.
-  if (mode < 0.42) return [root];
-
-  // 재귀 이분할(BSP). 한 번에 4등분하는 것보다 필지 크기가 다양해진다.
-  //
-  // 밀도는 "작은 건물이 많다" 가 아니라 **큰 것 옆에 작은 것이 붙어 있다** 는
-  // 데서 온다. 균등 분할은 다 비슷한 크기를 만들어 그 인상이 안 나온다.
-  // 3단 분할(= 최대 8필지)은 뺐다. 66m 블록을 여덟으로 쪼개면 한 필지가
-  // 20m 도 안 되고, 그 크기의 건물은 레퍼런스에 하나도 없다.
-  const depth = mode < 0.8 ? 1 : 2;
-  return split(rng, root, depth);
+  return splitToTarget(rng, root, LOT_TARGET[Math.min(grain, LOT_TARGET.length - 1)]);
 }
 
 // 이보다 작으면 더 쪼개지 않는다.
@@ -592,24 +616,3 @@ function splitToTarget(rng, r, target) {
   return out.length ? out : [r];
 }
 
-function split(rng, r, depth) {
-  const w = r.x1 - r.x0;
-  const d = r.z1 - r.z0;
-  if (depth <= 0 || (w < MIN_LOT * 2 && d < MIN_LOT * 2)) return [r];
-
-  // 긴 쪽을 자른다. 그래야 가늘고 긴 필지가 안 생긴다.
-  const cutX = w >= d;
-  const span = cutX ? w : d;
-  if (span < MIN_LOT * 2) return [r];
-
-  // 정확히 반이 아니라 치우쳐 자른다 — 크기 차이가 밀도의 인상을 만든다
-  const t = rng.range(0.32, 0.68);
-  const m = (cutX ? r.x0 : r.z0) + span * t;
-  const a = cutX ? { ...r, x1: m } : { ...r, z1: m };
-  const b = cutX ? { ...r, x0: m } : { ...r, z0: m };
-
-  // 한쪽만 더 쪼개는 경우를 섞으면 큰 덩어리와 잔 필지가 이웃한다
-  const da = rng.chance(0.78) ? depth - 1 : 0;
-  const db = rng.chance(0.78) ? depth - 1 : 0;
-  return [...split(rng, a, da), ...split(rng, b, db)];
-}

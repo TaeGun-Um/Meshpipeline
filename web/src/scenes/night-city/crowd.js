@@ -34,13 +34,11 @@ import {
   BLOCK_SIZE,
   CITY_HALF,
   CURB_HEIGHT,
-  blockCenter,
-  coreDistance,
   onIntersection,
   detailAt,
   blockIndexAt,
 } from './layout.js';
-import { districtAt } from './district.js';
+import { districtAt, byZone } from './district.js';
 import { roadOpen, roadOpenZ } from './parcel.js';
 
 // 인도 위 어디까지 사람이 서는가. 연석에서 0.6m, 건물에서 0.5m 는 비운다.
@@ -50,12 +48,17 @@ const WALK_IN = 0.6;
 //
 // 이 숫자가 구역 성격의 절반이다. 번화가에 사람이 없으면 번화가가 아니고,
 // 공업지구에 사람이 많으면 공장이 아니다.
-const DENSITY = {
+// byZone 이 구역을 하나라도 빠뜨리면 터진다 (district.byZone 머리말).
+// 전에는 슬럼과 부둣가가 빠진 채 `?? 0.2` 로 넘어갔고, 그래서 컨테이너
+// 야드가 밤에 기업 사옥 앞(0.14)보다 붐볐다.
+const DENSITY = byZone('사람 밀도', {
   상업: 0.62,  // 어깨가 부딪히는 밀도
   기업: 0.14,  // 퇴근 시간이 지났다. 경비와 늦게 나온 직원뿐
   주거: 0.26,  // 집에 가는 사람들
   공업: 0.05,  // 교대 시간이 아니면 거의 없다
-};
+  슬럼: 0.18,  // 사람이 산다. 다만 길이 아니라 골조 안이라 밖은 성기다
+  부둣가: 0.02, // 도시에서 가장 비어 있다. 야간 경비와 기사 몇뿐
+});
 
 // ── 사람 하나 ──────────────────────────────────────────────────────────────
 //

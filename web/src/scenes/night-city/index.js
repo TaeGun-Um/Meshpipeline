@@ -53,7 +53,7 @@ import { createHighway } from './highway.js';
 import { createSkyline } from './skyline.js';
 import { createTraffic } from './traffic.js';
 import { createAirTraffic } from './air.js';
-import { GRID, blockCenter, CURB_HEIGHT, blockProgram } from './layout.js';
+import { CURB_HEIGHT, blockProgram } from './layout.js';
 import { createLandmarks, LANDMARK_BLOCKS } from './landmark.js';
 import { createPrograms } from './program.js';
 import { createStreetLife } from './streetlife.js';

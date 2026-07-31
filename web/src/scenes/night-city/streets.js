@@ -15,7 +15,6 @@ import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 import {
   GRID,
-  coreDistance,
   PIT_INSET,
   CITY_HALF,
   CURB_HEIGHT,

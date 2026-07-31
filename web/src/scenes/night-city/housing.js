@@ -21,11 +21,8 @@
 // 무너진 건물로는 안 읽힌다.
 import { autoBox, tubeBetween } from '../../core/profile.js';
 import {
+  faceFrame,
   SIDES,
-  outward,
-  faceWidth,
-  faceAnchor,
-  alongZ,
   shrink,
   rectBox,
   rectCenter,
@@ -41,16 +38,6 @@ const HOME_FLOOR = 2.9;
 // 한 세대 폭. 이 값이 파사드의 리듬 전체를 정한다.
 const UNIT_W = 4.4;
 
-function frameOf(r, side) {
-  const o = outward(side);
-  const a = faceAnchor(r, side);
-  const az = alongZ(side);
-  return {
-    w: faceWidth(r, side),
-    at: (u, d) => (az ? [a.x + o.ox * d, a.z + u] : [a.x + u, a.z + o.oz * d]),
-    size: (wu, wd) => (az ? [wd, wu] : [wu, wd]),
-  };
-}
 
 // ── 발코니 한 칸 ───────────────────────────────────────────────────────────
 //
@@ -200,7 +187,7 @@ export function housingSlab(b, r, rng, mats, faces, detail, pools) {
 
   for (const side of SIDES) {
     if (!faces[side]) continue;
-    const f = frameOf(r, side);
+    const f = faceFrame(r, side);
     if (f.w < 6) continue;
 
     const isFront = frontSides.includes(side);
@@ -226,7 +213,7 @@ export function housingSlab(b, r, rng, mats, faces, detail, pools) {
   // 1층 출입구 — 상가가 아니라 **현관**이다. 이 구역과 상업 구역의 결정적 차이.
   for (const side of SIDES) {
     if (!faces[side]) continue;
-    const f = frameOf(r, side);
+    const f = faceFrame(r, side);
     if (f.w < 6) continue;
     const [dx, dz] = f.at(rng.range(-f.w * 0.3, f.w * 0.3), 0.1);
     const [dw, dd] = f.size(2.6, 0.2);

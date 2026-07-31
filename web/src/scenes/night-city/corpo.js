@@ -21,11 +21,8 @@
 import * as THREE from 'three';
 import { autoBox, lathe, tubeBetween } from '../../core/profile.js';
 import {
+  faceFrame,
   SIDES,
-  outward,
-  faceWidth,
-  faceAnchor,
-  alongZ,
   shrink,
   rectBox,
   upPlane,
@@ -38,16 +35,6 @@ import { PANEL_TILE, FLOOR_HEIGHT, CURB_HEIGHT } from './layout.js';
 import { applySkin, facadeRelief } from './facade.js';
 import { cylinderMass } from './massing.js';
 
-function frameOf(r, side) {
-  const o = outward(side);
-  const a = faceAnchor(r, side);
-  const az = alongZ(side);
-  return {
-    w: faceWidth(r, side),
-    at: (u, d) => (az ? [a.x + o.ox * d, a.z + u] : [a.x + u, a.z + o.oz * d]),
-    size: (wu, wd) => (az ? [wd, wu] : [wu, wd]),
-  };
-}
 
 // ── 광장 ───────────────────────────────────────────────────────────────────
 //
@@ -129,7 +116,7 @@ function lobby(b, r, rng, mats, pools) {
   const Y = CURB_HEIGHT;
 
   for (const side of SIDES) {
-    const f = frameOf(r, side);
+    const f = faceFrame(r, side);
     if (f.w < 6) continue;
 
     // 유리면 — 안이 밝다. 밤에도 로비만 켜져 있는 것이 기업 건물의 인상이다.
@@ -542,7 +529,7 @@ function podiumBuilding(b, r, podH, rng, mats, st, pools, entrySide) {
   const core = shrink(r, RECESS);
   b.add(rectBox(core, 0, Y + GROUND, PANEL_TILE), mats[st.skin]);
   for (const side of SIDES) {
-    const f = frameOf(core, side);
+    const f = faceFrame(core, side);
     if (f.w < 6) continue;
     // 2) 로비 유리 — 면 전체. 전에는 폭의 80%짜리 띠 하나였다.
     //
@@ -572,7 +559,7 @@ function podiumBuilding(b, r, podH, rng, mats, st, pools, entrySide) {
   const cc = rectCenter(r);
   const COL = 1.0;
   for (const side of SIDES) {
-    const f = frameOf(r, side);
+    const f = faceFrame(r, side);
     if (f.w < 6) continue;
     const n = Math.max(2, Math.round(f.w / 8.5));
     for (let i = 0; i <= n; i++) {
@@ -593,7 +580,7 @@ function podiumBuilding(b, r, podH, rng, mats, st, pools, entrySide) {
   b.add(rectBox(shrink(r, 0.6), bodyTop, 1.3, PANEL_TILE), mats[st.band]);
 
   // 4) 주 출입구 — 한 면에만. 캐노피가 있어야 "여기가 입구" 가 읽힌다
-  const f = frameOf(r, entrySide);
+  const f = faceFrame(r, entrySide);
   if (f.w >= 10) {
     const [cx, cz] = f.at(0, 3.4);
     const [cw, cd] = f.size(Math.min(f.w * 0.42, 22), 7.0);

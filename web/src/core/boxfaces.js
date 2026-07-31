@@ -124,3 +124,24 @@ export function rectBox(r, y0, h, tile = 0) {
   const s = rectSize(r);
   return metricBox(s.w, h, s.d, [c.x, y0 + h / 2, c.z], tile);
 }
+
+// ── 면 위에 물건을 놓는 좌표계 ─────────────────────────────────────────────
+//
+// 면 하나를 잡고 "가로로 u, 바깥으로 d 만큼" 을 세계 좌표로 바꿔 준다.
+// 축이 X 냐 Z 냐에 따라 부호와 순서가 달라지는데, 그걸 손으로 쓰면 반드시
+// 어딘가 틀린다 — 이 프로젝트에서 이미 여러 번 틀렸다.
+//
+// corpo·factory·housing 이 **글자 하나 안 틀리고 같은 함수**를 각자 갖고
+// 있었다 (코드리뷰에서 해시로 확인). 하나로 모은다.
+// bazaar·retrofit·shopfront·signage 에도 같은 이름의 함수가 있지만 그쪽은
+// 내용이 달라 남겨 둔다 — 이름이 같다고 같은 것이 아니다.
+export function faceFrame(r, side) {
+  const o = outward(side);
+  const a = faceAnchor(r, side);
+  const az = alongZ(side);
+  return {
+    w: faceWidth(r, side),
+    at: (u, d) => (az ? [a.x + o.ox * d, a.z + u] : [a.x + u, a.z + o.oz * d]),
+    size: (wu, wd) => (az ? [wd, wu] : [wu, wd]),
+  };
+}

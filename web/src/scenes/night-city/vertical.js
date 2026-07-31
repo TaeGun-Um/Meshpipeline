@@ -34,9 +34,7 @@ import { SIDES } from '../../core/boxfaces.js';
 import {
   CURB_HEIGHT,
   SIDEWALK_W,
-  blockCenter,
   blockIndexAt,
-  coreDistance,
 } from './layout.js';
 
 // 2층 데크 높이. 1층 점포(SHOP_H=3.4)와 그 위 간판대를 지나야 하므로
