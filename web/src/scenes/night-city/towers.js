@@ -46,6 +46,7 @@ import { slumBlock } from './slum.js';
 import { applySkin, facadeRelief } from './facade.js';
 import { districtAt, pickArchetypeIn } from './district.js';
 import { pickMassing, footprint, cylinderMass } from './massing.js';
+import { wharfBlock } from './wharf.js';
 import { LANDMARK_BLOCKS } from './landmark.js';
 import { buildBay, ALCOVE, SHOP_H, showcase } from './shopfront.js';
 
@@ -554,6 +555,17 @@ export function createTowers(scene, rng, mats, blocks) {
         const fb = factoryBlock(b, r, rng, mats, faces, detail, pools);
         if (fb.top > tallest) tallest = fb.top;
         anchors.push({ rect: r, solid: solidOf(r, b.takeMark()), top: fb.top, zone: D.name, faces });
+        districts.add(D.name);
+        continue;
+      }
+
+      // 부둣가 — 1기. **건물이 아니라 부지가 주인공**이다 (wharf.js 머리말).
+      // 공업이 만드는 곳이라면 여기는 옮기는 곳이라, 형태 원리가 정반대다.
+      if (D.name === '부둣가') {
+        rng.int(2, 3); // 난수 소비를 맞춘다
+        const wf = wharfBlock(b, r, rng, mats, pools);
+        if (wf.top > tallest) tallest = wf.top;
+        anchors.push({ rect: r, solid: solidOf(r, b.takeMark()), top: wf.top, zone: D.name, faces });
         districts.add(D.name);
         continue;
       }
