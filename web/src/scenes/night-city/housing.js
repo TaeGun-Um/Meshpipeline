@@ -31,6 +31,8 @@ import {
 import { NEON } from '../../shared/neon.js';
 import { neonSoft } from '../../shared/masters.js';
 import { PANEL_TILE } from './layout.js';
+import { entranceBay } from './shopfront.js';
+import { claim, TIER } from './siteplan.js';
 
 // 주거 층고. 사무실(3.6m)보다 낮다 — 천장고를 아끼는 것이 가장 쉬운 절감이다.
 const HOME_FLOOR = 2.9;
@@ -210,19 +212,36 @@ export function housingSlab(b, r, rng, mats, faces, detail, pools) {
     if (!isFront) backUsed = true;
   }
 
-  // 1층 출입구 — 상가가 아니라 **현관**이다. 이 구역과 상업 구역의 결정적 차이.
+  // ── 1층 출입구 — 상가가 아니라 **현관**이다 ──────────────────────────────
+  // 이 구역과 상업 구역의 결정적 차이. 다만 예전에는 두께 0.2m 짜리 판 하나에
+  // 발광 띠를 얹은 것이라, 밤에 보면 문이 아니라 **벽에 붙은 명패**였다.
+  // 도시 전체가 쓰는 entranceBay 로 통일한다 — 문틀·인방·명판·차양이 붙는다.
+  //
+  // recess=false 인 이유: 주거 슬래브는 1층 벽감이 없다. 벽 안쪽으로 파면
+  // 발광면이 벽에 가려 안 보인다 (shopfront.entranceBay 머리말).
   for (const side of SIDES) {
     if (!faces[side]) continue;
     const f = faceFrame(r, side);
     if (f.w < 6) continue;
-    const [dx, dz] = f.at(rng.range(-f.w * 0.3, f.w * 0.3), 0.1);
-    const [dw, dd] = f.size(2.6, 0.2);
-    b.box(dw, 2.6, dd, [dx, 1.3, dz], mats.frameMat);
-    const [lw, ld] = f.size(2.2, 0.1);
-    b.box(lw, 0.4, ld, [dx, 2.75, dz], neonSoft(0xc8d4e0));
+    // 면 위 위치를 먼저 정하고, **그 자리를 감싸는 사각형**을 넘긴다.
+    // 예전에는 문은 여기서 정하고 바닥 빛은 f.at(0,·) 로 면 중앙에 뒀다 —
+    // 같은 값을 두 곳에서 따로 구한 것이라 문과 빛이 늘 어긋나 있었다.
+    const u = rng.range(-f.w * 0.3, f.w * 0.3);
+    const c = rectCenter(r);
+    // 폭 1.9*2 -> 문 폭 2.7m. 원래 현관 판(2.6m)과 같은 크기다.
+    // 처음엔 3.0 을 줬더니 문 폭이 4.3m 가 돼서, 주거 현관이 아니라
+    // 백화점 정문만 해졌다 — 밤에는 그냥 커다란 발광판으로 보였다.
+    const HALF = 1.9;
+    const az = side === 'px' || side === 'nx'; // 면이 Z 축을 따라 눕는다
+    const sub = az
+      ? { ...r, z0: c.z + u - HALF, z1: c.z + u + HALF }
+      : { ...r, x0: c.x + u - HALF, x1: c.x + u + HALF };
+    const e = entranceBay(b, sub, side, 0, rng, mats, false, false);
+    // 진입 동선 — 가로등·자판기가 현관 앞을 막으면 안 된다
+    claim(e.x, e.z, e.w * 0.7 + 1.2, TIER.ACCESS, 'homeEntrance');
     pools.push({
-      kind: 'floor', x: f.at(0, 1.6)[0], y: 0.21, z: f.at(0, 1.6)[1],
-      rx: 3.0, rz: 3.0, tint: [0.32, 0.36, 0.42],
+      kind: 'floor', x: e.x, y: 0.21, z: e.z,
+      rx: 3.4, rz: 3.4, tint: [0.32, 0.36, 0.42],
     });
     break; // 현관은 한 면에 하나
   }

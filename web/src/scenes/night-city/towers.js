@@ -35,7 +35,7 @@ import {
   WALK_CLEAR,
 } from './layout.js';
 import { SHOP_TINTS } from './materials.js';
-import { rgb01 } from '../../shared/neon.js';
+import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 import { createCrown } from './rooftop.js';
 import { retrofit } from './retrofit.js';
@@ -46,12 +46,13 @@ import { corpoTower, corpoCluster } from './corpo.js';
 import { slumBlock } from './slum.js';
 import { applySkin, facadeRelief } from './facade.js';
 import { districtAt, pickArchetypeIn } from './district.js';
+import { claim, TIER } from './siteplan.js';
 import { pickMassing, footprint, cylinderMass } from './massing.js';
 import { wharfBlock } from './wharf.js';
 import { marketPlan, marketBlock, resetMarketTally } from './market.js';
 import { hash2 } from '../../core/textures.js';
 import { LANDMARK_BLOCKS } from './landmark.js';
-import { buildBay, ALCOVE, SHOP_H, showcase } from './shopfront.js';
+import { buildBay, ALCOVE, SHOP_H, showcase, entranceBay } from './shopfront.js';
 
 // 창 한 칸 가로 폭 (m). 2.1 로 두면 폭 20m 건물에 창이 10개뿐이라 창 하나가
 // 거대해 보인다. 레퍼런스는 같은 폭에 창이 15개 안팎이다.
@@ -128,6 +129,15 @@ function streetFaces(r, blk, walk = SIDEWALK_W) {
 // 어디를 가도 같은 밝기면 갈 곳이 없다.
 //
 // faces 는 길에 면하는 면만 true 다. 나머지 면은 벽으로 메운다.
+// ── 지금 이 경로는 한 번도 안 불린다 (실측) ────────────────────────────────
+// 여섯 구역이 전부 자기 생성기로 분기하므로(슬럼·기업·주거·공업·부둣가·상업)
+// 아래 공통 경로는 **기업 군집과 단동이 둘 다 실패할 때만** 도달한다.
+// corpoTower 는 대지가 8m 미만일 때만 null 을 주는데 기업 대지는 병합 0.98 이라
+// 그런 대지가 없다. 계수기를 심어 확인했다 — 호출 0회.
+//
+// 그래서 이 아래(podium·shaft·크라운·광고판)는 **현재 죽은 코드**다.
+// 지우지 않는 이유는 구역이 하나 늘면 곧바로 여기로 떨어지기 때문이고,
+// 남겨 두는 대신 이렇게 적어 둔다 — 여기를 고쳐도 화면은 안 바뀐다.
 function podium(b, r, h, rng, mats, signs, pools, D, faces, detail = 1) {
   // ── 벽감 ────────────────────────────────────────────────────────────────
   // 저층 띠를 ALCOVE 만큼 들여서 만든다. 그러면 가게마다 실제 깊이 1.3m 의
@@ -179,8 +189,24 @@ function podium(b, r, h, rng, mats, signs, pools, D, faces, detail = 1) {
       b.add(autoBox(dx, SHOP_H, dz, [px, SHOP_H / 2, pz], 0.04), mats.tileWallMat);
     }
 
+    // ── 이 면의 한 칸은 출입구다 (사용자 지적) ──────────────────────────
+    // "건물 출입구가 보행자 통로나 도로쪽으로 없기도 하고"
+    //
+    // 1층을 전부 점포로 채우면 **그 건물에 들어갈 방법이 없다.** 위층이
+    // 사무실이든 주거든 로비가 있어야 하고, 그 문이 길이나 보행로를
+    // 마주 봐야 한다. faces[side] 가 참인 면만 돌므로 그 조건은 이미 만족한다.
+    const doorAt = bays >= 2 && fw >= 9 ? rng.int(0, bays - 1) : -1;
+
     for (let i = 0; i < bays; i++) {
       const sub = bayRect(r, side, i, bays, bayW * 0.06);
+
+      if (i === doorAt) {
+        const e = entranceBay(b, sub, side, shopY, rng, mats, false);
+        // 진입 동선은 우선순위가 높다 — 가로등·자판기가 문을 막으면 안 된다
+        claim(e.x, e.z, e.w * 0.7 + 1.2, TIER.ACCESS, 'lobbyEntrance');
+        pools.push({ kind: 'floor', x: e.x, y: 0.06, z: e.z, rx: 5.5, rz: 5.5, tint: rgb01(NEON.cool, 0.5) });
+        continue;
+      }
 
       // 유형별 점포 — 깊이·차양·출입구·밖으로 나온 물건이 제각각이다
       if (rng.chance(0.14)) {
@@ -615,7 +641,7 @@ export function createTowers(scene, rng, mats, blocks) {
         const mb = planned?.kind
           ? marketBlock(b, planned.kind, r, rng, mats, signs, pools)
           : null;
-        const bz = mb || bazaarBlock(b, r, rng, mats, D, faces, detail, signs);
+        const bz = mb || bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools);
         if (bz.top > tallest) tallest = bz.top;
         anchors.push({ rect: r, solid: solidOf(r, b.takeMark()), top: bz.top, zone: D.name, faces });
         districts.add(D.name);

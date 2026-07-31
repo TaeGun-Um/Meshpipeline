@@ -81,6 +81,13 @@ export function isFree(x, z, r, tier) {
   return true;
 }
 
+// 진단용. 차지한 자리 목록 그대로 — **좌표가 필요할 때** 쓴다.
+// planStats 는 개수만 주므로 "그 문이 어디 있나" 를 물을 수가 없었다.
+// 검증 뷰를 그 앞에 세우려면 좌표가 있어야 한다.
+export function planClaims(label = null) {
+  return label ? claims.filter((c) => c.label === label) : claims.slice();
+}
+
 // 진단용. 어느 등급이 몇 자리를 차지했는지.
 export function planStats() {
   const by = {};

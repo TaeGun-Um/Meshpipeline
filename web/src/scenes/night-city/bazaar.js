@@ -39,9 +39,12 @@ import {
   rectCenter,
   rectSize,
 } from '../../core/boxfaces.js';
-import { NEON } from '../../shared/neon.js';
+import { NEON, rgb01 } from '../../shared/neon.js';
 import { neonSoft } from '../../shared/masters.js';
 import { PANEL_TILE } from './layout.js';
+import { entranceBay } from './shopfront.js';
+import { claim, TIER } from './siteplan.js';
+import { hash2 } from '../../core/textures.js';
 
 // 상가 한 층. 층고가 낮다 — 사무실(3.6m)이 아니라 가게라 3.1m 면 충분하고,
 // 낮아야 같은 높이에 층이 더 들어가 "쌓였다" 는 인상이 난다.
@@ -85,30 +88,34 @@ function frameOf(r, side) {
 //   닫힘   **셔터.** 발광하지 않는다. 이 칸이 있어야 옆 칸이 읽힌다
 //
 // 레퍼런스의 밀도가 그렇다 — 빽빽하되 **어두운 자리가 사이사이에** 있다.
-function shopStrip(b, f, y, rng, mats, D, lit, shut) {
+function shopStrip(b, f, y, rng, mats, D, lit, shut, doorAt = -1) {
   const n = Math.max(2, Math.round(f.w / 4.2));
   const bw = f.w / n;
 
   for (let i = 0; i < n; i++) {
     const u = -f.w / 2 + bw * (i + 0.5);
 
-    const [ix, iz] = f.at(u, 0.06);
-    const [sw, sd] = f.size(bw * 0.88, 0.1);
+    // ── 난수는 여기서 전부 뽑는다. 아래는 그리기만 한다 ──────────────────
+    // 출입구 칸은 **그리지만 않을 뿐 난수는 똑같이 소비해야 한다.** 한 칸을
+    // 통째로 건너뛰었더니 뒤에 오는 모든 생성이 밀려서 도시 전체가 다시
+    // 뽑혔고, 픽셀 회귀 16장이 전부 "다름" 이 됐다. 문 몇 개를 더한 변경이
+    // 공장 뷰를 72% 바꿀 수는 없다 — 그 숫자가 곧 신호였다.
     const closed = rng.chance(shut);
     const on = !closed && rng.chance(lit);
-    b.add(
-      autoBox(sw, SHOP_FLOOR * 0.62, sd, [ix, y + SHOP_FLOOR * 0.46, iz], 0.02),
-      closed ? mats.shutterMat
-        : on ? mats.shopfrontBrightMats[rng.int(0, mats.shopfrontBrightMats.length - 1)]
-             : mats.shopfrontMats[rng.int(0, mats.shopfrontMats.length - 1)]
-    );
+    const face = closed ? mats.shutterMat
+      : on ? mats.shopfrontBrightMats[rng.int(0, mats.shopfrontBrightMats.length - 1)]
+           : mats.shopfrontMats[rng.int(0, mats.shopfrontMats.length - 1)];
     // 닫힌 칸에는 간판도 안 단다. 여기서 걸러야 "꺼진 자리" 가 성립한다
-    if (closed) {
-      const [px2, pz2] = f.at(u - bw / 2, 0.12);
-      const [pw2, pd2] = f.size(0.16, 0.26);
-      b.box(pw2, SHOP_FLOOR, pd2, [px2, y + SHOP_FLOOR / 2, pz2], mats.frameMat);
-      continue;
-    }
+    const blade = !closed && rng.chance(D.bladeChance * 0.8);
+    const hue = blade ? D.trim[rng.int(0, D.trim.length - 1)] : 0;
+
+    // 이 칸은 출입구다 — 위층 가게로 올라가는 계단이 여기 있다.
+    // 가게로 채우면 안 된다.
+    if (i === doorAt) continue;
+
+    const [ix, iz] = f.at(u, 0.06);
+    const [sw, sd] = f.size(bw * 0.88, 0.1);
+    b.add(autoBox(sw, SHOP_FLOOR * 0.62, sd, [ix, y + SHOP_FLOOR * 0.46, iz], 0.02), face);
 
     // 가게 사이 기둥 — 이게 없으면 층 전체가 한 장의 띠로 보인다
     const [px, pz] = f.at(u - bw / 2, 0.12);
@@ -116,8 +123,7 @@ function shopStrip(b, f, y, rng, mats, D, lit, shut) {
     b.box(pw, SHOP_FLOOR, pd, [px, y + SHOP_FLOOR / 2, pz], mats.frameMat);
 
     // 간판 — 층마다 있다. 여기가 다른 구역과 가장 크게 갈리는 지점이다.
-    if (rng.chance(D.bladeChance * 0.8)) {
-      const hue = D.trim[rng.int(0, D.trim.length - 1)];
+    if (blade) {
       const [gx, gz] = f.at(u, 0.34);
       const [gw, gd] = f.size(bw * 0.8, 0.12);
       b.box(gw, 0.44, gd, [gx, y + SHOP_FLOOR - 0.42, gz], neonSoft(hue));
@@ -218,7 +224,7 @@ function rooftopShacks(b, r, top, rng, mats) {
 
 // ── 한 동 ──────────────────────────────────────────────────────────────────
 
-export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs) {
+export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []) {
   // 3~6층. 낮은 것이 요점이다 — 계획된 상업지구가 아니라 증축이라 높이 못 올린다.
   const floors = rng.int(3, 6);
   const top = floors * SHOP_FLOOR;
@@ -242,7 +248,27 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs) {
       // **1층은 거의 다 열려 있고 위로 갈수록 비어 간다** — 실제 잡거빌딩이
       // 그렇고, 그 기울기가 있어야 파사드에 위아래 위계가 생긴다.
       // 전에는 층마다 균일해서 5층짜리가 같은 띠 다섯 장이었다.
-      shopStrip(b, f, y, rng, mats, D, litBase * (1 - fl * 0.1), shutBase + fl * 0.11);
+      // ── 1층 한 칸은 출입구 (사용자 지적) ──────────────────────────
+      // 2~5층이 전부 가게인데 **올라갈 입구가 없었다.** 외부 복도는 만들어
+      // 놓고 거기 닿는 계단이 없었으니 형태가 내력과 어긋나 있었다.
+      //
+      // 자리는 **좌표 해시로** 정한다. rng 를 쓰면 여기서 한 번 더 뽑는 순간
+      // 뒤에 오는 모든 생성이 밀려서 도시 전체가 다시 뽑힌다 — 문 몇 개를
+      // 더하려다 픽셀 회귀 16장이 전부 "다름" 이 됐다 (실제로 그랬다).
+      // 구조적 결정은 난수가 아니라 좌표에서 나와야 한다는 이 프로젝트의
+      // 규칙이 바로 이 경우를 위한 것이다.
+      const nBay = Math.max(2, Math.round(f.w / 4.2));
+      const doorAt = fl === 0 && f.w >= 9
+        ? Math.floor(nBay * (0.2 + 0.6 * hash2(Math.round(r.x0) * 4 + SIDES.indexOf(side), Math.round(r.z0))))
+        : -1;
+      shopStrip(b, f, y, rng, mats, D, litBase * (1 - fl * 0.1), shutBase + fl * 0.11, doorAt);
+      if (doorAt >= 0) {
+        const sub = bayRect(r, side, doorAt, nBay, 0);
+        const e = entranceBay(b, sub, side, y, rng, mats, true);
+        // 진입 동선은 우선순위가 높다 — 자판기·가로등이 문을 막으면 안 된다
+        claim(e.x, e.z, e.w * 0.7 + 1.2, TIER.ACCESS, 'shopEntrance');
+        pools.push({ kind: 'floor', x: e.x, y: 0.06, z: e.z, rx: 5.5, rz: 5.5, tint: rgb01(NEON.cool, 0.5) });
+      }
 
       // 2층부터 외부 복도. 1층은 인도가 그 역할을 한다.
       if (fl >= 1) walkway(b, f, y, rng, mats);

@@ -295,6 +295,141 @@ export function buildBay(b, sub, side, y, rng, mats, D, signs) {
 // 벽을 파지 않고 **밖으로 튀어나온 진열장(vitrine)** 으로 만든다. 개구부를 뚫으려면
 // 포디움을 기둥+상인방으로 쪼개야 하는데, 도시 전체에 그걸 하면 지오메트리가 몇
 // 배가 된다. 돌출형은 실제 상가에도 흔하고 비용이 1/10 이다.
+// ── 출입구 ─────────────────────────────────────────────────────────────────
+//
+// ── 왜 필요한가 (사용자 지적) ──────────────────────────────────────────────
+// "건물 출입구가 보행자 통로나 도로쪽으로 없기도 하고"
+//
+// 맞다. 주거는 현관이 있고 기업은 캐노피가 있고 공업은 트럭 문이 있는데,
+// **상업과 일반 포디움에는 문이 하나도 없었다.**
+//
+// 적층 상가에서 특히 말이 안 된다. 2~5층이 전부 가게인데 **올라갈 입구가
+// 없다.** 외부 복도(walkway)는 만들어 놨으면서 거기 닿는 계단이 없었다.
+// 형태가 내력과 어긋난 것이라 장식 문제가 아니다.
+//
+// 그리고 보행로를 뚫어 놓고 그 길에서 건물로 못 들어가면 길을 만든 의미가
+// 절반만 성립한다.
+//
+// ── 무엇이 문을 문으로 만드는가 ────────────────────────────────────────────
+// 구멍만 뚫으면 어두운 사각형이다. 셋이 있어야 한다.
+//   1) 안이 밝다      — 들어갈 수 있는 곳이라는 유일한 신호
+//   2) 인방과 문틀    — 벽에 뚫린 구멍이 아니라 **설치된 것**
+//   3) 바닥의 빛      — 밖에서 그 자리가 특별하다는 표시
+//
+// upward 가 참이면 계단이 보인다 (적층 상가·잡거빌딩). 거짓이면 로비다.
+//
+// ── recess 를 왜 갈랐는가 ──────────────────────────────────────────────────
+// 상업·포디움은 1층 띠를 ALCOVE 만큼 **이미 들여놨다.** 그 안쪽 면에 발광판을
+// 붙이면 밖에서 보인다. 그런데 주거 슬래브는 벽이 통짜라, 같은 방식으로 벽
+// 안쪽 2.4m 에 발광판을 두면 **벽에 가려 아무것도 안 보인다.** 상자 안에 넣은
+// 램프다. 벽감이 없는 벽에는 문을 파는 대신 **벽면에 붙이고 틀을 내밀어야**
+// 한다 — 실제로도 구멍을 못 뚫는 건물은 그렇게 한다.
+export function entranceBay(b, sub, side, y, rng, mats, upward = false, recess = true) {
+  const f = frameOf(sub, side);
+  const W = Math.min(f.w * 0.72, 4.4);
+  const H = SHOP_H * 0.82;
+  const hw = W / f.w / 2; // 면 좌표계에서의 반폭
+
+  // 1) 안쪽 — 벽감보다 더 깊이 판다. 깊어야 '안' 이 생긴다.
+  //    벽감이 없으면(recess=false) 벽면 바로 앞에 세운다.
+  const DEEP = recess ? ALCOVE + 1.1 : 0.1;
+  const [ix, iz] = f.at(0, -DEEP + 0.05);
+  b.add(
+    autoBox(f.alongZ ? 0.12 : W, H, f.alongZ ? W : 0.12, [ix, y + H / 2, iz], 0.02),
+    mats.lobbyLitMat
+  );
+
+  if (recess) {
+    // 안쪽 양옆 벽 — 없으면 발광면이 공중에 뜬 판으로 보인다
+    for (const sg of [-1, 1]) {
+      const [sx, sz] = f.at(sg * hw, -DEEP / 2);
+      b.add(
+        autoBox(f.alongZ ? DEEP : 0.16, H, f.alongZ ? 0.16 : DEEP, [sx, y + H / 2, sz], 0.02),
+        mats.tileWallMat
+      );
+    }
+    // 천장
+    const [cx, cz] = f.at(0, -DEEP / 2);
+    b.add(
+      autoBox(f.alongZ ? DEEP : W, 0.14, f.alongZ ? W : DEEP, [cx, y + H, cz], 0.02),
+      mats.frameMat
+    );
+  } else {
+    // ── 벽에 붙인 문은 **유리문**이다 ─────────────────────────────────────
+    // 벽감이 있으면 발광면은 로비 안쪽 벽이라 아무것도 걸지 않는다. 그런데
+    // 벽에 그냥 붙이면 그 면이 곧 문짝이라, 아무것도 안 걸면 **빛나는
+    // 사각형 하나**가 된다 (첫 시도가 그랬다 — 문이 아니라 라이트박스).
+    //
+    // 선대(mullion)와 중간틀을 어둡게 지르면 밝은 바탕에 실루엣으로 떨어져서
+    // 유리문 두 짝으로 읽힌다. 판 하나에 선 셋, 그게 전부다.
+    const [mx, mz] = f.at(0, 0.02);
+    b.add(
+      autoBox(f.alongZ ? 0.08 : 0.09, H, f.alongZ ? 0.09 : 0.08, [mx, y + H / 2, mz], 0.02),
+      mats.metalMat
+    ); // 가운데 선대 — 두 짝으로 갈린다
+    for (const sg of [-1, 1]) {
+      const [ex, ez] = f.at(sg * hw * 0.5, 0.02);
+      b.add(
+        autoBox(f.alongZ ? 0.06 : 0.06, H, f.alongZ ? 0.06 : 0.06, [ex, y + H / 2, ez], 0.02),
+        mats.metalMat
+      );
+    }
+    // 중간틀 — 이 높이가 사람 키를 알려준다. 없으면 크기가 안 읽힌다
+    const [tx, tz] = f.at(0, 0.02);
+    b.add(
+      autoBox(f.alongZ ? 0.07 : W, 0.1, f.alongZ ? W : 0.07, [tx, y + 2.25, tz], 0.02),
+      mats.metalMat
+    );
+  }
+
+  // 계단 — 위층 가게로 올라간다. 이것이 적층 상가의 동선이다
+  if (upward && recess) {
+    const steps = 5;
+    for (let i = 0; i < steps; i++) {
+      const t = (i + 0.5) / steps;
+      const [px, pz] = f.at(0, -0.5 - t * (DEEP - 0.9));
+      b.add(
+        autoBox(f.alongZ ? (DEEP - 0.9) / steps : W * 0.82, 0.22,
+          f.alongZ ? W * 0.82 : (DEEP - 0.9) / steps, [px, y + 0.11 + t * 1.5, pz], 0.02),
+        mats.plazaStepMat
+      );
+    }
+  }
+
+  // 2) 문틀과 인방 — 벽에 뚫린 구멍이 아니라 설치된 것으로 보이게
+  for (const sg of [-1, 1]) {
+    const [px, pz] = f.at(sg * hw, 0.06);
+    b.add(
+      autoBox(f.alongZ ? 0.22 : 0.24, H + 0.3, f.alongZ ? 0.24 : 0.22, [px, y + (H + 0.3) / 2, pz], 0.03),
+      mats.metalMat
+    );
+  }
+  const [lx, lz] = f.at(0, 0.1);
+  b.add(
+    autoBox(f.alongZ ? 0.3 : W + 0.5, 0.42, f.alongZ ? W + 0.5 : 0.3, [lx, y + H + 0.2, lz], 0.03),
+    mats.metalMat
+  );
+  // 인방 위 작은 명판 — 건물 이름 자리. 간판이 아니라 표식이다
+  const [nx, nz] = f.at(0, 0.14);
+  b.box(f.alongZ ? 0.06 : W * 0.5, 0.3, f.alongZ ? W * 0.5 : 0.06,
+    [nx, y + H + 0.62, nz], neon(NEON.cool));
+
+  // 작은 차양 — 비 오는 도시라 입구에는 늘 있다
+  const [ax, az] = f.at(0, 0.85);
+  b.add(
+    autoBox(f.alongZ ? 1.7 : W + 0.9, 0.16, f.alongZ ? W + 0.9 : 1.7, [ax, y + H + 0.5, az], 0.03),
+    mats.metalMat
+  );
+  b.add(
+    downPlane(f.alongZ ? 1.5 : W * 0.9, f.alongZ ? W * 0.9 : 1.5, [ax, y + H + 0.41, az]),
+    mats.deckUnderMat
+  );
+
+  // 3) 바닥의 빛 — 밖에서 그 자리가 특별하다는 표시
+  const [dx, dz] = f.at(0, 1.1);
+  return { x: dx, z: dz, w: W };
+}
+
 export function showcase(b, sub, side, y, h, rng, mats) {
   const o = outward(side);
   const D = 0.75; // 튀어나오는 깊이
