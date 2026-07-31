@@ -535,7 +535,13 @@ export function createTowers(scene, rng, mats, blocks) {
       // (core/placement.js). 앵커의 rect 는 '필지' 이지 '그린 것' 이 아니므로
       // 관통 판정에 못 쓴다 — 슬럼은 필지 안에서 비스듬히 앉고, 차양·돌출
       // 간판은 필지 밖으로 나간다.
-      b.mark('building', `bld:${blk.ix},${blk.iz}#${lotIdx++}`, { zone: BD.name, ix: blk.ix, iz: blk.iz });
+      //
+      // meta 는 **참조로** 보관된다 (core/placement.beginItem). 그래서 다 짓고
+      // 나서 "꼭대기에서 실제로 채워진 사각형" 을 적어 넣을 수 있다.
+      // 검사가 브릿지 끝을 볼 때 그 사각형을 쓴다 — 바운딩 박스만으로는
+      // 저층이 넓은 건물의 옥상 모서리(허공)를 통과시킨다.
+      const bmeta = { zone: BD.name, ix: blk.ix, iz: blk.iz };
+      b.mark('building', `bld:${blk.ix},${blk.iz}#${lotIdx++}`, bmeta);
 
       const core = blkCore;
       const D = BD;
@@ -643,7 +649,16 @@ export function createTowers(scene, rng, mats, blocks) {
           : null;
         const bz = mb || bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools);
         if (bz.top > tallest) tallest = bz.top;
-        anchors.push({ rect: r, solid: solidOf(r, b.takeMark()), top: bz.top, zone: D.name, faces });
+        // solid 는 **꼭대기에서 실제로 채워진 사각형**이어야 한다.
+        // `solidOf` 는 그린 것 전부의 바운딩 박스라, 잡거타워처럼 저층이
+        // 넓고 위가 좁은 형태에서는 대지 전체를 돌려준다 — 브릿지가 그
+        // 모서리(허공)에 닿는다. 형태가 알려 주면 그것을 쓴다.
+        if (bz.cap) bmeta.cap = [bz.cap.x0, bz.cap.z0, bz.cap.x1, bz.cap.z1];
+        anchors.push({
+          rect: r,
+          solid: bz.cap || solidOf(r, b.takeMark()),
+          top: bz.top, zone: D.name, faces,
+        });
         districts.add(D.name);
         continue;
       }

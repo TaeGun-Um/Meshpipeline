@@ -241,12 +241,34 @@ export function checkPlacement(scene) {
   // 브릿지는 앵커 쌍에서 골라 이미 닿아야 한다. 계단은 위 끝이 데크에,
   // 아래 끝이 지면에 닿아야 한다. 여기서 걸리면 "허공에서 시작해 허공에서
   // 끝나는" 5번 버그가 되살아난 것이다.
+  // ── 원장의 상자로는 부족하다 (사용자 지적으로 고침) ──────────────────────
+  //
+  // "가끔은 아직 공중에 덩그러니 브릿지가 떠있는 경우도 있음"
+  //
+  // 원장에 올라가는 상자는 그 건물이 그린 것 **전부의 바운딩 박스**다.
+  // 저층이 넓고 위가 좁은 형태(잡거타워·세트백·기업 타워)에서는 그 박스가
+  // 대지 전체가 되고, 꼭대기 높이의 대지 모서리도 "건물 안" 으로 통과한다.
+  // 검사는 초록불인데 화면에서는 허공이다.
+  //
+  // 그래서 **꼭대기 근처에서는 좁힌 상자**로 다시 묻는다. 브릿지 끝이
+  // 건물 윗면 3m 안쪽이면 그 높이에서 실제로 채워진 곳이어야 한다.
+  // 생성기가 `cap`(꼭대기 사각형)을 신고했으면 그것을, 아니면 원장 상자를
+  // 쓴다 — 신고한 것이 없으면 예전과 같이 관대하게 본다.
+  const tops = buildings.map((it) => (it.meta?.cap
+    ? { ...it, x0: it.meta.cap[0], z0: it.meta.cap[1], x1: it.meta.cap[2], z1: it.meta.cap[3] }
+    : it));
   const floating = [];
   for (const it of bridges) {
     const ends = it.meta?.ends || [];
     for (const e of ends) {
-      if (!supportAt(e[0], e[1], e[2], buildings, { margin: END_MARGIN, roof: 3 })) {
+      const near = supportAt(e[0], e[1], e[2], buildings, { margin: END_MARGIN, roof: 3 });
+      if (!near) {
         floating.push({ label: it.label, at: e.map((v) => +v.toFixed(1)) });
+        continue;
+      }
+      // 꼭대기 부근이면 좁힌 상자로 한 번 더 본다
+      if (e[1] > near.y1 - 3 && !supportAt(e[0], e[1], e[2], tops, { margin: END_MARGIN, roof: 3 })) {
+        floating.push({ label: it.label, at: e.map((v) => +v.toFixed(1)), why: '옥상 사각형 밖' });
       }
     }
   }

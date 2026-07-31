@@ -626,5 +626,17 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
   rooftopShacks(b, crown.rect, crown.top, rng, mats);
   marketTallyAdd(form === 'tower' ? '잡거타워' : form === 'setback' ? '세트백상가' : '적층상가',
     r, crown.top);
-  return { top: crown.top, floors };
+  // ── 꼭대기에서 실제로 채워진 사각형을 같이 돌려준다 (사용자 지적) ────────
+  // "가끔은 아직 공중에 덩그러니 브릿지가 떠있는 경우도 있음"
+  //
+  // 원장에 올라가는 상자는 **그 건물이 그린 것 전부의 바운딩 박스**다.
+  // 잡거타워는 저층 기단이 대지를 꽉 채우므로 그 박스가 대지 전체가 되고,
+  // 49m 높이의 대지 모서리도 "건물 안" 으로 판정된다. 브릿지가 거기 닿으면
+  // 검사는 통과하는데 화면에서는 허공이다.
+  //
+  // 기업 타워에서 똑같은 것을 이미 고쳤다 — 형태가 `{cap, solid, safeTop}`
+  // 셋을 돌려주게 한 것이 그 수정이었다 (docs/status.md 결합 대장
+  // "그린 것 vs 신고한 것"). 번화가에 잡거타워를 넣으면서 같은 함정에
+  // 다시 들어갔다. **매싱을 바꾸면 무엇이 꼭대기인지도 같이 바뀐다.**
+  return { top: crown.top, floors, cap: crown.rect };
 }
