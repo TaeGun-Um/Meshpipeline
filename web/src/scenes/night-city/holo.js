@@ -34,14 +34,16 @@ import { upPlane, rectCenter, rectSize } from '../../core/boxfaces.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { holo, holoSoft } from '../../shared/masters.js';
 import {
-  GRID,
-  blockRect,
+  // GRID·blockRect 는 더 쓰지 않는다. 대지를 도는 것이 옳고, 블록 사각형을
+  // 보면 병합된 대지 안쪽 칸에서 건물 속에 물건을 놓게 된다.
   CURB_HEIGHT,
   detailAt,
   blockIndexAt,
 } from './layout.js';
 import { districtAt, byZone } from './district.js';
 import { roadAt, spanInRoad } from './layout.js';
+import { parcels } from './parcel.js';
+import { LANDMARK_BLOCKS } from './landmark.js';
 
 // 구역별 홀로그램 밀도. 0 이면 그 구역엔 하나도 없다.
 // byZone 이 강제한다 (district.byZone 머리말). 0 이 **의도한 0** 인지
@@ -219,11 +221,18 @@ function projector(b, x, z, mats, pools, top, spread, hue) {
   g.translate(x, Y + 0.7 + CH / 2, z);
   b.add(g, holoSoft(hue));
 
-  // 3) 바닥 링 — 장치 둘레. 켜져 있다는 표시
-  b.add(upPlane(spread * 2.4, spread * 2.4, [x, Y + 0.05, z]), holoSoft(hue));
+  // ── 3) 바닥 링 — 장치 둘레. 켜져 있다는 표시 ────────────────────────────
+  //
+  // 폭이 `spread * 2.4` (최대 7.2m) 였다. 인도가 6.2m 인데 바닥에 깔리는
+  // 것이 그보다 넓으면 **벽을 피하면 차도를 밟고 차도를 피하면 벽에 박힌다.**
+  // 실제로 그 사이에 낀 자리가 없어서 101기가 35기로 줄었다.
+  //
+  // 바닥에 닿는 것만 줄이면 된다 — 광추와 상은 공중이라 인도 폭과 무관하다.
+  // (배치 검사도 지면 범위 `lowBox` 만 본다. 같은 기준을 여기서도 쓴다.)
+  b.add(upPlane(spread * 1.4, spread * 1.4, [x, Y + 0.05, z]), holoSoft(hue));
   pools.push({
     kind: 'floor', x, y: Y + 0.06, z,
-    rx: spread * 2.2, rz: spread * 2.2, tint: rgb01(hue, 0.55),
+    rx: spread * 1.6, rz: spread * 1.6, tint: rgb01(hue, 0.55),
   });
 }
 
@@ -569,69 +578,120 @@ export function createHolo(scene, rng, mats, anchors) {
   // (실제로 "홀로 하나가 차도를 22m 침범" 으로 나왔다).
   b.endMark();
 
-  // 3) 디지털 수목 · 투사 기둥 — 블록 단위. 광장과 번화가에 선다.
-  for (let ix = 0; ix < GRID; ix++) {
-    for (let iz = 0; iz < GRID; iz++) {
-      const R = blockRect(ix, iz);
-      const cx = (R.x0 + R.x1) / 2;
-      const cz = (R.z0 + R.z1) / 2;
-      const D = districtAt(ix, iz);
-      const rate = RATE[D.name] ?? 0;
-      if (rate <= 0) continue;
-      const det = detailAt(cx, cz);
-      const half = (R.x1 - R.x0) / 2;
-      const walk = (D.sidewalk ?? 4.6);
+  // ── 3) 디지털 수목 · 투사 조형 · 투사 기둥 ────────────────────────────────
+  //
+  // ── 블록이 아니라 **대지**를 돈다 (사용자 지적으로 고침) ─────────────────
+  // 사용자가 "이렇게 겹쳐져 있는 홀로그램도 있고" 라며 투사기가 건물 벽에
+  // 박힌 사진을 보냈다.
+  //
+  // 원인은 이 루프가 `layout.blockRect(ix, iz)` 를 썼다는 것이다. 대지 병합
+  // 이후로 여러 칸이 한 대지가 되고, **병합된 대지의 안쪽 칸은 블록 전체가
+  // 건물 속**이다. 그 블록의 "가장자리에서 인도 폭만큼 안쪽" 은 인도가 아니라
+  // 남의 건물 한복판이다.
+  //
+  // `parcel.blockRect` 를 단일 출처로 만들면서 여덟 모듈을 고쳤는데
+  // (status.md 2.1 결합 대장) 여기는 `layout` 쪽 블록 사각형을 봤다.
+  // **같은 이름의 함수가 두 곳에 있으면 반드시 한쪽이 틀린 것을 본다.**
+  //
+  // 그리고 대지 사각형만으로는 부족하다. 대지 안에서 건물은 다시 물러나
+  // 서므로, 실제로 벽이 어디인지는 `anchors` 만 안다. 둘 다 본다.
+  const solids = anchors.map((a) => a.solid || a.rect);
+  const reserved = new Set(LANDMARK_BLOCKS.map((l) => `${l.ix},${l.iz}`));
+  // (x, z) 가 어떤 건물 안이거나 r 만큼도 못 떨어져 있나
+  const hitsBuilding = (x, z, r) => {
+    for (const q of solids) {
+      if (x > q.x0 - r && x < q.x1 + r && z > q.z0 - r && z < q.z1 + r) return true;
+    }
+    return false;
+  };
 
-      // 수목 — 인도 위. 기업 구역은 광장에 열 맞춰, 상업은 제각각.
-      const treeN = D.name === '기업' ? Math.round(4 * det) : Math.round(2 * det);
-      for (let i = 0; i < treeN; i++) {
-        if (!rng.chance(rate * 0.7)) continue;
-        const edge = rng.int(0, 3);
-        const along = rng.range(-half + 8, half - 8);
-        // 인도 안쪽으로 더 물린다 (0.35~0.7 → 0.45~0.75). 연석에 붙여 심으면
-        // 가지가 차도로 넘어간다.
-        const inset = walk * rng.range(0.45, 0.75);
-        const depth = half - inset;
-        const tx = edge < 2 ? cx + along : cx + (edge === 2 ? -depth : depth);
-        const tz = edge < 2 ? cz + (edge === 0 ? -depth : depth) : cz + along;
-        b.mark('holo', `holoTree#${trees}`, { zone: D.name, axis: edge < 2 ? 'z' : 'x' });
-        digitalTree(b, tx, tz, rng, mats, pools, inset);
-        trees++;
-      }
+  for (const p of parcels()) {
+    const R = p.rect;
+    const cx = (R.x0 + R.x1) / 2;
+    const cz = (R.z0 + R.z1) / 2;
+    const D = districtAt(p.ix, p.iz);
+    const rate = RATE[D.name] ?? 0;
+    if (rate <= 0) continue;
+    if (reserved.has(`${p.ix},${p.iz}`)) continue; // 랜드마크가 통째로 쓰는 자리
+    const det = detailAt(cx, cz);
+    // 병합한 대지는 정사각이 아니다. 축마다 반폭을 따로 쓴다 —
+    // `half` 하나로 두면 긴 축에서는 안쪽으로, 짧은 축에서는 밖으로 어긋난다.
+    const hx = (R.x1 - R.x0) / 2;
+    const hz = (R.z1 - R.z0) / 2;
+    const walk = (D.sidewalk ?? 4.6);
 
-      // ── 투사 조형 — 이 구역이 무엇을 투사하나 ──────────────────────────
-      // 수목과 같은 자리 논리(인도 위, 연석에서 물러남)를 쓰되 **광추가
-      // 벌어지므로 여유를 더 준다.** 차도로 넘어가면 배치 검사가 잡는다.
-      const subj = SUBJECTS[D.name];
-      const figN = subj.length ? Math.round((D.name === '주거' ? 1 : 3) * det) : 0;
-      for (let i = 0; i < figN; i++) {
-        // rng 는 조건과 무관하게 같은 개수를 뽑는다 — 건너뛰어도 뒤가 안 밀리게
-        const roll = rng.chance(rate * 0.55);
-        const edge = rng.int(0, 3);
-        const along = rng.range(-half + 10, half - 10);
-        const kind = subj[rng.int(0, Math.max(0, subj.length - 1))];
-        const inset = walk * rng.range(0.5, 0.8);
-        if (!roll) continue;
-        const depth = half - inset;
-        const fx2 = edge < 2 ? cx + along : cx + (edge === 2 ? -depth : depth);
-        const fz2 = edge < 2 ? cz + (edge === 0 ? -depth : depth) : cz + along;
-        // 광추 반경까지 셈해서 차도를 안 밟는지 먼저 묻는다.
-        // 점이 아니라 **폭으로** 묻는다 (layout.spanInRoad).
-        const rr = SUBJ[kind].spread[1] * 1.2;
-        if (spanInRoad(fx2 - rr, fx2 + rr) || spanInRoad(fz2 - rr, fz2 + rr)) continue;
-        b.mark('holo', `holoFigure#${figures}`, { zone: D.name, axis: edge < 2 ? 'z' : 'x' });
-        projectedFigure(b, fx2, fz2, kind, rng, mats, pools);
-        figures++;
-      }
+    // ── 개수는 **대지 면적에 비례**한다 ──────────────────────────────────
+    // 블록마다 세던 것을 대지마다 세도록 바꿨더니 개수가 3분의 1이 됐다.
+    // 거절된 것이 아니라 **반복 횟수가 준 것**이다 — 3x3 으로 병합된 대지는
+    // 예전에 아홉 번 돌던 자리인데 이제 한 번 돈다.
+    // 밀도를 유지하려면 칸 수를 곱해야 한다. (숫자를 바꾸기 전에 왜 줄었는지
+    // 부터 봐야 한다 — 확률을 올렸으면 원인은 그대로 남았을 것이다.)
+    const cells = Math.max(1, p.cells?.length || 1);
 
-      // 투사 기둥 — 기업 구역만. 아무 기능도 없이 에너지만 쓰는 과시다.
-      if (D.name === '기업' && rng.chance(0.35 * det)) {
-        // 기둥은 블록 한가운데에 독립해 선다 — 붙은 면이 없으므로 axis 가 없고,
-        // 검사는 두 축을 다 본다.
-        b.mark('holo', `holoBeam#${beams}`, { zone: D.name });
-        beamColumn(b, cx + rng.range(-12, 12), cz + rng.range(-12, 12), rng, pools);
-        beams++;
-      }
+    // 수목 — 인도 위. 기업 구역은 광장에 열 맞춰, 상업은 제각각.
+    const treeN = Math.round((D.name === '기업' ? 4 : 2) * det * cells);
+    for (let i = 0; i < treeN; i++) {
+      if (!rng.chance(rate * 0.7)) continue;
+      const edge = rng.int(0, 3);
+      const along = edge < 2 ? rng.range(-hx + 8, hx - 8) : rng.range(-hz + 8, hz - 8);
+      // 인도 안쪽으로 더 물린다 (0.35~0.7 → 0.45~0.75). 연석에 붙여 심으면
+      // 가지가 차도로 넘어간다.
+      const inset = walk * rng.range(0.45, 0.75);
+      const depth = (edge < 2 ? hz : hx) - inset;
+      const tx = edge < 2 ? cx + along : cx + (edge === 2 ? -depth : depth);
+      const tz = edge < 2 ? cz + (edge === 0 ? -depth : depth) : cz + along;
+      if (hitsBuilding(tx, tz, 1.2)) continue;
+      b.mark('holo', `holoTree#${trees}`, { zone: D.name, axis: edge < 2 ? 'z' : 'x' });
+      digitalTree(b, tx, tz, rng, mats, pools, inset);
+      trees++;
+    }
+
+    // ── 투사 조형 — 이 구역이 무엇을 투사하나 ──────────────────────────
+    // 수목과 같은 자리 논리(인도 위, 연석에서 물러남)를 쓰되 **광추가
+    // 벌어지므로 여유를 더 준다.** 차도로 넘어가면 배치 검사가 잡는다.
+    const subj = SUBJECTS[D.name];
+    const figN = subj.length ? Math.round((D.name === '주거' ? 1 : 3) * det * cells) : 0;
+    for (let i = 0; i < figN; i++) {
+      // rng 는 조건과 무관하게 같은 개수를 뽑는다 — 건너뛰어도 뒤가 안 밀리게
+      const roll = rng.chance(rate * 0.55);
+      const edge = rng.int(0, 3);
+      const along = edge < 2 ? rng.range(-hx + 10, hx - 10) : rng.range(-hz + 10, hz - 10);
+      const kind = subj[rng.int(0, Math.max(0, subj.length - 1))];
+      const inset = walk * rng.range(0.5, 0.8);
+      if (!roll) continue;
+      const depth = (edge < 2 ? hz : hx) - inset;
+      const fx2 = edge < 2 ? cx + along : cx + (edge === 2 ? -depth : depth);
+      const fz2 = edge < 2 ? cz + (edge === 0 ? -depth : depth) : cz + along;
+      // 차도를 안 밟는지, 벽에 안 박히는지 먼저 묻는다. 점이 아니라
+      // **폭으로** 묻되 (layout.spanInRoad), 그 폭은 **바닥에 닿는 것**의
+      // 폭이다 — 바닥 링 반폭이다. 공중의 광추를 기준으로 재면 인도에
+      // 들어갈 수 있는 자리가 없어진다.
+      const rr = SUBJ[kind].spread[1] * 0.7 + 0.4;
+      if (spanInRoad(fx2 - rr, fx2 + rr) || spanInRoad(fz2 - rr, fz2 + rr)) continue;
+      // ── 벽 여유는 **바닥의 투사기** 기준이다 ──────────────────────────
+      // 처음에 광추 반경(rr, 2.4~3.6m)으로 물었더니 101기가 21기로 줄고
+      // 잉어·안내는 아예 사라졌다. 상은 4~7m 위에 떠 있으므로 파사드와
+      // 겹쳐도 그림으로는 자연스럽고, 사용자가 지적한 것은 **받침대가 벽에
+      // 박힌 것**이다. 여유는 막으려는 것의 크기로 잡는다 (받침 반지름 0.8).
+      if (hitsBuilding(fx2, fz2, 1.3)) continue;
+      b.mark('holo', `holoFigure#${figures}`, { zone: D.name, axis: edge < 2 ? 'z' : 'x' });
+      projectedFigure(b, fx2, fz2, kind, rng, mats, pools);
+      figures++;
+    }
+
+    // 투사 기둥 — 기업 구역만. 아무 기능도 없이 에너지만 쓰는 과시다.
+    if (D.name === '기업' && rng.chance(0.35 * det)) {
+      // 기둥은 대지 한가운데에 독립해 선다 — 붙은 면이 없으므로 axis 가 없고,
+      // 검사는 두 축을 다 본다.
+      const bx = cx + rng.range(-12, 12);
+      const bz = cz + rng.range(-12, 12);
+      // 빛기둥은 바닥 원반이 반지름 R*2(최대 10.4m)까지 퍼진다. 기둥 좌표만
+      // 보면 원반이 차도를 덮는다 — 실제로 3.31m 나갔다. 원반으로 묻는다.
+      if (spanInRoad(bx - 5.2, bx + 5.2) || spanInRoad(bz - 5.2, bz + 5.2)) continue;
+      if (hitsBuilding(bx, bz, 2.0)) continue;
+      b.mark('holo', `holoBeam#${beams}`, { zone: D.name });
+      beamColumn(b, bx, bz, rng, pools);
+      beams++;
     }
   }
 
