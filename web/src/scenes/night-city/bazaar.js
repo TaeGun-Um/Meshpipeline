@@ -89,12 +89,23 @@ function frameOf(r, side) {
 //   닫힘   **셔터.** 발광하지 않는다. 이 칸이 있어야 옆 칸이 읽힌다
 //
 // 레퍼런스의 밀도가 그렇다 — 빽빽하되 **어두운 자리가 사이사이에** 있다.
-function shopStrip(b, f, y, rng, mats, D, lit, shut, doorAt = -1) {
+function shopStrip(b, f, y, rng, mats, D, lit, shut, doorAt = -1, fl = 0, seed = 0) {
   const n = Math.max(2, Math.round(f.w / 4.2));
   const bw = f.w / n;
 
   for (let i = 0; i < n; i++) {
     const u = -f.w / 2 + bw * (i + 0.5);
+
+    // ── 3층부터는 절반이 세입자다 (사용자 지적) ─────────────────────────
+    // "창문마다 간판과 똑같은 형태의 리소스가 쓰이고 있고, 이게 너무
+    //  복사 붙여넣기로 여기저기 쓰이고 있음"
+    //
+    // 층마다 가게라는 것이 적층 상가의 정체이긴 하지만, **모든 층의 모든
+    // 칸**에 점포 텍스처(간판 띠 + 모자이크)를 붙이니 5층짜리가 간판 스무
+    // 장이 됐다. 실제 잡거빌딩도 위로 갈수록 사무실과 살림집이 섞인다.
+    //
+    // 좌표 해시로 정한다 — 난수를 더 뽑으면 뒤의 도시가 다시 뽑힌다.
+    const tenant = fl >= 2 && hash2(seed + i * 37 + fl * 211, seed + 53) < 0.5;
 
     // ── 난수는 여기서 전부 뽑는다. 아래는 그리기만 한다 ──────────────────
     // 출입구 칸은 **그리지만 않을 뿐 난수는 똑같이 소비해야 한다.** 한 칸을
@@ -104,11 +115,17 @@ function shopStrip(b, f, y, rng, mats, D, lit, shut, doorAt = -1) {
     const closed = rng.chance(shut);
     const on = !closed && rng.chance(lit);
     const face = closed ? mats.shutterMat
+      : tenant ? mats.tenantWinMats[(i + fl) % mats.tenantWinMats.length]
       : on ? mats.shopfrontBrightMats[rng.int(0, mats.shopfrontBrightMats.length - 1)]
            : mats.shopfrontMats[rng.int(0, mats.shopfrontMats.length - 1)];
-    // 닫힌 칸에는 간판도 안 단다. 여기서 걸러야 "꺼진 자리" 가 성립한다
-    const blade = !closed && rng.chance(D.bladeChance * 0.8);
-    const hue = blade ? D.trim[rng.int(0, D.trim.length - 1)] : 0;
+    // 닫힌 칸에는 간판도 안 단다. 여기서 걸러야 "꺼진 자리" 가 성립한다.
+    //
+    // **난수는 tenant 와 무관하게 뽑는다.** `!tenant && rng.chance(...)` 라고
+    // 쓰면 단축 평가로 뽑기를 건너뛰어 뒤의 도시가 밀린다 — 이 파일에서만
+    // 세 번째로 같은 함정이다 (status.md 2.1 규칙 6).
+    const bladeRoll = !closed && rng.chance(D.bladeChance * 0.8);
+    const hue = bladeRoll ? D.trim[rng.int(0, D.trim.length - 1)] : 0;
+    const blade = bladeRoll && !tenant; // 세입자 칸에는 안 단다 — 가게가 아니다
 
     // 이 칸은 출입구다 — 위층 가게로 올라가는 계단이 여기 있다.
     // 가게로 채우면 안 된다.
@@ -263,12 +280,13 @@ function upperFacade(b, rect, y0, n, mats, seed) {
       // 위로 갈수록 빈다. 꼭대기는 거의 어둡다 — 그 기울기가 높이를 만든다
       const onRate = 0.68 - (fl / Math.max(1, n)) * 0.38;
 
-      if (hf < 0.34) {
+      if (hf < 0.26) {
         // ── 가로 간판 띠 ────────────────────────────────────────────────
         // 면을 거의 다 덮고 앞으로 조금 나온다. 이 한 장이 "가게가 통째로
-        // 들어 있다" 를 말한다.
+        // 들어 있다" 를 말한다. **층의 4분의 1만** 이렇게 둔다 — 전에는
+        // 3분의 1이었고, 나머지도 점포 텍스처라 결국 전 층이 간판이었다.
         const bw = f.w * (0.74 + hf * 0.6);
-        const [bx, bz] = f.at((hf - 0.17) * (f.w - bw) * 0.8, 0.26);
+        const [bx, bz] = f.at((hf - 0.13) * (f.w - bw) * 0.8, 0.26);
         const [bdx, bdz] = f.size(bw, 0.34);
         const on = hf < onRate * 0.62;
         b.add(
@@ -284,26 +302,38 @@ function upperFacade(b, rect, y0, n, mats, seed) {
         continue;
       }
 
-      // ── 칸 여럿 ────────────────────────────────────────────────────────
-      // 칸 폭을 층마다 바꾼다 (2.4~4.6m). 이것이 격자를 깬다.
-      const cw0 = 2.4 + hf * 2.2;
-      const cells = Math.max(2, Math.round(f.w / cw0));
-      const cw = f.w / cells;
-      for (let i = 0; i < cells; i++) {
+      // ── 창문 층 (사용자 지적으로 고침) ─────────────────────────────────
+      //
+      // "번화가 건물 창문도 (…) 창문마다 간판과 똑같은 형태의 리소스가
+      //  쓰이고 있고, 이게 너무 복사 붙여넣기로 여기저기 쓰이고 있음"
+      //
+      // 맞았다. 여기에 `shopfrontMats` 를 붙이고 있었다. 그 텍스처는 칸마다
+      // **간판 띠 + 그 아래 모자이크**로 되어 있어서, 8층 잡거타워가 층마다
+      // 간판 넉 장씩 달린 건물이 됐다.
+      //
+      // 위층은 창문이다. 그리고 사무실 창도 아니다 — 잡거빌딩 위층은
+      // 세입자가 제각각 쓰는 방이라 창마다 사정이 다르다
+      // (shared/urban/shops.js tenantWindows).
+      //
+      // 한 층을 한 장으로 붙인다. 칸을 쪼개 붙이면 텍스처 안의 창 격자와
+      // 조각 경계가 어긋나 이중 격자가 된다.
+      const [wx, wz] = f.at(0, 0.06);
+      const [ww, wd] = f.size(f.w * 0.985, 0.1);
+      b.add(
+        autoBox(ww, SHOP_FLOOR * 0.9, wd, [wx, y + SHOP_FLOOR * 0.52, wz], 0.02),
+        mats.tenantWinMats[Math.floor(hf * 997) % mats.tenantWinMats.length]
+      );
+      // 그 층의 몇 칸은 셔터를 내렸다 — 빈 사무실. 이 어두운 칸이 있어야
+      // 켜진 칸이 읽힌다 (shopStrip 과 같은 논리)
+      const shutCells = Math.max(2, Math.round(f.w / 4.4));
+      for (let i = 0; i < shutCells; i++) {
+        const hh = hash2(Math.round(rect.x0) * 71 + i * 7 + fl * 3, Math.round(rect.z0) * 13 + seed);
+        if (hh > onRate * 0.42) continue;
+        const cw = f.w / shutCells;
         const u = -f.w / 2 + cw * (i + 0.5);
-        const h = hash2(Math.round(rect.x0) * 71 + i * 7 + fl * 3, Math.round(rect.z0) * 13 + seed);
-        const [cx2, cz2] = f.at(u, 0.07);
-        const [cw2, cd2] = f.size(cw * 0.82, 0.1);
-        if (h < onRate) {
-          b.add(
-            autoBox(cw2, SHOP_FLOOR * 0.52, cd2, [cx2, y + SHOP_FLOOR * 0.52, cz2], 0.02),
-            h < onRate * 0.45
-              ? mats.shopfrontBrightMats[Math.floor(h * 997) % mats.shopfrontBrightMats.length]
-              : mats.shopfrontMats[Math.floor(h * 691) % mats.shopfrontMats.length]
-          );
-        } else {
-          b.box(cw2, SHOP_FLOOR * 0.52, cd2, [cx2, y + SHOP_FLOOR * 0.52, cz2], mats.shutterMat);
-        }
+        const [cx2, cz2] = f.at(u, 0.09);
+        const [cw2, cd2] = f.size(cw * 0.78, 0.08);
+        b.box(cw2, SHOP_FLOOR * 0.62, cd2, [cx2, y + SHOP_FLOOR * 0.55, cz2], mats.shutterMat);
       }
     }
   }
@@ -452,7 +482,8 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
       const doorAt = fl === 0 && f.w >= 9
         ? Math.floor(nBay * (0.2 + 0.6 * hash2(Math.round(r.x0) * 4 + SIDES.indexOf(side), Math.round(r.z0))))
         : -1;
-      shopStrip(b, f, y, rng, mats, D, litBase * (1 - fl * 0.1), shutBase + fl * 0.11, doorAt);
+      shopStrip(b, f, y, rng, mats, D, litBase * (1 - fl * 0.1), shutBase + fl * 0.11, doorAt,
+        fl, Math.round(r.x0) * 4 + SIDES.indexOf(side) + Math.round(r.z0));
       if (doorAt >= 0) {
         const sub = bayRect(r, side, doorAt, nBay, 0);
         const e = entranceBay(b, sub, side, y, rng, mats, true);

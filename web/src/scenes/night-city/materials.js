@@ -160,6 +160,21 @@ export function buildMaterials() {
     )
   );
 
+  // ── 잡거빌딩 세입자 창 (사용자 지적) ──────────────────────────────────────
+  // 잡거타워 위층에 점포 텍스처(shopfront)를 그대로 썼다. 그 텍스처는 칸마다
+  // **간판 띠 + 모자이크**라, 8층 창문에 붙이면 층마다 간판이 넉 장씩 달린다.
+  // 위층은 창문이어야 하고, 사무실 창과도 달라야 한다 (shops.tenantWindows).
+  const tenantWinMats = [NEON.warm, NEON.amber, NEON.cool].map((tint, i) =>
+    TexturedSurface.instance(
+      // 발광 세기는 0..1 이다 (core/material.js 가 강제한다). 점포와 같은
+      // 최대치를 준다 — 창 하나하나는 작지만 층마다 있어서 그 합이 건물의
+      // 밝기다.
+      { set: T.tenantWindows(8620 + i * 31, tint), normalScale: 0.7, roughness: 0.7,
+        emissiveIntensity: 1.0 },
+      `TenantWin_${i}`
+    )
+  );
+
   // 점포 실내 배경. 벽감 안쪽 벽에 붙는다 — 통짜 발광면을 대신한다.
   const interiorMats = SHOP_TINTS.map((tint, i) =>
     TexturedSurface.instance(
@@ -181,6 +196,7 @@ export function buildMaterials() {
     signMats,
     shopfrontMats,
     shopfrontBrightMats,
+    tenantWinMats,
     interiorMats,
 
     // 건물 덩치. 텍스처 반복은 metricBox 가 UV로 만든다.

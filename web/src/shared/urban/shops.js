@@ -14,6 +14,117 @@ import { pictAt, glyphAt, latinAt, PICT_COUNT } from '../glyphs.js';
 
 export function shopTextures(S) {
   return {
+    // ── 잡거빌딩 세입자 창 (사용자 지적으로 새로 만듦) ────────────────────
+    //
+    // "번화가 타입의 건물 창문도, 아무리 생각해도 창문인데, 모자이크 창문과
+    //  그 위에 창문마다 간판과 똑같은 형태의 리소스가 쓰이고 있고, 이게 너무
+    //  복사 붙여넣기로 여기저기 쓰이고 있음"
+    //
+    // 맞았다. 잡거타워 위층에 `shopfront` 텍스처를 그대로 썼다. 그 텍스처는
+    // **칸마다 간판 띠 + 그 아래 모자이크**로 되어 있다 — 1층 점포에는 맞지만
+    // 8층 창문에 붙이면 층마다 간판이 넉 장씩 달린 꼴이다.
+    //
+    // 위층은 창문이어야 한다. 그런데 사무실 창(windowSheet)도 아니다 —
+    // 잡거빌딩 위층은 **세입자가 제각각 쓰는 방**이라 창마다 사정이 다르다.
+    //
+    //   · 블라인드를 반쯤 내린 칸        가로줄 몇 개
+    //   · 실외기를 매단 칸               창 아래 작은 상자
+    //   · 창을 판자로 막은 칸            불이 아예 없다
+    //   · 안이 훤한 칸                   따뜻한 빛
+    // 규칙적인 격자 위에 이 넷을 섞는 것이 이 유형의 문법이다.
+    tenantWindows(seed, tintHex) {
+      const warm = rgb255(tintHex);
+      const grain = tiledFbm(seed + 3, 20, 3);
+      const COLS = 6;
+      const ROWS = 3;
+
+      return bake([512, 256], 1, 1, (u, v, o) => {
+        const gn = grain(u, v);
+        const up = 1 - v;
+        const ci = Math.min(COLS - 1, Math.floor(u * COLS));
+        const ri = Math.min(ROWS - 1, Math.floor(up * ROWS));
+        const cu = u * COLS - ci;
+        const cv = up * ROWS - ri;
+        const sid = seed + ci * 131 + ri * 977;
+
+        // 벽 — 어둡고 지저분하다. 창 사이가 벽이라는 것이 읽혀야 한다
+        o.c[0] = S.tileWall[0] * 0.56 + gn * 14;
+        o.c[1] = S.tileWall[1] * 0.54 + gn * 14;
+        o.c[2] = S.tileWall[2] * 0.60 + gn * 16;
+        o.r = 0.86; o.h = 0.4;
+        o.e[0] = 0; o.e[1] = 0; o.e[2] = 0;
+
+        // 층 슬래브 — 칸 아래 15%
+        if (cv < 0.15) return;
+
+        // 창 구멍 — 칸 안에서 여백을 두고
+        const inU = cu > 0.14 && cu < 0.86;
+        const inV = cv > 0.26 && cv < 0.92;
+
+        // 실외기 — 창 아래 턱에 매단다. 창보다 먼저 그린다
+        const hasAC = hash2(sid, 17) < 0.34;
+        if (hasAC && cv > 0.15 && cv < 0.26 && cu > 0.30 && cu < 0.70) {
+          const k = 74 + gn * 12;
+          o.c[0] = k; o.c[1] = k; o.c[2] = k + 5;
+          o.r = 0.55; o.h = 0.7;
+          return;
+        }
+        if (!inU || !inV) return;
+
+        // 창틀
+        const fu = (cu - 0.14) / 0.72;
+        const fv = (cv - 0.26) / 0.66;
+        const F = 0.07;
+        if (fu < F || fu > 1 - F || fv < F || fv > 1 - F) {
+          const k = 96;
+          o.c[0] = k; o.c[1] = k; o.c[2] = k + 6;
+          o.r = 0.5; o.h = 0.72;
+          return;
+        }
+
+        // 점등률. 번화가라 대부분 켜져 있어야 한다 — 처음에 꺼진 칸을 62% 로
+        // 뒀더니 잡거타워가 통째로 검은 벽이 됐다. 여기는 사람이 미어터지는
+        // 구역이라는 것이 이 도시의 설정이다 (docs/city.md 3기).
+        const state = hash2(sid, 43);
+        // 판자로 막은 칸 — 불이 없다. 이 칸이 있어야 켜진 칸이 읽힌다
+        if (state < 0.10) {
+          const k = 58 + Math.floor(fv * 5) * 4 + gn * 8;
+          o.c[0] = k; o.c[1] = k * 0.94; o.c[2] = k * 0.86;
+          o.r = 0.9; o.h = 0.3;
+          return;
+        }
+        // 꺼진 칸 — 유리만
+        if (state < 0.28) {
+          o.c[0] = 16; o.c[1] = 18; o.c[2] = 26;
+          o.r = 0.14; o.h = 0.85;
+          return;
+        }
+
+        // 켜진 칸. 색온도를 칸마다 흔든다 — 같은 색이면 사무실이다
+        const hue = hash2(sid, 71);
+        const col = hue < 0.62 ? warm
+          : hue < 0.82 ? rgb255(NEON.cool)
+            : rgb255(hue < 0.92 ? NEON.magenta : NEON.cyan);
+        // 블라인드 — 절반쯤 내린 칸
+        const blind = hash2(sid, 89);
+        let k = 1.0;
+        if (blind < 0.3) {
+          const bandsDown = 0.25 + blind;     // 어디까지 내렸나
+          if (fv < bandsDown) k = 0.3;        // 가려진 부분
+          else if (Math.floor(fv * 14) % 2 === 0) k = 0.78;
+        }
+        o.c[0] = col[0] * 0.2; o.c[1] = col[1] * 0.2; o.c[2] = col[2] * 0.2;
+        o.r = 0.3; o.h = 0.8;
+        o.e[0] = col[0] * k; o.e[1] = col[1] * k; o.e[2] = col[2] * k;
+        // ── `{ emissive: true }` 를 빼면 o.e 는 버려진다 ────────────────────
+        // 처음에 이 옵션 없이 구웠더니 세트에 map·roughnessMap·normalMap 만
+        // 들어 있었다. 창을 밝게 칠하고 세기까지 올렸는데 **발광맵 자체가
+        // 없어서** 잡거타워가 통째로 검은 벽이었다.
+        // 텍스처를 새로 만들 때는 구운 결과의 키를 확인한다 — 칠했다고
+        // 나오는 것이 아니다.
+      }, { emissive: true });
+    },
+
     // ── 점포 실내 배경 ────────────────────────────────────────────────────
     //
     // 벽감 안쪽 벽에 붙는다. 여기를 통짜 발광면으로 두면 **거대한 백지**가 되어
