@@ -342,7 +342,16 @@ export function buildMaterials() {
     //
     // 이 구역에 네온은 없다. 빛은 작업등(주황 나트륨)과 채광창으로 새는
     // 실내등뿐이다. 1기의 건물이라 2·3기의 조명 언어를 쓰지 않는다.
-    factoryLitMat: SoftGlow.instance({ color: 0xdce4d8, intensity: 0.42 }, 'FactoryLit'),
+    // ── 위에서 보면 이게 도시에서 제일 밝았다 (실측으로 고침) ──────────
+    // 톱니 지붕의 채광창은 지붕 폭의 94%를 덮는 긴 띠다. 다른 발광면
+    // (로비 0.52 · 브릿지창 0.42 · 집창 0.46)과 같은 등급을 줬는데,
+    // 그것들은 좁은 면이고 이건 **지붕 전체**다. 세기가 아니라 면적을
+    // 같이 봤어야 했다.
+    //
+    // 색도 위 주석과 어긋나 있었다 — "빛은 작업등(주황 나트륨)과 채광창"
+    // 이라고 적어 놓고 값은 0xdce4d8, 거의 흰색이었다. 공장 안 수은등
+    // 쪽으로 낮추고 세기를 0.42 -> 0.15 로 내린다.
+    factoryLitMat: SoftGlow.instance({ color: 0xb8c4b0, intensity: 0.15 }, 'FactoryLit'),
     factoryDarkMat: SolidSurface.instance(
       { color: 0x1b1f22, roughness: 0.42, envMapIntensity: 1.6 }, 'FactoryDark'
     ),

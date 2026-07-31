@@ -252,8 +252,14 @@ class NightCity extends Scene {
     const rain = RAIN ? await step('비', 95, () => createRain(scene, rng)) : null;
     if (rain) built.rain = rain.group;
 
+    // 0.9 -> 1.35. 반구광을 크게 내리면서(env.js 밝기 위계) 도시가 통째로
+    // 어두워지는데, 그 몫을 **구운 네온**이 대신하게 한다.
+    //
+    // 둘은 같은 밝기를 다르게 나눈다. 반구광은 하늘에서 오므로 **노면**을
+    // 밝히고, 이 환경맵은 간판과 창에서 오므로 **벽**을 밝힌다. 이 도시의
+    // 빛은 하늘이 아니라 간판에서 와야 한다.
     await step('환경광 굽기 (네온 반사)', 97, () =>
-      this.bakeEnvironment(scene, renderer, { source: 'scene', intensity: 0.9, far: 4000 })
+      this.bakeEnvironment(scene, renderer, { source: 'scene', intensity: 1.35, far: 4000 })
     );
 
     // ── 배치 검사 ─────────────────────────────────────────────────────────

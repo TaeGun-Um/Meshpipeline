@@ -76,7 +76,9 @@ function sawtooth(b, r, y, rng, mats) {
     const gz = alongX ? pz : pz + pitch * 0.34;
     b.add(
       autoBox(gw, rise * 0.86, gd, [gx, y + rise * 0.5, gz], 0.02),
-      rng.chance(0.55) ? mats.factoryLitMat : mats.factoryDarkMat
+      // 켜진 칸을 줄인다. 야간 공장은 전 라인이 도는 것이 아니라
+      // 교대조가 있는 동만 켜져 있다 — 그 얼룩이 공장을 살아 있게 한다
+      rng.chance(0.32) ? mats.factoryLitMat : mats.factoryDarkMat
     );
   }
 }
