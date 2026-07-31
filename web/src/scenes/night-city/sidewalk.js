@@ -22,6 +22,8 @@
 // 하는 것은 지오메트리로 놓는다.
 import { upPlane } from '../../core/boxfaces.js';
 import { claim, TIER } from './siteplan.js';
+import { districtAt } from './district.js';
+import { coreDistance } from './layout.js';
 import {
   GRID,
   CITY_HALF,
@@ -171,7 +173,10 @@ function covers(b, rng, mats) {
         // 인도 띠 안에서만 — 안쪽은 건물이다
         const side = rng.int(0, 3);
         const along = rng.range(-h + 4, h - 4);
-        const depth = rng.range(0.9, SIDEWALK_W - 0.9);
+        // 인도 폭은 구역이 정한다. 전역을 쓰면 좁은 구역(공업 3.2m)에서
+        // 점검구가 차도나 건물 밑으로 나간다 (towers.streetFaces 와 같은 실수).
+        const walk = districtAt(ix, iz, coreDistance(cx, cz)).sidewalk ?? SIDEWALK_W;
+        const depth = rng.range(0.7, Math.max(1.0, walk - 0.9));
         const w = rng.range(0.6, 1.1);
         const d = rng.range(0.5, 0.9);
         const px = side === 0 ? cx + along : side === 1 ? cx + along : cx + (side === 2 ? -1 : 1) * (h - depth);

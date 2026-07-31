@@ -21,9 +21,10 @@
 // 어두운 건물이 40% 는 있어야 밝은 건물이 눈에 들어온다.
 import { SIDES, faceWidth, shrink, rectBox, facePlane } from '../../core/boxfaces.js';
 import { autoBox } from '../../core/profile.js';
-import { FLOOR_HEIGHT } from './layout.js';
+import { FLOOR_HEIGHT ,
+  PANEL_TILE,
+} from './layout.js';
 
-const PANEL_TILE = 7.0;
 
 
 

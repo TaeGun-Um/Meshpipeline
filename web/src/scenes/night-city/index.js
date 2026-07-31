@@ -41,6 +41,7 @@ import { createAlleys } from './alley.js';
 import { createVertical, createBridges } from './vertical.js';
 import { createParking } from './parking.js';
 import { createPort } from './port.js';
+import { createCrowd } from './crowd.js';
 import { resetPlan, TIER, claim } from './siteplan.js';
 import { allAlleyRects, ALLEY_WIDTH, setAlleyRateHook, coreDistance } from './layout.js';
 import { districtAt } from './district.js';
@@ -191,6 +192,12 @@ class NightCity extends Scene {
     const life = await step('가로 시설물', 73, () => createStreetLife(scene, rng, mats));
     built.streetLife = life.group;
 
+    // 인파 — 지금까지 이 도시에 사람이 한 명도 없었다. 밀도는 물건의 밀도가
+    // 아니라 **사람의 밀도**다 (crowd.js 머리말). 설정상으로도 갈 곳이 없어
+    // 몰려든 도시라 사람이 미어터져야 한다.
+    const crowd = await step('인파', 74, () => createCrowd(scene, rng, mats));
+    built.crowd = crowd.group;
+
     // 빛 웅덩이는 조명 흉내다. 발광 표면이 주변을 밝히지 않는 문제를 지오메트리로
     // 푼다 — shared/lightpool.js 에 이유가 길게 적혀 있다.
     const pools = await step('빛 웅덩이', 76, () =>
@@ -226,6 +233,15 @@ class NightCity extends Scene {
 
     return {
       built,
+      // 감사(core/audit.js)가 "사라진 것" 을 잡을 수 있게 개수를 넘긴다.
+      // 화면을 안 보고도 회귀가 잡히는 유일한 경로다.
+      counts: {
+        간판: signage.count,
+        건물: towers.count,
+        사람: crowd.count,
+        가로시설: life.count,
+        골목: alleys.count,
+      },
       stats: [
         `구역 ${towers.districts.join('·')}`,
         `건물 ${towers.count}동`,
@@ -233,7 +249,7 @@ class NightCity extends Scene {
         `데크 ${vert.decks} · 계단 ${vert.stairs} · 브릿지 ${bridges.count}`,
         `최고 ${towers.tallest.toFixed(0)}m`,
         `공사장 ${programs.tally.construction} · 광장 ${programs.tally.plaza} · 공터 ${programs.tally.lot}`,
-        `가로시설 ${life.count}개`,
+        `가로시설 ${life.count}개 · 사람 ${crowd.count}명`,
         `간판 ${signage.count}개`,
         `빛 웅덩이 ${pools.count}개`,
         `차량 ${traffic.count}대 · 주차 ${parked.count}대`,

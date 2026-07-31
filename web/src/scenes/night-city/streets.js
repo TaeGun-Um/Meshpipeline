@@ -16,6 +16,7 @@ import {
   GRID,
   PITCH,
   coreDistance,
+  PIT_INSET,
   BLOCK_SIZE,
   STREET_WIDTH,
   CITY_HALF,
@@ -67,7 +68,7 @@ function blockPlates(b, mats, programs) {
       // 실제 공사장도 보행로와 연석은 그대로 두고 안쪽만 파낸다.
       // 그래서 가운데를 비운 **띠 네 개**로 깐다.
       if (construction) {
-        const inner = BLOCK_SIZE / 2 - 3; // constructionSite 의 구덩이 반경과 같다
+        const inner = BLOCK_SIZE / 2 - PIT_INSET;
         const band = BLOCK_SIZE / 2 - inner;
         const mid = inner + band / 2;
         for (const [dx, dz, w, d] of [

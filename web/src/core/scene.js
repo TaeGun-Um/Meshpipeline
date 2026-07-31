@@ -69,6 +69,8 @@ export class Scene {
       built: world.built,
       colliders: world.colliders || [],
       stats: world.stats || [],
+      // 씬이 신고한 개수. 감사가 "사라진 것" 을 잡는 데 쓴다 (core/audit.js).
+      counts: world.counts || {},
       tick: world.tick || null,
     };
   }

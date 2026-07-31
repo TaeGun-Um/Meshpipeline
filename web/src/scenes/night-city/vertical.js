@@ -29,6 +29,7 @@ import { NEON, rgb01 } from '../../shared/neon.js';
 import { neonSoft } from '../../shared/masters.js';
 import { hash2 } from '../../core/textures.js';
 import { claim, isFree, TIER } from './siteplan.js';
+import { districtAt } from './district.js';
 import {
   GRID,
   BLOCK_SIZE,
@@ -36,13 +37,17 @@ import {
   CURB_HEIGHT,
   SIDEWALK_W,
   blockCenter,
+  coreDistance,
   ALLEY_WIDTH,
 } from './layout.js';
 
 // 2층 데크 높이. 1층 점포(SHOP_H=3.4)와 그 위 간판대를 지나야 하므로
 // 6.5m 정도가 최소다. 더 낮으면 데크가 간판을 자른다.
 const DECK_Y = 6.8;
-const DECK_W = 2.6; // 데크 폭 — 인도(4.6m) 안에 들어가야 한다
+// 데크 폭. 그 구역 인도 안에 들어가야 한다 — 넘치면 차도로 나가 고가도로와
+// 부딪힌다. 좁은 구역에서는 데크를 아예 놓지 않는다 (아래 MIN_WALK).
+const DECK_W = 2.6;
+const MIN_WALK = DECK_W + 1.2; // 이보다 인도가 좁으면 데크를 못 놓는다
 
 // ── 계단 ───────────────────────────────────────────────────────────────────
 //
@@ -240,6 +245,9 @@ export function createVertical(scene, rng, mats, alleys) {
     for (let iz = 0; iz < GRID; iz++) {
       const h = hash2(ix * 197 + 11, iz * 61 + 7);
       if (h > 0.42) continue; // 42% 블록만
+      // 인도가 데크를 감당하는가. 공업 구역(3.2m)에는 못 놓는다.
+      const walk = districtAt(ix, iz, coreDistance(blockCenter(ix), blockCenter(iz))).sidewalk ?? SIDEWALK_W;
+      if (walk < MIN_WALK) continue;
       const cx = blockCenter(ix);
       const cz = blockCenter(iz);
       const half = BLOCK_SIZE / 2;

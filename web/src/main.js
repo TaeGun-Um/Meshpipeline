@@ -192,6 +192,7 @@ async function build() {
     tris,
     textures: TEX.textureStats.count,
     colliders: colliderCount,
+    counts: world.counts || {},
   };
   window.__ready = true;
 }

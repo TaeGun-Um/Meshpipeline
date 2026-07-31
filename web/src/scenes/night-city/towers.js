@@ -68,12 +68,21 @@ const SHOP_WASH = SHOP_TINTS.map((hex) => rgb01(hex, 0.62));
 //
 // 실측: 건물 지오메트리 958,000 삼각형 중 대부분이 1층 점포였고, 그 절반 이상이
 // 보이지 않는 면이었다. 이건 LOD 가 아니라 그냥 낭비다 — 지워도 잃는 게 없다.
-function streetFaces(r, blk) {
+function streetFaces(r, blk, walk = SIDEWALK_W) {
   const half = BLOCK_SIZE / 2;
-  // 여유는 인도 폭보다 커야 한다. 인도(SIDEWALK_W)를 확보하면서 이 값을 4.0 으로
-  // 두면 어떤 필지도 조건을 못 넘겨 **점포와 간판이 통째로 사라진다.**
-  // 둘이 같은 상수를 봐야 한쪽만 바꿨을 때 조용히 비는 일이 없다.
-  const m = SIDEWALK_W + 1.6; // 블록 경계에서 이 거리 안쪽이면 길에 면한 것으로 본다
+  // ── 인도 폭을 **인자로 받는다** (실측으로 고침) ─────────────────────────
+  // 여유는 그 블록의 실제 인도 폭보다 **커야** 한다.
+  //
+  // 전에는 전역 SIDEWALK_W(4.6) 로 계산했는데, blockLots 는 구역별 인도 폭
+  // (상업 6.2 · 기업 7.5) 으로 필지를 안쪽에 만든다. 두 값이 어긋나면 필지가
+  // 판정선 밖으로 밀려 **모든 면이 "길에 안 면함" 이 된다.**
+  //
+  // 실제로 상업 구역에서 여유(4.6+1.6=6.2)와 인도 폭(6.2)이 정확히 같아져
+  // 부등식이 경계에서 항상 거짓이 됐고, 그 결과 도시 전체 간판이
+  // 1,602개에서 **9개**로 죽었다. 점포도 함께 사라졌는데 못 알아챘다.
+  //
+  // 같은 값을 두 곳에서 다른 출처로 계산하면 반드시 이런 일이 난다.
+  const m = walk + 1.6;
   return {
     px: r.x1 > blk.cx + half - m,
     nx: r.x0 < blk.cx - half + m,
@@ -431,7 +440,7 @@ export function createTowers(scene, rng, mats, blocks) {
       count++;
       if (height > tallest) tallest = height;
 
-      const faces = streetFaces(r, blk);
+      const faces = streetFaces(r, blk, BD.sidewalk);
 
       // ── 상업 구역은 생성기가 다르다 ──────────────────────────────────
       // 번화가는 계획된 상업지구가 아니라 **계획이 터진 자리**다 (docs/city.md

@@ -38,6 +38,13 @@ export const PANEL_TILE = 7.0;
 // 그래서 나눌 때부터 블록에서 빼놓는다.
 export const SIDEWALK_W = 4.6;
 
+// 공사장 구덩이가 블록 가장자리에서 얼마나 안쪽인가.
+//
+// streets.blockPlates(인도 띠를 남긴다) 와 program.constructionSite(구덩이를
+// 판다) 가 **같은 값을 봐야 한다.** 전에는 양쪽에 3 을 각자 써 두고 주석으로만
+// "같아야 한다" 고 적어 뒀는데, 주석은 강제하지 않는다.
+export const PIT_INSET = 3;
+
 // 층고
 export const FLOOR_HEIGHT = 3.6; // 오피스·주거 기준층
 export const PODIUM_FLOOR = 4.6; // 저층 상가는 층고가 높다

@@ -8,12 +8,13 @@ import * as THREE from 'three';
 import { MeshBuilder } from '../../core/builder.js';
 import { NEON } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
-import { CITY_HALF, HIGHWAY_X, HIGHWAY_Y, PITCH } from './layout.js';
+import { CITY_HALF, HIGHWAY_X, HIGHWAY_Y, PITCH ,
+  PANEL_TILE,
+} from './layout.js';
 
 const DECK_W = 17; // 편도 2차로 x 2
 const DECK_T = 1.1; // 상판 두께
 const RAIL_H = 1.15;
-const PANEL_TILE = 7.0;
 
 // 고가도로 끝은 안개 속으로 사라져야 한다. 도시 경계에서 끊으면 잘린 단면이
 // 그대로 보여 무대 세트처럼 된다.

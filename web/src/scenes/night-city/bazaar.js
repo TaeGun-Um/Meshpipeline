@@ -221,16 +221,56 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs) {
     // 1층 위 천막 — 인도를 덮는다
     if (rng.chance(0.72 * detail)) awning(b, f, SHOP_FLOOR - 0.3, rng, mats);
 
-    // 전면 대형 간판 — 건물 높이를 세로로 지나간다.
-    // 적층 상가의 정면은 간판이 벽을 덮는 것이 정상이다.
-    if (rng.chance(0.55 * detail)) {
+    // ── 간판이 벽을 덮는다 ──────────────────────────────────────────────
+    //
+    // 적층 상가의 정면은 **간판이 벽면적의 절반 이상**을 차지한다. 층마다
+    // 가게가 있으니 층마다 간판이 있고, 그것들이 겹쳐 쌓인다.
+    // 레퍼런스의 재팬타운이 그렇게 보이는 이유는 간판이 많아서가 아니라
+    // **겹쳐 쌓여 있어서**다.
+    //
+    // 예전에 여기서 blade 하나만 요청했더니 도시 전체 간판이 9개였다.
+    // 구역별 생성기가 공통 podium() 을 우회하면서 간판 경로가 통째로
+    // 끊긴 것을 못 봤다 (docs/status.md 1.1).
+
+    // 1) 층마다 가로 배너 — 겹쳐 쌓이는 것이 요점
+    let stack = top - 1.2;
+    const rows = Math.max(2, Math.round(4 * detail));
+    for (let k = 0; k < rows; k++) {
+      const bh = rng.range(1.2, 2.2);
+      if (stack - bh < SHOP_FLOOR * 0.8) break;
+      if (rng.chance(0.22)) { stack -= bh + 0.3; continue; }
       signs.push({
-        kind: 'blade',
-        rect: r,
-        side,
-        y: SHOP_FLOOR * 1.2,
-        w: 0.9,
-        h: Math.min(top - SHOP_FLOOR * 1.4, rng.range(4, 9)),
+        kind: 'banner', rect: r, side,
+        y: stack - bh / 2,
+        w: f.w * rng.range(0.55, 0.95),
+        h: bh,
+        scheme: rng.int(0, 5),
+      });
+      stack -= bh + rng.range(0.25, 0.7);
+    }
+
+    // 2) 돌출 세로 간판 여럿 — 거리를 걸을 때 앞으로 이어지는 리듬
+    const blades = Math.max(1, Math.round((f.w / 7) * detail));
+    for (let k = 0; k < blades; k++) {
+      if (!rng.chance(0.72)) continue;
+      const bh = rng.range(3, Math.min(7, top - SHOP_FLOOR * 1.3));
+      if (bh < 2) continue;
+      const sub = bayRect(r, side, k, Math.max(1, blades), 0);
+      signs.push({
+        kind: 'blade', rect: sub, side,
+        y: SHOP_FLOOR * rng.range(1.0, 1.6),
+        w: bh / 4.6, h: bh,
+        scheme: rng.int(0, 5),
+      });
+    }
+
+    // 3) 옥상 대형 광고 — 벽보다 크다. 이게 스케일의 폭력을 만든다.
+    if (rng.chance(0.4 * detail)) {
+      signs.push({
+        kind: 'mega', rect: r, side,
+        y: top + rng.range(1, 4),
+        w: f.w * rng.range(0.7, 1.0),
+        h: rng.range(6, 12),
         scheme: rng.int(0, 5),
       });
     }

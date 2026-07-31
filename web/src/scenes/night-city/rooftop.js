@@ -12,7 +12,6 @@ import { SIDES, shrink, rectBox, facePlane } from '../../core/boxfaces.js';
 import { NEON } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 
-const PANEL_TILE = 7.0;
 
 // ── 옥상 설비 ──────────────────────────────────────────────────────────────
 

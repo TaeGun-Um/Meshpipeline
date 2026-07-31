@@ -10,7 +10,7 @@
 import { MeshBuilder } from '../../core/builder.js';
 import { autoBox, lathe } from '../../core/profile.js';
 import { upPlane, downPlane } from '../../core/boxfaces.js';
-import { BLOCK_SIZE, CURB_HEIGHT } from './layout.js';
+import { BLOCK_SIZE, CURB_HEIGHT, PIT_INSET } from './layout.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon, neonSoft } from '../../shared/masters.js';
 
@@ -22,7 +22,7 @@ const Y = CURB_HEIGHT;
 // 비계, 자재 더미, 투광등. 특히 **크레인**은 실루엣이 독특해서 멀리서도 공사장인
 // 것을 알려 준다.
 function constructionSite(b, cx, cz, rng, mats, pools) {
-  const half = BLOCK_SIZE / 2 - 3;
+  const half = BLOCK_SIZE / 2 - PIT_INSET;
 
   // 가설 펜스 — 블록 둘레. 파란 함석판에 세로 리브.
   const FH = 2.4;
