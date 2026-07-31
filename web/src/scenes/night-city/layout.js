@@ -521,6 +521,26 @@ export function subtractAlley(root, a) {
 // 순환 참조를 피하려고 **인자로 받는다**. district.js 가 layout 의 상수를
 // 쓰므로 layout 이 district 를 import 하면 순환이 된다. 구역은 좌표 해시라
 // 부르는 쪽에서 구해 넘기면 그만이다.
+// 건물이 설 수 있는 조각들 — 인도와 보행로를 뺀 나머지.
+//
+// blockLots 는 이것을 균등 목표 크기로 나누지만, 구역에 따라 **다르게**
+// 나누고 싶을 수 있다. 번화가가 그렇다 — 시장 아케이드는 길어야 하고
+// 유흥가는 좁아야 하는데, 균등하게 자르면 전부 같은 26m 정사각이 된다.
+// 그래서 재료만 내주고 자르는 방식은 부르는 쪽에 맡긴다.
+export function buildableSlabs(blk, D = null) {
+  const root = blk.rect || blockRect(blk.ix, blk.iz);
+  const walk = D?.sidewalk ?? SIDEWALK_W;
+  const buildable = {
+    x0: root.x0 + walk, x1: root.x1 - walk,
+    z0: root.z0 + walk, z1: root.z1 - walk,
+  };
+  const walks = (blk.walks || []).map((g) => ({
+    x0: g.rect.x0 - WALK_CLEAR, x1: g.rect.x1 + WALK_CLEAR,
+    z0: g.rect.z0 - WALK_CLEAR, z1: g.rect.z1 + WALK_CLEAR,
+  }));
+  return walks.length ? subtractStrips(buildable, walks) : [buildable];
+}
+
 export function blockLots(rng, blk, D = null) {
   // 대지 사각형은 **부르는 쪽이 준다.** parcel.js 가 district 를 보고
   // layout 이 district 를 보면 순환이 되므로, blockList 가 만들어 넘긴다.

@@ -48,7 +48,7 @@ import { applySkin, facadeRelief } from './facade.js';
 import { districtAt, pickArchetypeIn } from './district.js';
 import { pickMassing, footprint, cylinderMass } from './massing.js';
 import { wharfBlock } from './wharf.js';
-import { pickMarketKind, marketBlock, marketSideOf, resetMarketTally } from './market.js';
+import { marketPlan, marketBlock, resetMarketTally } from './market.js';
 import { hash2 } from '../../core/textures.js';
 import { LANDMARK_BLOCKS } from './landmark.js';
 import { buildBay, ALCOVE, SHOP_H, showcase } from './shopfront.js';
@@ -481,13 +481,23 @@ export function createTowers(scene, rng, mats, blocks) {
     // 거리 기반으로 '줄이는' 것이 아니라 도시 구조로 그렇게 만든다.
     const detail = detailAt(blk.cx, blk.cz);
 
-    const { lots, alleys: blkAlleys } = blockLots(rng, blk, BD);
+    // ── 번화가는 필지를 다르게 나눈다 ──────────────────────────────────
+    //
+    // 균등하게 자르면 다섯 유형의 폭이 전부 25~27m 가 되어 **형태가 안 갈린다**
+    // (실측으로 확인했다). 번화가는 유형이 먼저 정해지고 필지가 거기 맞춰
+    // 잘려야 한다 — 아케이드는 길고 유흥가는 좁다 (market.marketPlan).
+    const plan = BD.name === '상업' ? marketPlan(rng, blk, BD) : null;
+    const { lots, alleys: blkAlleys } = plan
+      ? { lots: plan.map((q) => q.rect), alleys: [] }
+      : blockLots(rng, blk, BD);
+    let planIdx = 0;
     // 구역 이름을 붙여 넘긴다. 골목 벽 높이가 구역별 건물 높이를 따라야 하는데
     // layout 은 순환 참조 때문에 district 를 직접 못 본다 (alley.js 참고).
     for (const a of blkAlleys) a.zone = BD.name;
     alleys.push(...blkAlleys);
 
     for (const rect of lots) {
+      const planned = plan ? plan[planIdx++] : null;
       // 필지 사이 간격. 좁아야 한다 — 레퍼런스의 밀도는 건물이 서로 맞닿아
       // 있는 데서 온다. 2.6m 씩 띄우면 블록마다 골목이 생겨 성글어 보인다.
       const r = shrink(rect, rng.range(0.35, 1.4));
@@ -599,25 +609,12 @@ export function createTowers(scene, rng, mats, blocks) {
       if (D.name === '상업') {
         // 난수 소비를 맞춘다 — 건너뛰면 뒤의 모든 생성이 밀린다
         rng.int(2, 3);
-        // ── 번화가는 한 종류가 아니다 (사용자 지시) ──────────────────────
-        // "번화가는 시장, 명품전시관, 유흥가, 암거리시장, 지하상가 등이
-        //  있어야 할 것"
-        //
-        // 적층 상가(bazaar)가 기준이고, 필지 일부가 특수 유형이 된다.
-        // **좌표 해시로 정한다** — 난수를 쓰면 확률 하나만 바꿔도 도시
-        // 전체가 밀린다 (blockProgram·alleyFor 와 같은 이유).
-        // 필지 **중심 좌표**로 해싱한다. lotIdx 를 쓰면 그건 블록을 가로지르는
-        // 전역 카운터라, 주거나 공업을 건드리는 순간 번화가 유형이 통째로
-        // 밀린다 — "좌표 해시" 가 되려면 좌표를 써야 한다.
-        // 어느 번화가인가가 무엇이 서는지를 정한다 (market.marketSideOf).
-        // 안쪽은 시장·명품관, 북쪽(기업·슬럼에 접한 띠)은 유흥가·지하상가·암거래.
-        const mc = rectCenter(r);
-        const mk = pickMarketKind(
-          hash2(Math.round(mc.x), Math.round(mc.z)),
-          rectSize(r),
-          marketSideOf(blk.ix)
-        );
-        const mb = mk ? marketBlock(b, mk, r, rng, mats, signs, pools) : null;
+        // 유형은 **필지를 나눌 때 이미 정해졌다** (marketPlan).
+        // 여기서 다시 뽑으면 필지 모양과 유형이 어긋난다 — 아케이드용으로
+        // 길게 자른 자리에 좁은 유흥가가 서는 식이다.
+        const mb = planned?.kind
+          ? marketBlock(b, planned.kind, r, rng, mats, signs, pools)
+          : null;
         const bz = mb || bazaarBlock(b, r, rng, mats, D, faces, detail, signs);
         if (bz.top > tallest) tallest = bz.top;
         anchors.push({ rect: r, solid: solidOf(r, b.takeMark()), top: bz.top, zone: D.name, faces });

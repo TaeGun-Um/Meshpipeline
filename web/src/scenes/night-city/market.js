@@ -35,19 +35,39 @@ import {
 } from '../../core/boxfaces.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon, neonSoft } from '../../shared/masters.js';
-import { PANEL_TILE, CURB_HEIGHT } from './layout.js';
+import { PANEL_TILE, CURB_HEIGHT, buildableSlabs } from './layout.js';
 
 // 유형이 실제로 다 나오는지 세어 둔다. 종류를 늘려 놓고 확률이 낮아
 // 한 번도 안 나오는 것은 만들지 않은 것과 같다 — 기업 양식에서 실제로
 // 그랬다 (div 임계값 때문에 '유리' 양식이 안 나왔다).
 let TALLY = {};
+let SPOTS = [];
 export function marketTally() {
   return { ...TALLY };
 }
+// 어디에 섰는지도 남긴다. **"만들었다" 와 "화면에서 보인다" 는 다르다** —
+// 개수만 세면 낮은 유형이 높은 건물에 가려 안 보이는 것을 못 잡는다.
+// 실제로 사용자가 "지하상가·암시장은 어딨는지도 모르겠다" 고 했다.
+export function marketSpots() {
+  return SPOTS.slice();
+}
 export function resetMarketTally() {
   TALLY = {};
+  SPOTS = [];
 }
-const tally = (k) => { TALLY[k] = (TALLY[k] || 0) + 1; };
+const tally = (k, r, top) => {
+  TALLY[k] = (TALLY[k] || 0) + 1;
+  if (r) {
+    SPOTS.push({
+      kind: k,
+      x: Math.round((r.x0 + r.x1) / 2),
+      z: Math.round((r.z0 + r.z1) / 2),
+      w: Math.round(r.x1 - r.x0),
+      d: Math.round(r.z1 - r.z0),
+      top: top ? +top.toFixed(1) : 0,
+    });
+  }
+};
 
 // ── 좌판 ───────────────────────────────────────────────────────────────────
 //
@@ -174,7 +194,7 @@ function arcade(b, r, rng, mats, signs, pools) {
       });
     }
   }
-  tally('시장');
+  tally('시장', r, Y + H + 0.4);
   return { top: Y + H + 0.4 };
 }
 
@@ -267,7 +287,7 @@ function vitrine(b, r, rng, mats, signs, pools) {
   }
 
   // **간판을 안 단다.** signs 에 아무것도 넣지 않는 유일한 유형이다.
-  tally('명품관');
+  tally('명품관', r, Y + H + 0.9);
   return { top: Y + H + 0.9 };
 }
 
@@ -348,7 +368,7 @@ function nightlife(b, r, rng, mats, signs, pools) {
     }
     pools.push({ kind: 'floor', x: ex, y: Y + 0.06, z: ez, rx: 8, rz: 8, tint: rgb01(NEON.magenta, 0.7) });
   }
-  tally('유흥가');
+  tally('유흥가', r, Y + H + 2.4);
   return { top: Y + H + 2.4 };
 }
 
@@ -430,7 +450,7 @@ function blackMarket(b, r, rng, mats, signs, pools) {
   pools.push({ kind: 'floor', x: lx, y: Y + 0.05, z: lz, rx: 5.0, rz: 5.0, tint: rgb01(NEON.amber, 0.4) });
 
   // 간판은 안 단다. 광고하는 곳이 아니다.
-  tally('암거래');
+  tally('암거래', r, Y + 4.6);
   return { top: Y + 4.6 };
 }
 
@@ -537,7 +557,7 @@ function underpass(b, r, rng, mats, signs, pools) {
     b.sphere(0.16, [px, Y + 4.0, pz], neon(NEON.cool));
     pools.push({ kind: 'floor', x: px, y: Y + 0.05, z: pz, rx: 4.2, rz: 4.2, tint: rgb01(NEON.cool, 0.3) });
   }
-  tally('지하상가');
+  tally('지하상가', r, Y + 3.9);
   return { top: Y + 3.9 };
 }
 
@@ -546,73 +566,157 @@ function underpass(b, r, rng, mats, signs, pools) {
 // "안쪽으로 있는 번화가는 명품관, 시장 등이 존재하도록 하고,
 //  북쪽(어두운 건물들 밀집된 부분)을 향하는 번화가는 유흥가랑 지하상가,
 //  암거래 시장 이런걸로"
+// "명품관은 기업쪽에 가깝게, 암시장같은 건 기업에서 멀게"
 //
-// 무작위 해시로 다섯을 흩뿌리는 것보다 **자리가 성격을 정하는** 쪽이 맞다.
-// 그래야 "저쪽으로 가면 무엇이 있다" 가 성립하고, 그게 탐험할 이유다.
+// 자리가 성격을 정한다. 그래야 "저쪽으로 가면 무엇이 있다" 가 성립하고,
+// 그게 탐험할 이유다.
 //
-// 배치도(district.PLAN)에서 상업은 두 덩어리다.
+// 축이 둘이다.
+//   1) 어느 덩어리인가   안쪽(ix<6) 이냐 북쪽(ix>=6) 이냐
+//   2) 기업에서 얼마나 먼가   돈이 어디서 오는지가 상권을 정한다.
+//      기업에 붙은 쪽은 임대료가 비싸고 멀어질수록 싸진다
 //
-//   북쪽 (ix 9~11, iz 5~8)  기업과 슬럼 사이에 낀 띠. 어두운 것들에 접한다
-//   안쪽 (ix 1~5,  iz 4~7)  주거와 공업에 둘러싸인 큰 덩어리
-//
-// 내력으로도 맞는다 (docs/city.md). 슬럼은 기업이 사 모았다가 버린 자리이고,
-// 그 경계에 붙은 상권이 밝고 합법적일 이유가 없다. 반대로 주거에 둘러싸인
-// 안쪽은 사람이 매일 장을 보는 곳이다.
-//
-//   안쪽 → 시장 아케이드 · 명품 전시관     (사는 곳)
-//   북쪽 → 유흥가 · 지하상가 · 암거래      (밤에 오는 곳)
-//
-// 그림 위 = +X 이므로 '북쪽' 은 ix 가 큰 쪽이다 (district.PLAN 머리말).
+// district.PLAN 에서 기업은 ix 6~11 · iz 0~4 다.
 const NORTH_FROM_IX = 6;
+const CORPO = { ix0: 6, ix1: 11, iz0: 0, iz1: 4 };
 
 export function marketSideOf(ix) {
   return ix >= NORTH_FROM_IX ? 'north' : 'inner';
 }
 
-// ── 어느 유형이 되나 ───────────────────────────────────────────────────────
-//
-// 좌표 해시로 정한다. 난수를 쓰면 확률 하나만 바꿔도 도시 전체가 밀린다
-// (blockProgram·alleyFor 와 같은 이유).
-//
-// 유형마다 **필요한 크기가 다르다.** 지하상가는 계단이 들어갈 길이가
-// 필요하고 아케이드는 통로가 되려면 길어야 한다. 안 맞으면 적층 상가로
-// 떨어진다 — 억지로 넣으면 그 유형이 그 유형으로 안 읽힌다.
-//
-// ── 비율 (실측으로 고침) ───────────────────────────────────────────────────
-// 처음에 합계 49% 로 잡았더니 특수 유형이 67채가 되면서 **간판이 702 ->
-// 362 개로 반토막**났다 (감사의 비율 지표가 잡았다: 건물당 간판 1.36 < 2.1).
-//
-// 당연했다. 번화가의 정의가 "간판이 전면을 덮는다" 인데, 명품관과 암거래는
-// 설계상 간판이 0 이다. 그 둘이 늘면 구역의 정체성이 사라진다.
-// **기준 유형(적층 상가)이 다수여야 한다** — 특수 유형은 양념이지 밥이 아니다.
-export function pickMarketKind(h, s, side) {
-  const small = Math.min(s.w, s.d);
-  const large = Math.max(s.w, s.d);
+// 기업 사각형까지의 격자 거리 (0 이면 맞닿아 있다).
+export function corpoDistance(ix, iz) {
+  const dx = Math.max(CORPO.ix0 - ix, 0, ix - CORPO.ix1);
+  const dz = Math.max(CORPO.iz0 - iz, 0, iz - CORPO.iz1);
+  return Math.hypot(dx, dz);
+}
 
+// ── 유형이 필지를 고른다 ───────────────────────────────────────────────────
+//
+// ── 왜 다시 만들었나 (사용자 지적) ────────────────────────────────────────
+// "얘네들의 건물이 전혀 특색들이 없어서 구분이 전혀 안가는데?
+//  건물의 특색은 대체 어디간건지"
+//
+// 실측이 답을 줬다. 다섯 유형의 **평균 폭이 전부 25~27m** 였다.
+//
+//   유흥가 26m · 명품관 25m · 시장 27m · 암거래 27m · 지하상가 25m
+//
+// 필지를 목표 32m 로 균등하게 자른 뒤 그 안을 채웠으니 당연하다.
+// 유형이 바꾼 것은 **똑같은 상자 안의 내용물**뿐이었고, 그래서 멀리서 보면
+// 같은 크기 덩어리가 격자로 늘어선 것이다. "형태가 갈린다" 고 했던 것은
+// 내용물이 갈린 것이지 형태가 갈린 것이 아니었다.
+//
+// 그리고 낮은 유형(지하상가 4.1m · 암거래 4.8m)은 주변 적층 상가(10~20m)에
+// 가려 **어디 있는지도 안 보였다.**
+//
+// 그래서 순서를 뒤집는다. **유형이 먼저 정해지고 필지가 거기 맞춰 잘린다.**
+//
+//   시장 아케이드  50~76m  관통하는 홀이라 길어야 한다
+//   지하상가       34~48m  광장이라 넓어야 하고, 넓어야 하늘이 보인다
+//   명품관         26~34m  마당을 두고 물러선다
+//   적층상가       20~30m  기준
+//   유흥가         13~19m  좁고 높다. 신주쿠의 그 형태
+//   암거래         10~15m  가장 좁다. 틈에 낀 것처럼
+//
+// 폭이 5배 차이 나면 멀리서도 다르다. 그리고 띠를 **조각의 긴 축을 따라**
+// 늘어놓으므로 모든 유형이 긴 변으로 길이나 보행로를 마주 본다 —
+// 4m 짜리도 안 가려진다.
+const BAND = {
+  arcade:    [50, 76],
+  underpass: [34, 48],
+  vitrine:   [26, 34],
+  bazaar:    [20, 30],
+  nightlife: [13, 19],
+  black:     [10, 15],
+};
+
+// 그 자리에 무엇이 어울리나. 가중치를 주고 뽑는다.
+//
+// near 는 기업까지의 거리다 (0 = 맞닿음). 사용자 지시대로
+// **명품관은 가까이, 암거래는 멀리** 간다.
+function weights(side, near) {
+  const close = Math.max(0, 1 - near / 4); // 1 = 기업 코앞, 0 = 멀다
   if (side === 'inner') {
-    // 명품관 비중을 줄였다. 15채까지 늘었더니 **간판이 148개 모자랐다** —
-    // 이 유형만 설계상 간판이 0 이라, 한 채 늘 때마다 적층 상가 열 개
-    // 분량의 간판이 사라진다. 희소해야 '명품' 이기도 하다.
-    if (h < 0.20 && large > 26 && small > 12) return 'arcade';
-    if (h < 0.28 && small > 16) return 'vitrine';
-    return null;
+    return {
+      bazaar: 1.0,
+      arcade: 0.42,
+      vitrine: 0.10 + close * 0.55, // 기업에 붙을수록 명품관
+      nightlife: 0.06,
+      black: 0.04 + (1 - close) * 0.10,
+      underpass: 0.10,
+    };
   }
-  // north — 밤에 오는 곳
-  //
-  // 지하상가를 **맨 앞에 둔다.** 뒤에 두었더니 크기 조건(large>24 · small>16)에
-  // 걸려 도시 전체에 **1채**밖에 안 섰다. 앞의 유형들이 먼저 큰 필지를
-  // 가져가 버리기 때문이다. 조건도 함께 낮춘다 — 계단이 들어갈 정도면 된다.
-  //
-  // 종류를 만들어 놓고 확률·크기 조건 때문에 안 나오면 만들지 않은 것과
-  // 같다. 기업 양식에서 이미 한 번 그랬다 (div 임계값 때문에 '유리' 가
-  // 안 나왔다). 그래서 marketTally() 로 매번 센다.
-  // 2채까지 떨어진 적이 있다. 크기 관문은 **상류 난수 소비가 바뀌면 같이
-  // 흔들린다** — 필지 크기가 splitToTarget 의 난수에서 나오기 때문이다.
-  // 그래서 관문을 넉넉히 두고 띠를 넓게 잡는다.
-  if (h < 0.17 && large > 18 && small > 12) return 'underpass';
-  if (h < 0.26 && small > 13) return 'nightlife';
-  if (h < 0.42 && large > 20) return 'black';
-  return null; // 적층 상가 (bazaar.js)
+  return {
+    bazaar: 1.0,
+    nightlife: 0.34,
+    underpass: 0.26,
+    black: 0.10 + (1 - close) * 0.55, // 기업에서 멀수록 암거래
+    vitrine: 0.04 + close * 0.22,
+    arcade: 0.12,
+  };
+}
+
+function pick(rng, w, room) {
+  const ok = Object.keys(w).filter((k) => BAND[k][0] <= room);
+  if (!ok.length) return 'bazaar';
+  let sum = 0;
+  for (const k of ok) sum += w[k];
+  let t = rng.range(0, sum);
+  for (const k of ok) {
+    t -= w[k];
+    if (t <= 0) return k;
+  }
+  return ok[ok.length - 1];
+}
+
+// 조각 하나를 긴 축을 따라 띠로 나눈다. 각 띠가 유형 하나다.
+function planSlab(rng, slab, side, near, out) {
+  const w = slab.x1 - slab.x0;
+  const d = slab.z1 - slab.z0;
+  const alongX = w >= d;
+  const len = alongX ? w : d;
+  const dep = alongX ? d : w;
+  if (dep < 11 || len < 11) return;
+
+  // 너무 깊으면 한 번 접는다 — 안 그러면 안쪽이 길을 못 만난다
+  if (dep > 52) {
+    const m = alongX ? (slab.z0 + slab.z1) / 2 : (slab.x0 + slab.x1) / 2;
+    const a = alongX ? { ...slab, z1: m } : { ...slab, x1: m };
+    const b = alongX ? { ...slab, z0: m } : { ...slab, x0: m };
+    planSlab(rng, a, side, near, out);
+    planSlab(rng, b, side, near, out);
+    return;
+  }
+
+  const W = weights(side, near);
+  let t = 0;
+  while (len - t > 9) {
+    const room = len - t;
+    const kind = pick(rng, W, room);
+    const [lo, hi] = BAND[kind];
+    // 남은 자리가 어중간하면 그 띠가 다 먹는다 — 9m 짜리 자투리를 남기면
+    // 거기 아무것도 못 선다
+    const want = rng.range(lo, Math.min(hi, room));
+    const take = room - want < lo * 0.8 ? room : want;
+    const a0 = (alongX ? slab.x0 : slab.z0) + t;
+    const a1 = a0 + take;
+    out.push({
+      kind: kind === 'bazaar' ? null : kind,
+      rect: alongX
+        ? { x0: a0, x1: a1, z0: slab.z0, z1: slab.z1 }
+        : { x0: slab.x0, x1: slab.x1, z0: a0, z1: a1 },
+    });
+    t += take;
+  }
+}
+
+// 번화가 대지 하나의 필지 계획. towers.js 가 이걸로 blockLots 를 대신한다.
+export function marketPlan(rng, blk, D) {
+  const side = marketSideOf(blk.ix);
+  const near = corpoDistance(blk.ix, blk.iz);
+  const out = [];
+  for (const slab of buildableSlabs(blk, D)) planSlab(rng, slab, side, near, out);
+  return out;
 }
 
 export function marketBlock(b, kind, r, rng, mats, signs, pools) {
