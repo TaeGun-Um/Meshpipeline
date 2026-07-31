@@ -92,6 +92,7 @@ node tools/pipeline.mjs --accept   # 새 스펙을 승인 (아래 참고)
 
 | 문서 | 내용 |
 |---|---|
+| [docs/concepts.md](docs/concepts.md) | **개념 — 가장 먼저 읽는다.** 이게 무엇을 하는 것인가, DX11 과 무엇이 같고 다른가, 무엇이 엔진으로 넘어가고 무엇이 안 넘어가는가, 도구 버전 |
 | [docs/architecture.md](docs/architecture.md) | **아키텍처** — 계층 구조, 의존 방향, 왜 이렇게 나눴는가 |
 | [docs/pipeline.md](docs/pipeline.md) | 파이프라인 6단계, 규약(contract), 검사 항목 |
 | [docs/modules.md](docs/modules.md) | 기능 모듈 — 텍스처·지오메트리·스켈레탈·익스포트·임포트 |
