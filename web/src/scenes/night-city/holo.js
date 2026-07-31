@@ -33,15 +33,11 @@ import { tubeBetween } from '../../core/profile.js';
 import { upPlane, rectCenter, rectSize } from '../../core/boxfaces.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { holo, holoSoft } from '../../shared/masters.js';
-import {
-  // GRID·blockRect 는 더 쓰지 않는다. 대지를 도는 것이 옳고, 블록 사각형을
-  // 보면 병합된 대지 안쪽 칸에서 건물 속에 물건을 놓게 된다.
-  CURB_HEIGHT,
-  detailAt,
-  blockIndexAt,
-} from './layout.js';
+// `GRID`·`blockRect` 는 더 쓰지 않는다. 대지를 도는 것이 옳고, 블록 사각형을
+// 보면 병합된 대지 안쪽 칸에서 건물 속에 물건을 놓게 된다 (createHolo 참고).
+// `roadAt` 도 뺐다 — 폭이 있는 것을 점으로 물으면 안 된다 (spanInRoad).
+import { CURB_HEIGHT, detailAt, blockIndexAt, spanInRoad } from './layout.js';
 import { districtAt, byZone } from './district.js';
-import { roadAt, spanInRoad } from './layout.js';
 import { parcels } from './parcel.js';
 import { LANDMARK_BLOCKS } from './landmark.js';
 

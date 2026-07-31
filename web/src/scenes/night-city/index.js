@@ -54,7 +54,7 @@ import { createSkyline } from './skyline.js';
 import { createTraffic } from './traffic.js';
 import { createAirTraffic } from './air.js';
 import { CURB_HEIGHT, blockProgram } from './layout.js';
-import { createLandmarks, LANDMARK_BLOCKS } from './landmark.js';
+import { createLandmarks, LANDMARK_BLOCKS, PROMENADE } from './landmark.js';
 import { createPrograms } from './program.js';
 import { createStreetLife } from './streetlife.js';
 import { parcels } from './parcel.js';
@@ -331,7 +331,12 @@ function blockList() {
   // **칸이 아니라 대지 단위**로 돈다. 병합한 대지는 한 번만 지어야 하고,
   // 필지 분할도 대지 전체를 한 덩어리로 나눠야 안쪽에 도로 없는 속이 생긴다.
   return parcels().map((p) => {
-    const program = reserved.has(`${p.ix},${p.iz}`) ? 'landmark' : blockProgram(p.ix, p.iz);
+    const key = `${p.ix},${p.iz}`;
+    // 대문 앞 블록은 통째로 보행 통로다 (landmark.PROMENADE).
+    // 난수로 뽑는 프로그램보다 **먼저** 본다 — 손으로 정한 것이 이긴다.
+    const program = reserved.has(key) ? 'landmark'
+      : PROMENADE.has(key) ? 'promenade'
+        : blockProgram(p.ix, p.iz);
     return {
       ix: p.ix, iz: p.iz, program, rect: p.rect, cells: p.cells.length,
       // 보행로는 **대지가 정한다.** blockLots 가 여기서 받아 필지에서 빼낸다 —

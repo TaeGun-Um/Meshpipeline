@@ -30,11 +30,17 @@
 import { GRID, BLOCK_SIZE, blockCenter, blockIndexAt, HIGHWAY_BAND } from './layout.js';
 import { districtAt } from './district.js';
 import { hash2 } from '../../core/textures.js';
-import { LANDMARK_BLOCKS } from './landmark.js';
+import { LANDMARK_BLOCKS, PROMENADE } from './landmark.js';
 
 // 랜드마크가 선 칸은 병합하지 않는다. 손으로 지은 것이 있는 자리라
 // 남의 대지에 묶이면 그 블록을 통째로 잡아먹는다.
-const RESERVED = new Set(LANDMARK_BLOCKS.map((l) => `${l.ix},${l.iz}`));
+//
+// 대문 앞 보행 통로도 같다. 병합에 끌려가면 **옆 블록까지 통째로 비워지거나**
+// 반대로 통로 자리에 건물이 선다 — 어느 쪽이든 손으로 정한 것이 무시된다.
+const RESERVED = new Set([
+  ...LANDMARK_BLOCKS.map((l) => `${l.ix},${l.iz}`),
+  ...PROMENADE.keys(),
+]);
 
 // 구역별 병합 성향. 0 이면 그 구역은 칸 하나가 그대로 대지다.
 //

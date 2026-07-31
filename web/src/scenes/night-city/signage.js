@@ -307,14 +307,13 @@ function clothSign(b, req, mats) {
     f.widthOnZ ? 0.07 : req.w + 0.5, 0.07, f.widthOnZ ? req.w + 0.5 : 0.07,
     [f.x + f.ox * d, req.y + req.h, f.z + f.oz * d], mats.metalMat
   );
-  for (const s of [-1, 1]) {
-    b.box(
-      f.ox ? d : 0.06, 0.06, f.oz ? d : 0.06,
-      [f.x + f.ox * (d / 2), req.y + req.h, f.z + f.oz * (d / 2)],
-      mats.metalMat
-    );
-    void s;
-  }
+  // 봉을 벽에 매다는 팔. 봉 하나에 하나면 충분하다 —
+  // (좌우로 돌리려던 흔적이 남아 두 번 같은 자리에 그리고 있었다)
+  b.box(
+    f.ox ? d : 0.06, 0.06, f.oz ? d : 0.06,
+    [f.x + f.ox * (d / 2), req.y + req.h, f.z + f.oz * (d / 2)],
+    mats.metalMat
+  );
   // 아래 추 — 천이 흔들리지 않게 다는 것. 없으면 판때기다
   b.box(
     f.widthOnZ ? 0.06 : req.w * 0.9, 0.1, f.widthOnZ ? req.w * 0.9 : 0.06,

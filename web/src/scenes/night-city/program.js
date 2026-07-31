@@ -11,6 +11,7 @@ import { MeshBuilder } from '../../core/builder.js';
 import { autoBox, lathe } from '../../core/profile.js';
 import { upPlane, downPlane } from '../../core/boxfaces.js';
 import { BLOCK_SIZE, CURB_HEIGHT, PIT_INSET } from './layout.js';
+import { PROMENADE } from './landmark.js';
 // BLOCK_SIZE 는 여기서 '블록 경계' 가 아니라 '안쪽으로 얼마나 물릴까' 의
 // 기준으로만 쓴다. 경계가 필요해지면 blockRect 로 바꾼다 (대지 병합 때).
 import { NEON, rgb01 } from '../../shared/neon.js';
@@ -242,12 +243,97 @@ function emptyLot(b, cx, cz, rng, mats) {
   b.add(upPlane(0.8, 0.8, [fx, Y + 0.92, fz]), neonSoft(NEON.amber));
 }
 
+// ── 대문 앞 보행 통로 ──────────────────────────────────────────────────────
+//
+// 사용자 지시: "저쪽 주택가쪽 건물 3채는 보행통로로 만들어버리는게 낫겠어"
+//
+// 시장 대문을 주거와 맞닿은 경계로 옮겼는데 그 앞 블록이 주거 건물로 막혀
+// 있었다. 문은 지나가라고 있는 것인데 지나갈 데가 없으면 크기만 큰 조형물이다.
+//
+// ── 광장과 다르다 ──────────────────────────────────────────────────────────
+// `plaza` 는 가운데에 조형물을 놓고 둘레를 벤치로 감싼다. 머무는 곳이다.
+// 여기는 **지나가는 곳**이라 문법이 반대다.
+//
+//   · 가운데를 비운다        사람이 통과할 폭 16m 를 통째로 남긴다
+//   · 축을 따라 줄을 세운다  등·가로수·노점을 좌우 대칭으로. 그 줄이 방향을 만든다
+//   · 끝이 보인다            축 끝의 대문이 소실점이다
+//
+// 대칭과 반복이 요점이다. 참배로·상점가 진입로가 그렇게 생겼고, 그 규칙성이
+// "여기로 가면 된다" 를 말한다 — 이 도시에서 규칙적인 것은 드물기 때문에
+// 오히려 더 강하게 읽힌다.
+function promenade(b, cx, cz, dir, rng, mats, pools) {
+  const half = BLOCK_SIZE / 2 - 2;
+  const AX = dir === 'z'; // 통로가 뻗는 방향
+  // (a, c) = (뻗는 방향, 가로지르는 방향)
+  const P = (a, c) => (AX ? [cx + c, cz + a] : [cx + a, cz + c]);
+  const S2 = (da, dc) => (AX ? [dc, da] : [da, dc]);
+
+  // 포장 — 가운데 넓은 띠와 그 양옆
+  {
+    const [pw, pd] = S2(half * 2, half * 2);
+    b.add(upPlane(pw, pd, [cx, Y + 0.02, cz], [3.2, 3.2]), mats.plazaMat);
+    // 가운데 띠는 마감이 다르다. 이 한 줄이 '길' 을 만든다
+    const [rw, rd] = S2(half * 2, 16);
+    b.add(upPlane(rw, rd, [cx, Y + 0.035, cz], [2.4, 1.0]), mats.tileWallMat);
+  }
+
+  // 좌우 열 — 등 · 가로수 · 노점. 간격이 정확해야 줄로 읽힌다
+  const N = 7;
+  for (let i = 0; i < N; i++) {
+    const a = -half + ((half * 2) / N) * (i + 0.5);
+    for (const sc of [-1, 1]) {
+      const [lx, lz] = P(a, sc * 9.5);
+      // 등기둥 — 줄의 뼈대
+      b.cylinder(0.16, 0.2, 4.6, [lx, Y + 2.3, lz], mats.metalMat, 8);
+      b.sphere(0.34, [lx, Y + 4.8, lz], neon(NEON.warm));
+      pools.push({
+        kind: 'floor', x: lx, y: Y + 0.05, z: lz,
+        rx: 5.0, rz: 5.0, tint: rgb01(NEON.warm, 0.42),
+      });
+
+      // 한 칸 걸러 가로수, 나머지는 노점 — 둘이 번갈아야 줄이 지루하지 않다
+      const [tx, tz] = P(a, sc * 14.5);
+      if (i % 2 === 0) {
+        b.cylinder(0.26, 0.34, 2.4, [tx, Y + 1.2, tz], mats.rustMat, 8);
+        for (let k = 0; k < 3; k++) {
+          b.sphere(rng.range(1.1, 1.7),
+            [tx + rng.range(-0.7, 0.7), Y + 3.2 + k * 0.7, tz + rng.range(-0.7, 0.7)],
+            mats.foliageMat, 8, 6);
+        }
+      } else {
+        // 노점 — 천막과 좌판. 통로를 안 막게 바깥쪽에 붙인다
+        const [sw, sd] = S2(3.2, 2.2);
+        b.add(autoBox(sw, 0.12, sd, [tx, Y + 2.4, tz], 0.02), mats.tarpMat);
+        b.add(autoBox(sw * 0.9, 0.9, sd * 0.7, [tx, Y + 0.45, tz], 0.03), mats.plywoodMat);
+        const [gw, gd] = S2(2.6, 0.1);
+        b.box(gw, 0.3, gd, [tx, Y + 2.05, tz], neonSoft(NEON.amber));
+        for (const sg of [-1, 1]) {
+          const [qx, qz] = P(a + (AX ? 0 : sg * 1.4), sc * 14.5 + (AX ? sg * 1.4 : 0));
+          b.cylinder(0.05, 0.05, 2.4, [qx, Y + 1.2, qz], mats.pipeMat, 6);
+        }
+      }
+    }
+  }
+
+  // 축 끝의 표식 — 대문 반대쪽 끝. 통로에 시작과 끝이 있어야 길이 된다
+  for (const sa of [-1, 1]) {
+    const [gx, gz] = P(sa * (half - 1.5), 0);
+    const [gw, gd] = S2(0.9, 20);
+    b.box(gw, 0.5, gd, [gx, Y + 0.25, gz], mats.plazaStepMat);
+    for (const sc of [-1, 1]) {
+      const [px, pz] = P(sa * (half - 1.5), sc * 9.5);
+      b.box(0.8, 5.6, 0.8, [px, Y + 2.8, pz], mats.frameConcMat);
+      b.box(0.45, 4.2, 0.45, [px, Y + 2.9, pz], neon(NEON.amber));
+    }
+  }
+}
+
 // ── 진입점 ─────────────────────────────────────────────────────────────────
 
 export function createPrograms(scene, rng, mats, blocks) {
   const b = new MeshBuilder('BlockPrograms');
   const pools = [];
-  const tally = { construction: 0, plaza: 0, lot: 0 };
+  const tally = { construction: 0, plaza: 0, lot: 0, promenade: 0 };
 
   for (const blk of blocks) {
     if (blk.program !== 'towers' && blk.program !== 'landmark') {
@@ -259,6 +345,9 @@ export function createPrograms(scene, rng, mats, blocks) {
     } else if (blk.program === 'plaza') {
       plaza(b, blk.cx, blk.cz, rng, mats, pools);
       tally.plaza++;
+    } else if (blk.program === 'promenade') {
+      promenade(b, blk.cx, blk.cz, PROMENADE.get(`${blk.ix},${blk.iz}`), rng, mats, pools);
+      tally.promenade++;
     } else if (blk.program === 'lot') {
       emptyLot(b, blk.cx, blk.cz, rng, mats);
       tally.lot++;
