@@ -32,11 +32,10 @@ import { claim, isFree, TIER } from './siteplan.js';
 import { districtAt } from './district.js';
 import { SIDES } from '../../core/boxfaces.js';
 import {
-  GRID,
-  PITCH,
   CURB_HEIGHT,
   SIDEWALK_W,
   blockCenter,
+  blockIndexAt,
   coreDistance,
 } from './layout.js';
 
@@ -255,9 +254,13 @@ export function createDecks(scene, rng, mats, anchors) {
     // 인도가 데크를 감당하는가. 공업 구역(3.2m)에는 못 놓는다.
     const cx = (a.rect.x0 + a.rect.x1) / 2;
     const cz = (a.rect.z0 + a.rect.z1) / 2;
-    const ix = Math.max(0, Math.min(GRID - 1, Math.round(cx / PITCH + (GRID - 1) / 2)));
-    const iz = Math.max(0, Math.min(GRID - 1, Math.round(cz / PITCH + (GRID - 1) / 2)));
-    const D = districtAt(ix, iz, coreDistance(blockCenter(ix), blockCenter(iz)));
+    // blockIndexAt 을 쓴다. 예전에는 여기서 `Math.round(cx / PITCH + (GRID-1)/2)`
+    // 를 썼는데 그건 **등간격일 때만** 맞는 식이다 (layout.js 머리말).
+    // 다른 다섯 모듈은 진작 옮겼고 여기만 남아 있었다 — 그래서 데크가 엉뚱한
+    // 구역의 인도 폭을 보고 놓일지 말지를 정했다.
+    const ix = blockIndexAt(cx);
+    const iz = blockIndexAt(cz);
+    const D = districtAt(ix, iz);
     const walk = D.sidewalk ?? SIDEWALK_W;
     if (walk < MIN_WALK) continue;
 
@@ -280,23 +283,58 @@ export function createDecks(scene, rng, mats, anchors) {
     const dcx = alongX ? cx : (side === 'px' ? a.rect.x1 + out : a.rect.x0 - out);
     const dcz = alongX ? (side === 'pz' ? a.rect.z1 + out : a.rect.z0 - out) : cz;
 
+    // ── 계단 자리를 **먼저** 정한다 ─────────────────────────────────────
+    //
+    // 전에는 데크를 놓고 나서 계단 자리를 물었다. 자리가 없으면 계단만
+    // 건너뛰었고, 그 결과 **올라갈 수 없는 데크**가 남았다 (배치 검사:
+    // 74개 중 12개). 못 올라가는 통로는 통로가 아니다.
+    //
+    // 게다가 데크 기둥이 TIER.VERTICAL 로 자리를 선점하므로, 데크를 먼저
+    // 놓으면 **자기 기둥이 자기 계단을 막는** 경우까지 있었다.
+    //
+    // 그래서 순서를 뒤집는다. 양 끝을 다 시도해 보고, 어느 쪽에도 계단을
+    // 못 놓으면 데크 자체를 놓지 않는다.
+    const first = rng.chance(0.5) ? 1 : -1;
+    const runLen = 5.4;
+    let stair = null;
+    for (const sgn of [first, -first]) {
+      const endT = sgn * (len / 2 - 1.2);
+      const sxTop = alongX ? dcx + endT : dcx;
+      const szTop = alongX ? dcz : dcz + endT;
+      const sxBot = alongX ? sxTop + sgn * runLen : sxTop;
+      const szBot = alongX ? szTop : szTop + sgn * runLen;
+      if (isFree(sxBot, szBot, 2.6, TIER.VERTICAL)) {
+        stair = { sxTop, szTop, sxBot, szBot };
+        break;
+      }
+    }
+    if (!stair) continue;
+
+    // 양 끝 좌표를 함께 남긴다. 검사가 보는 것은 "이 끝이 무언가에 닿나" 다
+    // (core/placement.js supportAt).
+    const half = len / 2;
+    b.mark('deck', `deck#${decks}`, {
+      // 건물 면에서 나간 축. 검사가 이 축만 보고 인도를 넘었는지 잰다.
+      axis: alongX ? 'z' : 'x',
+      ends: alongX
+        ? [[dcx - half, DECK_Y, dcz], [dcx + half, DECK_Y, dcz]]
+        : [[dcx, DECK_Y, dcz - half], [dcx, DECK_Y, dcz + half]],
+    });
     deckRun(b, dcx, dcz, alongX, len, DECK_Y, rng, mats, pools);
     decks++;
 
     // 계단 — 데크 끝에서 인도로. 데크와 나란히 내려간다.
-    const endT = (rng.chance(0.5) ? 1 : -1) * (len / 2 - 1.2);
-    const sxTop = alongX ? dcx + endT : dcx;
-    const szTop = alongX ? dcz : dcz + endT;
-    const runLen = 5.4;
-    const dirSign = endT > 0 ? 1 : -1;
-    const sxBot = alongX ? sxTop + dirSign * runLen : sxTop;
-    const szBot = alongX ? szTop : szTop + dirSign * runLen;
-
-    if (isFree(sxBot, szBot, 2.6, TIER.VERTICAL)) {
-      claim(sxBot, szBot, 2.6, TIER.VERTICAL, 'stairLanding');
-      stairFlight(b, [sxBot, CURB_HEIGHT, szBot], [sxTop, DECK_Y, szTop], 1.6, rng, mats);
-      stairs++;
-    }
+    claim(stair.sxBot, stair.szBot, 2.6, TIER.VERTICAL, 'stairLanding');
+    b.mark('stair', `stair#${stairs}`, {
+      ends: [[stair.sxBot, CURB_HEIGHT, stair.szBot], [stair.sxTop, DECK_Y, stair.szTop]],
+    });
+    stairFlight(
+      b,
+      [stair.sxBot, CURB_HEIGHT, stair.szBot],
+      [stair.sxTop, DECK_Y, stair.szTop],
+      1.6, rng, mats
+    );
+    stairs++;
   }
 
   return { group: b.build(scene), pools, decks, stairs };
@@ -329,12 +367,16 @@ export function createBridges(scene, rng, mats, anchors) {
   const CELL = 110;
   const grid = new Map();
   const key = (x, z) => `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
+  // rect(필지)가 아니라 **solid**(필지 ∩ 실제로 그려진 것)를 본다.
+  // 기업 타워는 대지를 비우므로 필지 가장자리에 벽이 없고, 거기에 다리를
+  // 물리면 광장 허공에 뜬다 — 배치 검사가 그렇게 뜬 끝 10곳을 찾았다.
   for (const a of anchors) {
-    const cx = (a.rect.x0 + a.rect.x1) / 2;
-    const cz = (a.rect.z0 + a.rect.z1) / 2;
+    const rect = a.solid || a.rect;
+    const cx = (rect.x0 + rect.x1) / 2;
+    const cz = (rect.z0 + rect.z1) / 2;
     const k = key(cx, cz);
     if (!grid.has(k)) grid.set(k, []);
-    grid.get(k).push({ ...a, cx, cz });
+    grid.get(k).push({ ...a, rect, cx, cz });
   }
 
   const used = new Set();
@@ -385,6 +427,7 @@ export function createBridges(scene, rng, mats, anchors) {
           ? [Math.max(A.rect.x0, B.rect.x0) + 0.4, y, mid]
           : [mid, y, Math.max(A.rect.z0, B.rect.z0) + 0.4];
 
+        b.mark('bridge', `bridge#${count}`, { ends: [from, to] });
         bridge(b, from, to, y, rng, mats);
         used.add(id);
         count++;

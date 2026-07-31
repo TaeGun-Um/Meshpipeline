@@ -17,19 +17,25 @@ import { downPlane } from '../../core/boxfaces.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon, neonSoft } from '../../shared/masters.js';
 import {
-  STREET_WIDTH,
+  roads,
   CITY_HALF,
   CURB_HEIGHT,
-  gridLines,
+
   onIntersection,
   blockIndexAt,
 } from './layout.js';
 import { claim, TIER } from './siteplan.js';
+import { roadOpen, roadOpenZ } from './parcel.js';
 import { districtAt } from './district.js';
 import { blockCenter, coreDistance, detailAt } from './layout.js';
 
 const SPACING = 13; // 시설물 간격 (m)
-const EDGE = STREET_WIDTH / 2 + 1.6; // 인도 위, 차도 경계에서 1.6m
+// 연석에서 인도 안쪽으로 1.6m.
+//
+// 전에는 `STREET_WIDTH / 2 + 1.6` 이라고 격자선에서 쟀다. 도로 폭이
+// 구간마다 다르고 구간 경계에서는 비대칭이라, 그렇게 재면 좁은 구간에서
+// 시설물이 차도 한가운데 선다. 연석(도로 띠의 lo·hi)에서 잰다.
+const BACK = 1.6;
 const Y = CURB_HEIGHT;
 
 // ── 개별 시설물 ────────────────────────────────────────────────────────────
@@ -241,14 +247,22 @@ function bollards({ b, x, z, rot, rng, mats }) {
 // 구역이 달라도 인도가 똑같았다. 레퍼런스에서 구역을 가르는 것은 무엇이
 // 있느냐보다 **무엇이 없느냐**다 — 기업 구역에 포장마차가 없고, 공업 구역에
 // 화분이 없는 것이 그 구역의 성격이다.
+// back — 연석에서 이만큼 안쪽에 **중심**을 둔다.
+//
+// ── 왜 종류마다 다른가 (배치 검사가 잡았다) ─────────────────────────────
+// 전에는 전부 BACK(1.6m) 하나였다. 그런데 버스 쉘터는 지붕까지 재면 깊이가
+// 4.1m 라 반깊이가 2.05m 다 — 중심이 연석에서 1.6m 안쪽이면 **0.45m 가
+// 차도로 나간다.** 실제로 42개 전부가 정확히 0.5m 씩 나와 있었다.
+//
+// "전부 같은 값" 이 아니라 "그 물건의 크기" 에서 나와야 하는 값이다.
 const KINDS = [
-  { key: 'vending', fn: vendingBank, lit: true },
-  { key: 'shelter', fn: shelter, lit: true },
-  { key: 'stall', fn: foodStall, lit: true },
-  { key: 'utility', fn: utilityBox, lit: false },
-  { key: 'planter', fn: planter, lit: false },
-  { key: 'bins', fn: bins, lit: false },
-  { key: 'bollard', fn: bollards, lit: false },
+  { key: 'vending', fn: vendingBank, lit: true, back: 1.6 },
+  { key: 'shelter', fn: shelter, lit: true, back: 2.6 },
+  { key: 'stall', fn: foodStall, lit: true, back: 2.2 },
+  { key: 'utility', fn: utilityBox, lit: false, back: 1.6 },
+  { key: 'planter', fn: planter, lit: false, back: 1.6 },
+  { key: 'bins', fn: bins, lit: false, back: 1.6 },
+  { key: 'bollard', fn: bollards, lit: false, back: 1.6 },
 ];
 
 // 예전 기본값. 구역이 가중치를 안 주면 이걸 쓴다.
@@ -280,48 +294,53 @@ function pickKind(rng, last, weights) {
 function districtNear(x, z) {
   const ix = blockIndexAt(x);
   const iz = blockIndexAt(z);
-  return districtAt(ix, iz, coreDistance(blockCenter(ix), blockCenter(iz)));
+  return districtAt(ix, iz);
 }
 
 export function createStreetLife(scene, rng, mats) {
   const b = new MeshBuilder('StreetLife', { receiveShadow: false });
   const pools = [];
-  const lines = gridLines();
   let count = 0;
   let last = null;
 
-  for (const c of lines) {
+  roads().forEach((r, bi) => {
     for (let t = -CITY_HALF + SPACING; t < CITY_HALF; t += SPACING) {
-      // X축 도로 (z = c). 양쪽 인도, 도로 중심을 향한다.
-      if (!onIntersection(t, c)) {
-        for (const s of [-1, 1]) {
+      // X축 도로 (z = r.mid). 양쪽 인도, 도로 중심을 향한다.
+      if (roadOpenZ(bi, t) && !onIntersection(t, r.mid)) {
+        for (const [edge, s] of [[r.lo - BACK, -1], [r.hi + BACK, 1]]) {
           // 편의 시설은 가장 낮은 등급이다. 골목 입구·계단·가로등이 이미
           // 차지한 자리는 피한다. 난수를 뽑기 **전에** 걸러야 스트림이
           // 어긋나지 않는다.
-          if (!claim(t, c + s * EDGE, 2.2, TIER.AMENITY, 'fixture')) continue;
-          if (!rng.chance(0.72 * detailAt(t, c + s * EDGE))) continue;
-          const k = pickKind(rng, last, districtNear(t, c + s * EDGE).furniture);
+          if (!claim(t, edge, 2.2, TIER.AMENITY, 'fixture')) continue;
+          if (!rng.chance(0.72 * detailAt(t, edge))) continue;
+          const k = pickKind(rng, last, districtNear(t, edge).furniture);
           if (!k) continue;
           last = k;
           // 인도 위 물건은 도로를 향한다: s=+1 이면 -Z 를 본다
-          k.fn({ b, x: t, z: c + s * EDGE, rot: s > 0 ? -Math.PI / 2 : Math.PI / 2, rng, mats, pools });
+          // 큰 물건은 연석에서 더 물러난다. 자리는 이미 claim 으로 잡아 뒀고
+          // 밀어 넣는 양이 1m 미만이라 그 원 안에 그대로 들어간다.
+          const zz = edge + s * ((k.back ?? BACK) - BACK);
+          b.mark('fixture', `fix#${count}`, { kind: k.key, axis: 'z' });
+          k.fn({ b, x: t, z: zz, rot: s > 0 ? -Math.PI / 2 : Math.PI / 2, rng, mats, pools });
           count++;
         }
       }
-      // Z축 도로 (x = c)
-      if (!onIntersection(c, t)) {
-        for (const s of [-1, 1]) {
-          if (!claim(c + s * EDGE, t, 2.2, TIER.AMENITY, 'fixture')) continue;
-          if (!rng.chance(0.72 * detailAt(c + s * EDGE, t))) continue;
-          const k = pickKind(rng, last, districtNear(c + s * EDGE, t).furniture);
+      // Z축 도로 (x = r.mid)
+      if (roadOpen(bi, t) && !onIntersection(r.mid, t)) {
+        for (const [edge, s] of [[r.lo - BACK, -1], [r.hi + BACK, 1]]) {
+          if (!claim(edge, t, 2.2, TIER.AMENITY, 'fixture')) continue;
+          if (!rng.chance(0.72 * detailAt(edge, t))) continue;
+          const k = pickKind(rng, last, districtNear(edge, t).furniture);
           if (!k) continue;
           last = k;
-          k.fn({ b, x: c + s * EDGE, z: t, rot: s > 0 ? Math.PI : 0, rng, mats, pools });
+          const xx = edge + s * ((k.back ?? BACK) - BACK);
+          b.mark('fixture', `fix#${count}`, { kind: k.key, axis: 'x' });
+          k.fn({ b, x: xx, z: t, rot: s > 0 ? Math.PI : 0, rng, mats, pools });
           count++;
         }
       }
     }
-  }
+  });
 
   return { group: b.build(scene), pools, count };
 }

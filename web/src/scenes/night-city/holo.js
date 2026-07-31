@@ -35,7 +35,7 @@ import { NEON, rgb01 } from '../../shared/neon.js';
 import { holo, holoSoft } from '../../shared/masters.js';
 import {
   GRID,
-  BLOCK_SIZE,
+  blockRect,
   CURB_HEIGHT,
   blockCenter,
   coreDistance,
@@ -43,6 +43,7 @@ import {
   blockIndexAt,
 } from './layout.js';
 import { districtAt } from './district.js';
+import { roadAt } from './layout.js';
 
 // 구역별 홀로그램 밀도. 0 이면 그 구역엔 하나도 없다.
 const RATE = { 상업: 1.0, 기업: 0.85, 주거: 0.12, 공업: 0 };
@@ -90,7 +91,13 @@ function floatPanel(b, x, y, z, yaw, w, h, hue, rng) {
 // 왜 이게 조경인가: 이 도시는 바다를 메운 땅이라 흙이 없고, 황폐한 세계라
 // 나무를 구할 수도 없다. 그런데 광장에는 조경이 있어야 한다 — 그래서
 // **나무를 흉내낸 장치**를 세운다. 그 사실 자체가 이 세계의 설명이다.
-function digitalTree(b, x, z, rng, mats, pools) {
+// room 은 이 자리에서 연석까지 남은 거리다.
+//
+// 줄기는 인도 한가운데 서는데 **가지가 퍼진다.** 낮은 가지(짧은 나무는
+// 가지 끝이 3.2m 높이에 있다)가 차도로 넘어가면 트럭이 지나갈 자리를
+// 막는다 — 배치 검사가 그것을 잡았다. 머리 위로 지나가는 가지는 결함이
+// 아니지만 이건 지면 높이다.
+function digitalTree(b, x, z, rng, mats, pools, room = Infinity) {
   const H = rng.range(4.5, 8);
   const hue = rng.chance(0.55) ? NEON.cyan : rng.chance(0.5) ? NEON.green : NEON.violet;
   const Y = CURB_HEIGHT;
@@ -103,7 +110,9 @@ function digitalTree(b, x, z, rng, mats, pools) {
   const branches = rng.int(4, 7);
   for (let i = 0; i < branches; i++) {
     const a = (i / branches) * Math.PI * 2 + rng.range(-0.3, 0.3);
-    const spread = rng.range(1.2, 2.4);
+    // 잎이 가지 끝에서 0.5m 더 나가므로 그만큼 더 뺀다.
+    // rng 는 항상 소비한다 — 건너뛰면 뒤의 모든 생성이 밀린다.
+    const spread = Math.min(rng.range(1.2, 2.4), Math.max(0.9, room - 0.6));
     const top = H * rng.range(0.72, 1.0);
     const mid = [x + Math.cos(a) * spread * 0.45, Y + H * 0.62, z + Math.sin(a) * spread * 0.45];
     const end = [x + Math.cos(a) * spread, Y + top, z + Math.sin(a) * spread];
@@ -168,7 +177,7 @@ function marker(b, x, y, z, rng) {
 function districtNear(x, z) {
   const ix = blockIndexAt(x);
   const iz = blockIndexAt(z);
-  return districtAt(ix, iz, coreDistance(blockCenter(ix), blockCenter(iz)));
+  return districtAt(ix, iz);
 }
 
 // ── 조립 ───────────────────────────────────────────────────────────────────
@@ -219,34 +228,56 @@ export function createHolo(scene, rng, mats, anchors) {
         const py = Math.max(minY, CURB_HEIGHT + rng.range(a.top * 0.4, Math.max(a.top * 0.45, a.top - h * 0.6)));
         if (py + h / 2 > a.top + 8) continue; // 건물보다 너무 위로 뜨지 않는다
         const hue = [NEON.magenta, NEON.cyan, NEON.violet, NEON.amber][rng.int(0, 3)];
+        // axis 는 "건물 면에서 어느 쪽으로 나갔나" 다. 검사가 그 축만 본다 —
+        // 정면을 따라 긴 판이 옆 교차로 위로 나가는 것은 다른 사건이다
+        // (placecheck.js roadIntrusion).
+        b.mark('holo', `holoPanel#${panels}`, { zone: a.zone, axis: alongX ? 'z' : 'x' });
         floatPanel(b, px, py, pz, yaw, w, h, hue, rng);
         panels++;
       }
 
       // 2) 부유 표식 — 점포 위. 개수로 밀도를 만든다.
       const n = Math.max(1, Math.round((fw / 9) * rate * det));
+      // 표식도 광고판과 같이 **인도 폭 안에서만** 띄운다.
+      //
+      // 광고판(위)에는 이 상한이 있었는데 표식에는 없었다. 그래서 인도가 좁은
+      // 구역에서 표식이 차도로 나갔다 — 7번 버그(홀로그램이 인도를 관통)와
+      // 같은 종류이고, 배치 검사가 잡았다.
+      const walk = districtNear(c.x, c.z).sidewalk ?? 4.6;
       for (let i = 0; i < n; i++) {
         if (!rng.chance(0.6)) continue;
         const u = -fw / 2 + fw * ((i + 0.5) / n) + rng.range(-1.5, 1.5);
-        const dist = rng.range(2.2, 4.5);
+        // rng 는 항상 소비한다 — 건너뛰면 뒤의 모든 생성이 밀린다
+        const dist = Math.min(rng.range(2.2, 4.5), Math.max(1.0, walk - 1.2));
         const mx = alongX ? c.x + u : (outSign > 0 ? a.rect.x1 + dist : a.rect.x0 - dist);
         const mz = alongX ? (outSign > 0 ? a.rect.z1 + dist : a.rect.z0 - dist) : c.z + u;
+        b.mark('holo', `holoMarker#${markers}`, { zone: a.zone, axis: alongX ? 'z' : 'x' });
+        // 차도 위에 뜨면 물러난다. 인도 폭으로 계산하면 대지 병합 뒤로는
+        // 필지 가장자리와 도로 사이 거리가 일정하지 않아 어긋난다 —
+        // **도로가 어디인지는 roads() 가 안다.**
+        if (roadAt(mx) || roadAt(mz)) continue;
         marker(b, mx, CURB_HEIGHT + rng.range(4.5, 7.5), mz, rng);
         markers++;
       }
     }
   }
 
+  // 앞의 표시를 닫는다. 안 닫으면 아래 수목·기둥이 **마지막 표식의 기록으로
+  // 빨려 들어가서**, 도시 전체를 감싸는 상자 하나가 되어 검사가 헛것을 잡는다
+  // (실제로 "홀로 하나가 차도를 22m 침범" 으로 나왔다).
+  b.endMark();
+
   // 3) 디지털 수목 · 투사 기둥 — 블록 단위. 광장과 번화가에 선다.
   for (let ix = 0; ix < GRID; ix++) {
     for (let iz = 0; iz < GRID; iz++) {
-      const cx = blockCenter(ix);
-      const cz = blockCenter(iz);
-      const D = districtAt(ix, iz, coreDistance(cx, cz));
+      const R = blockRect(ix, iz);
+      const cx = (R.x0 + R.x1) / 2;
+      const cz = (R.z0 + R.z1) / 2;
+      const D = districtAt(ix, iz);
       const rate = RATE[D.name] ?? 0;
       if (rate <= 0) continue;
       const det = detailAt(cx, cz);
-      const half = BLOCK_SIZE / 2;
+      const half = (R.x1 - R.x0) / 2;
       const walk = (D.sidewalk ?? 4.6);
 
       // 수목 — 인도 위. 기업 구역은 광장에 열 맞춰, 상업은 제각각.
@@ -255,15 +286,22 @@ export function createHolo(scene, rng, mats, anchors) {
         if (!rng.chance(rate * 0.7)) continue;
         const edge = rng.int(0, 3);
         const along = rng.range(-half + 8, half - 8);
-        const depth = half - walk * rng.range(0.35, 0.7);
+        // 인도 안쪽으로 더 물린다 (0.35~0.7 → 0.45~0.75). 연석에 붙여 심으면
+        // 가지가 차도로 넘어간다.
+        const inset = walk * rng.range(0.45, 0.75);
+        const depth = half - inset;
         const tx = edge < 2 ? cx + along : cx + (edge === 2 ? -depth : depth);
         const tz = edge < 2 ? cz + (edge === 0 ? -depth : depth) : cz + along;
-        digitalTree(b, tx, tz, rng, mats, pools);
+        b.mark('holo', `holoTree#${trees}`, { zone: D.name, axis: edge < 2 ? 'z' : 'x' });
+        digitalTree(b, tx, tz, rng, mats, pools, inset);
         trees++;
       }
 
       // 투사 기둥 — 기업 구역만. 아무 기능도 없이 에너지만 쓰는 과시다.
       if (D.name === '기업' && rng.chance(0.35 * det)) {
+        // 기둥은 블록 한가운데에 독립해 선다 — 붙은 면이 없으므로 axis 가 없고,
+        // 검사는 두 축을 다 본다.
+        b.mark('holo', `holoBeam#${beams}`, { zone: D.name });
         beamColumn(b, cx + rng.range(-12, 12), cz + rng.range(-12, 12), rng, pools);
         beams++;
       }

@@ -193,6 +193,7 @@ async function build() {
     textures: TEX.textureStats.count,
     colliders: colliderCount,
     counts: world.counts || {},
+    placement: world.placement || null,
   };
   window.__ready = true;
 }
@@ -372,6 +373,11 @@ window.__export = async (key, { bake = false, limit = Infinity, name } = {}) => 
 //   await __lock('base')    shots/baseline_<이름>.png 로 렌더 (기준 갱신)
 // 예산·파이프라인 위험을 숫자로 점검한다. 자세한 내용은 core/audit.js 머리말.
 window.__audit = () => auditScene({ scene, renderer, stats: window.__stats });
+
+// 배치 검사 결과 전문 — 관통·부유·차도 침범이 **어디서** 났는지까지 본다
+// (core/placement.js · scenes/night-city/placecheck.js).
+// __audit() 은 몇 건인지만 알려주므로 자리를 찾을 때는 이쪽을 본다.
+window.__place = () => window.__stats?.placement ?? null;
 
 window.__lock = async (prefix = '') => {
   const views = await fetch('/shots/views.json').then((r) => r.json());

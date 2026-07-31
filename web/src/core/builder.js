@@ -25,6 +25,7 @@
 import * as THREE from 'three';
 import { mergeParts, boxGeometry, metricBox } from './meshkit.js';
 import { sphereSegments } from './profile.js';
+import { beginItem, growItem, endItem, takeItem, ledgerOpen } from './placement.js';
 
 export class MeshBuilder {
   // name        Group·Mesh 이름. 블렌더·유니티에서 이 이름이 그대로 보인다.
@@ -46,10 +47,38 @@ export class MeshBuilder {
     this.parts = [];
   }
 
+  // ── 배치 기록 ────────────────────────────────────────────────────────────
+  //
+  // 여기부터 다음 mark() 까지 들어오는 조각을 **한 덩어리로** 묶어 배치 검사에
+  // 넘긴다 (core/placement.js). 건물 한 채가 조각 수백 개인데 검사가 알고 싶은
+  // 것은 "그 건물이 실제로 차지한 범위" 하나이기 때문이다.
+  //
+  // 굳이 이렇게 하는 이유: 모듈이 "여기 이만한 것을 놓았다" 고 **신고**하게
+  // 만들면 그 신고가 실제로 그린 것과 어긋날 수 있다. 슬럼 골조가 옆 건물을
+  // 관통한 버그가 정확히 그것이었다 — 회전 후 크기를 계산해 놓고 안 썼다.
+  // 그려진 지오메트리에서 직접 읽으면 어긋날 여지가 없다.
+  mark(kind, label, meta = null) {
+    beginItem(kind, label, meta);
+    return this;
+  }
+
+  endMark() {
+    endItem();
+    return this;
+  }
+
+  // 표시를 닫고 **방금 그린 것의 실제 경계**를 돌려준다.
+  // 필지가 아니라 그려진 것을 기준으로 무언가를 붙여야 할 때 쓴다.
+  takeMark() {
+    return takeItem();
+  }
+
   // 조각 하나. data 는 attributes 의 from 이 읽는다.
   add(geometry, material, data = null) {
     if (!geometry) throw new Error(`${this.name}: geometry 가 없다`);
     if (!material) throw new Error(`${this.name}: material 이 없다`);
+    // 열린 기록이 있을 때만 경계를 잰다. 표시하지 않은 빌더는 비용이 0 이다.
+    if (ledgerOpen()) growItem(geometry);
     this.parts.push(data ? { geometry, material, ...data } : { geometry, material });
     return this;
   }
@@ -90,6 +119,10 @@ export class MeshBuilder {
 
   // 병합해서 Group 을 만든다. scene 을 주면 붙여 준다.
   build(scene = null) {
+    // 마지막 mark() 를 닫는다. 호출부가 잊어도 다음 빌더의 조각이 앞 빌더의
+    // 기록으로 새어 들어가지 않는다.
+    endItem();
+
     const group = new THREE.Group();
     group.name = this.name;
 

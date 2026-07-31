@@ -10,10 +10,11 @@ import { NEON } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 import {
   CITY_HALF,
-  HIGHWAY_X,
+  GRID,
   HIGHWAY_Y,
-  PITCH,
   PANEL_TILE,
+  blockCenter,
+  highwayX,
 } from './layout.js';
 
 const DECK_W = 17; // 편도 2차로 x 2
@@ -29,8 +30,13 @@ export function createHighway(scene, rng, mats) {
   const b = new MeshBuilder('Highway');
   const len = Z1 - Z0;
   const cz = (Z0 + Z1) / 2;
-  const x = HIGHWAY_X;
+  // 도로 한가운데를 탄다. 상수로 박아 두면 격자가 바뀔 때 건물 위로 올라간다.
+  const x = highwayX();
   const y = HIGHWAY_Y;
+
+  // 배치 검사에 등록한다. 전에는 표시를 안 걸어서 **원장에 없었고**, 그래서
+  // 고가도로가 건물을 관통해도 검사가 아무 말도 안 했다 (검사의 사각지대).
+  b.mark('highway', 'highway', { axis: 'x' });
 
   // ── 상판 ────────────────────────────────────────────────────────────────
   b.box(DECK_W, DECK_T, len, [x, y, cz], mats.panelMat, PANEL_TILE);
@@ -59,9 +65,17 @@ export function createHighway(scene, rng, mats) {
   }
 
   // ── 교각 ────────────────────────────────────────────────────────────────
-  // 격자 간격의 절반마다. 도로 위에만 세운다.
-  const spacing = PITCH / 2;
-  for (let z = Z0 + spacing / 2; z < Z1; z += spacing) {
+  //
+  // **블록 한가운데마다** 세운다. 그러면 교차로를 비켜가고, 격자 간격이
+  // 구간마다 달라도 자동으로 따라온다. 전에는 PITCH/2 등간격이라 구간이
+  // 어긋난 자리에서 교각이 교차로 한복판에 섰다.
+  const piers = [];
+  for (let i = 0; i < GRID; i++) piers.push(blockCenter(i));
+  // 도시 밖으로 이어지는 구간 — 안개 속으로 사라질 때까지
+  for (let z = piers[0] - 88; z > Z0; z -= 88) piers.unshift(z);
+  for (let z = piers[piers.length - 1] + 88; z < Z1; z += 88) piers.push(z);
+
+  for (const z of piers) {
     b.cylinder(1.5, 1.9, y - DECK_T / 2, [x, (y - DECK_T / 2) / 2, z], mats.wetConcreteMat, 12);
     // 캡빔 (기둥 머리에서 좌우로 벌어진다)
     b.box(

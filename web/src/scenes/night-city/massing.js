@@ -24,10 +24,18 @@ export function pickMassing(rng, w, d, height) {
   const small = Math.min(w, d);
   const r = rng.next();
 
+  // ── notch 를 뺀 이유 (사용자 지시) ────────────────────────────────────
+  // notch 는 가운데를 세로로 파내 **두 동이 붙어 선 것처럼** 보이게 한다.
+  // 그런데 그게 주거·일반 타워에 붙으니 "쌍둥이 빌딩" 이 도시 곳곳에
+  // 생겼고, 사용자가 "그 쌍둥이 빌딩도 그냥 기업 건물쪽으로 보내" 라고 했다.
+  //
+  // 맞는 지적이다. 쌍둥이 타워는 **한 주인이 두 동을 동시에 지을 때** 나오는
+  // 형태다. 그건 이 도시에서 기업밖에 못 한다. 이제 corpo.js 의 shaftTwin
+  // 하나만 이 형태를 만든다. footprint 의 'notch' 분기는 남겨 둔다 —
+  // 죽은 코드가 아니라 **다른 곳에서 부르면 여전히 동작해야 하는** 것이다.
   if (small > 30 && height > 70 && r < 0.08) return 'cyl';
-  if (small > 26 && r < 0.2) return 'notch';
-  if (small > 22 && r < 0.36) return 'U';
-  if (small > 18 && r < 0.58) return 'L';
+  if (small > 30 && r < 0.3) return 'U';
+  if (small > 24 && r < 0.56) return 'L';
   return 'box';
 }
 

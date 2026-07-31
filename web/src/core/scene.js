@@ -71,6 +71,8 @@ export class Scene {
       stats: world.stats || [],
       // 씬이 신고한 개수. 감사가 "사라진 것" 을 잡는 데 쓴다 (core/audit.js).
       counts: world.counts || {},
+      // 배치 검사 결과 (core/placement.js). 관통·부유를 잡는다. 안 하는 씬은 null.
+      placement: world.placement || null,
       tick: world.tick || null,
     };
   }

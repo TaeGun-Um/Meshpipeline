@@ -17,6 +17,7 @@
 // 묶어서 구역이 덩어리로 형성되게 한다.
 import { hash2 } from '../../core/textures.js';
 import { NEON } from '../../shared/neon.js';
+import { GRID } from './layout.js';
 
 export const DISTRICTS = {
   // 슬럼 — 짓다 만 기업 개발지에 사람이 들어간 곳 (2기 -> 3기).
@@ -161,68 +162,126 @@ export const DISTRICTS = {
   },
 };
 
-const KEYS = ['market', 'corpo', 'residential', 'industrial', 'slum'];
+// ── 구역은 어떻게 자리를 잡는가 ────────────────────────────────────────────
+//
+// ── 왜 다시 만들었나 (실측으로 고침) ──────────────────────────────────────
+// 전에는 4x4 덩어리마다 좌표 해시를 굴려 가중치로 뽑았다. 덩어리 크기를
+// 2 -> 3 -> 4 로 계속 키웠는데도 "여기가 어느 동네인지" 가 안 읽혔다.
+//
+// 당연했다. **덩어리마다 주사위를 새로 굴리므로 옆 덩어리가 같은 구역이 될
+// 이유가 없다.** 크기를 키우면 얼룩이 커질 뿐 얼룩이 사라지지는 않는다.
+// 구역이 동네가 되려면 뽑는 방식 자체가 '연결' 을 보장해야 한다.
+//
+// 그래서 **씨앗을 심고 자라게 한다.** 씨앗마다 구역을 정해 두고, 각 블록은
+// 가장 가까운 씨앗의 구역이 된다 (가중 보로노이). 이렇게 나온 영역은
+// 정의상 **끊기지 않는다** — 그게 이 방식을 쓰는 유일한 이유다.
+//
+// ── 왜 난수가 아니라 손으로 찍은 씨앗인가 ─────────────────────────────────
+// 랜드마크·옛 간선과 같다. 도시의 지리(항만은 -X, 육지는 +X)가 어디에 무엇이
+// 와야 하는지를 이미 정해 놨으므로, 그걸 난수에 맡기면 내력과 어긋난 배치가
+// 나온다. 실제로 그렇게 나왔다 — 육지 쪽 외곽에 항구 없는 공장이 섰다
+// (docs/handover.md 6.9).
+//
+// 지리 (docs/city.md): 삼면이 바다인 곶. -X 가 항만, +X 가 육지로 이어지는 목.
+//
+//   기업(2기)   도심 한가운데. 좁고 조밀하다
+//   슬럼(2기)   기업이 사 모았다가 공사가 멈춘 자리 — **기업 바로 바깥**
+//   상업(3기)   계획이 터진 자리 — 사람이 몰리는 곳 옆
+//   공업(1기)   **물가에만.** -X 항만과 ±Z 물가. 육지 쪽(+X)에는 없다
+//   주거(1기)   나머지를 채운다. 도시에서 가장 넓다
+//
+// pull 은 그 씨앗이 territory 를 얼마나 넓게 가져가는가다. 거리를 pull 로
+// 나눠서 비교하므로 클수록 넓다. 기업이 작은 것은 의도다 — 도심은 좁아야
+// 도심이고, 넓으면 그냥 건물이 큰 동네다.
+const SEEDS = [
+  // 도심 — 좁고 조밀하다
+  { ix: 6, iz: 6, kind: 'corpo', pull: 1.60 },
+  { ix: 5, iz: 7, kind: 'corpo', pull: 1.42 },
 
-// 2x2 블록을 한 구역으로 묶는다. 도심 코어는 기업 구역이 되기 쉽고,
-// 바깥은 공업·주거가 되기 쉽다 — 실제 도시의 지대(地代) 구조를 흉내낸다.
-// 블록 하나의 구역. 좌표 해시라 언제 불러도 같은 답이 나온다 —
-// 그래서 layout(필지 분할) 과 towers(외관) 가 각자 불러도 어긋나지 않는다.
-export function districtAt(ix, iz, core) {
-  // ── 구역이 덩어리로 뭉치는 단위 ──────────────────────────────────────────
-  // 3x3 블록을 한 덩어리로 본다. 예전에는 2x2 였는데, 격자를 12x12 로 늘리고
-  // 나니 구역이 잘게 흩어져서 "여기가 어느 구역인지" 가 안 읽혔다.
-  // 구역은 **동네**여야 한다 — 한 블록짜리 구역은 그냥 다른 건물일 뿐이다.
-  // ── 구역이 뭉치는 단위 ──────────────────────────────────────────────────
-  // 3 -> 4 블록. 3 으로는 구역이 듬성듬성 흩어져 "여기가 어느 동네인지" 가
-  // 안 읽혔다. 구역은 **동네**여야 한다.
-  const rx = Math.floor(ix / 4);
-  const rz = Math.floor(iz / 4);
-  const h = hash2(rx * 131 + 7, rz * 197 + 3);
+  // 도심 바로 바깥 — 2기에 기업이 사 모았다가 멈춘 자리
+  { ix: 3, iz: 4, kind: 'slum', pull: 0.90 },
+  { ix: 8, iz: 8, kind: 'slum', pull: 0.84 },
 
-  // ── 어디에 무엇이 오는가 (docs/city.md) ──────────────────────────────────
-  // 도시의 내력이 그대로 배치 규칙이 된다.
-  //
-  //   기업(2기)  본사는 도심에 섰다. 중심에 강하게 몰린다.
-  //   상업(3기)  계획이 터진 자리. 도심에 붙어서 그 **바로 바깥 고리**에 난다.
-  //              사람이 몰리는 곳 옆이라야 장사가 되기 때문이다.
-  //   공업(1기)  물가에 있다. 가장 바깥.
-  //   주거(1기)  공장과 도심 사이를 채운다. 도시에서 가장 넓다.
-  //
-  // near 는 중심에 가까울수록 1 에 가깝다.
-  const near = 1 - core;
-  // ring 은 도심 바로 바깥(core 0.35 부근)에서 최대가 된다 — 번화가의 자리.
-  const ring = Math.exp(-((core - 0.34) ** 2) / 0.035);
+  // 번화가 — 도심에 붙어서
+  { ix: 8, iz: 4, kind: 'market', pull: 1.28 },
+  { ix: 3, iz: 8, kind: 'market', pull: 1.22 },
+  { ix: 7, iz: 10, kind: 'market', pull: 1.12 },
 
-  // 가중치는 실측으로 맞췄다. 첫 시도에서 주거가 57% 를 먹어 도시의 절반 이상이
-  // 같은 건물이 됐다 — 노동자 도시라 현실적이긴 해도 걸어 다닐 재미가 없다.
-  // 주거를 낮추고 상업·공업을 올려 아래 비율을 목표로 한다.
-  //   주거 40% · 상업 22% · 공업 22% · 기업 16%
-  // 슬럼은 **기업 구역 바로 바깥**에 난다. 2기에 기업이 도심 주변 땅을
-  // 사서 개발을 시작한 자리이기 때문이다. 그래서 상업(3기)과 겹치는 고리에
-  // 함께 있고, 둘이 섞여 있는 것이 정상이다.
-  //
-  // 공업은 12% 로 줄였다. 항만 하나에 공장 35블록(24%)은 과했고,
-  // 그 자리가 슬럼이 들어갈 곳이다.
-  const slumRing = Math.exp(-((core - 0.42) ** 2) / 0.03);
-  const w = {
-    corpo: Math.max(0, near - 0.52) * 7.5,
-    market: ring * 3.8,   // 슬럼에 밀려 10% 까지 떨어졌던 것을 되돌린다
-    // 슬럼 1.0 (전 2.6). 24% 는 과했다 — 도시 넷 중 하나가 미완성 골조면
-    // 슬럼가가 아니라 유령도시다. 슬럼은 도시의 **예외**여야 눈에 띈다.
-    slum: slumRing * 1.0,
-    residential: 0.85 - Math.abs(core - 0.5) * 0.45,
-    industrial: Math.max(0, core - 0.62) * 5.0,
-  };
+  // 공업 — **물가에만.** -X(항만)에 몰리고 ±Z 물가에 하나씩.
+  // 육지 쪽(+X = ix 10~11)에는 씨앗을 두지 않는다. 전에는 거기에 공장이
+  // 났는데, 항구가 없는 자리에 공장이 있는 셈이었다 (handover 6.9).
+  { ix: 0, iz: 3, kind: 'industrial', pull: 1.00 },
+  { ix: 1, iz: 8, kind: 'industrial', pull: 0.95 },
+  { ix: 4, iz: 0, kind: 'industrial', pull: 0.82 },
+  { ix: 9, iz: 11, kind: 'industrial', pull: 0.75 },
 
-  let total = 0;
-  for (const k of KEYS) total += w[k];
-  if (total <= 0) return DISTRICTS.residential;
-  let acc = h * total;
-  for (const k of KEYS) {
-    acc -= w[k];
-    if (acc <= 0) return DISTRICTS[k];
+  // 주거 — 나머지를 채운다. 육지 쪽(+X)이 가장 넓다. 바깥에서 밀려든
+  // 사람들이 목을 통해 들어와 거기부터 채웠기 때문이다.
+  { ix: 11, iz: 5, kind: 'residential', pull: 1.28 },
+  { ix: 10, iz: 9, kind: 'residential', pull: 1.18 },
+  { ix: 9, iz: 1, kind: 'residential', pull: 1.12 },
+  { ix: 2, iz: 11, kind: 'residential', pull: 1.02 },
+  { ix: 1, iz: 0, kind: 'residential', pull: 0.93 },
+  { ix: 5, iz: 3, kind: 'residential', pull: 0.83 },
+];
+
+// ── 실측 결과 ──────────────────────────────────────────────────────────────
+//
+//   주거 38% · 상업 22% · 공업 18% · 기업 12% · 슬럼 10%
+//
+// 옛 방식(4x4 해시 추첨)과 비교하면:
+//
+//   | | 옛 방식 | 지금 |
+//   |---|---|---|
+//   | 끊긴 덩어리 수 | 14 | 11 |
+//   | 경계 모양 | **축에 정렬된 4x4 사각형** | 씨앗에서 자란 유기적 형태 |
+//   | 육지 쪽 공업 | 있었다 (항구 없는 공장) | 없다 |
+//
+// 덩어리 수보다 **경계 모양**이 더 큰 차이다. 옛 방식은 4x4 칸마다 주사위를
+// 굴리므로 구역 경계가 반드시 4블록 격자 위에 놓였다 — 그래서 지도에서
+// 4칸짜리 정사각 얼룩으로 보였다. 덩어리를 키워도 그 사각형은 안 없어진다.
+
+// 블록마다 한 번만 정하고 붙들어 둔다. 모듈 여덟이 각자 부르므로
+// (crowd·parking·holo·streets·streetlife·vertical·towers·index) 매번
+// 씨앗을 훑으면 낭비다.
+let ZONE_CACHE = null;
+
+function buildZones() {
+  const out = new Array(GRID * GRID);
+  for (let ix = 0; ix < GRID; ix++) {
+    for (let iz = 0; iz < GRID; iz++) {
+      let best = null;
+      let bestScore = Infinity;
+      for (const s of SEEDS) {
+        // 가중 거리. pull 이 클수록 가깝게 쳐서 영역을 넓게 가져간다.
+        const d = Math.hypot(ix - s.ix, iz - s.iz) / s.pull;
+        if (d < bestScore) { bestScore = d; best = s; }
+      }
+      out[iz * GRID + ix] = best.kind;
+    }
   }
-  return DISTRICTS.residential;
+  return out;
+}
+
+// 블록 하나의 구역. 좌표만 보므로 언제 불러도 같은 답이 나온다 —
+// 그래서 layout(필지 분할) 과 towers(외관) 가 각자 불러도 어긋나지 않는다.
+//
+// 예전에는 코어 거리를 인자로 받았는데, 배치가 씨앗으로 정해지면서 쓰이지
+// 않게 됐다. 호출부 여덟 곳이 각자 coreDistance 를 계산해 넘기고 있었으므로
+// (**같은 값을 여러 곳에서 계산**) 인자를 없앴다.
+export function districtAt(ix, iz) {
+  if (!ZONE_CACHE) ZONE_CACHE = buildZones();
+  const cx = Math.max(0, Math.min(GRID - 1, ix));
+  const cz = Math.max(0, Math.min(GRID - 1, iz));
+  return DISTRICTS[ZONE_CACHE[cz * GRID + cx]];
+}
+
+// 구역별 블록 수. 비율을 실측으로 맞출 때 쓴다.
+export function districtTally() {
+  if (!ZONE_CACHE) ZONE_CACHE = buildZones();
+  const t = {};
+  for (const k of ZONE_CACHE) t[k] = (t[k] || 0) + 1;
+  return t;
 }
 
 // 구역이 정한 가중치로 건물 유형을 고른다 (facade.pickArchetype 을 대체).

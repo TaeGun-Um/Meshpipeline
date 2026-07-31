@@ -258,6 +258,7 @@ export function createPort(scene, rng, mats) {
   const px = -PORT_SHORE + 30;
   const cranes = 5;
   for (let i = 0; i < cranes; i++) {
+    b.mark('crane', `crane#${i}`);
     const z = -CITY_HALF * 0.6 + (CITY_HALF * 1.2 * (i + 0.5)) / cranes;
     gantry(b, px, z, -1, rng, mats);
     // 야드 — 크레인과 도시 사이. 부두 폭 안에 들어가야 한다.

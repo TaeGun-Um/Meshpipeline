@@ -29,19 +29,19 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { NEON } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 import {
-  STREET_WIDTH,
+  roads,
   SIDEWALK_W,
   BLOCK_SIZE,
   CITY_HALF,
   CURB_HEIGHT,
   blockCenter,
   coreDistance,
-  gridLines,
   onIntersection,
   detailAt,
   blockIndexAt,
 } from './layout.js';
 import { districtAt } from './district.js';
+import { roadOpen, roadOpenZ } from './parcel.js';
 
 // 인도 위 어디까지 사람이 서는가. 연석에서 0.6m, 건물에서 0.5m 는 비운다.
 const WALK_IN = 0.6;
@@ -121,7 +121,7 @@ function trim() {
 function districtNear(x, z) {
   const ix = blockIndexAt(x);
   const iz = blockIndexAt(z);
-  return districtAt(ix, iz, coreDistance(blockCenter(ix), blockCenter(iz)));
+  return districtAt(ix, iz);
 }
 
 export function createCrowd(scene, rng, mats) {
@@ -133,27 +133,32 @@ export function createCrowd(scene, rng, mats) {
 
   // 자리를 먼저 전부 뽑고 나중에 인스턴스로 굽는다.
   const spots = [];
-  const lines = gridLines();
-  const half = BLOCK_SIZE / 2;
+  const half = BLOCK_SIZE / 2; // 블록 안 흩뿌림 반경 (경계가 아니라 크기)
 
   // 인도 양쪽을 훑는다. 인도 폭 안에서 앞뒤로도 흩어뜨려야 줄로 안 보인다.
-  for (const c of lines) {
+  //
+  // 기준은 격자선이 아니라 **연석**(도로 띠의 lo·hi)이다. 도로 폭이 구간마다
+  // 다르고 구간 경계에서는 비대칭이라, 격자선에서 재면 좁은 구간의 사람이
+  // 차도 한가운데 선다.
+  roads().forEach((r, bi) => {
     for (let t = -CITY_HALF + 6; t < CITY_HALF - 6; t += rng.range(1.1, 3.4)) {
-      for (const s of [-1, 1]) {
+      for (const [curb, s] of [[r.lo, -1], [r.hi, 1]]) {
         for (const axis of [0, 1]) {
+          // 병합으로 도로가 없어진 구간에는 인도도 없다 (대지 속이다)
+          if (!(axis === 0 ? roadOpenZ(bi, t) : roadOpen(bi, t))) continue;
           // ── 인도 폭은 **구역이 정한다** ────────────────────────────────
           // 전역 SIDEWALK_W(4.6) 를 쓰면 공업 구역(3.2m)에서 사람이 차도에
           // 서고, 기업 구역(7.5m)에서는 인도 절반이 빈다.
           //
           // 같은 실수로 도시 전체 간판이 죽은 적이 있다 (towers.streetFaces).
           // 구역별 값이 있는 상수는 **반드시 구역에서 받아온다.**
-          const probe = axis === 0 ? [t, c + s * (STREET_WIDTH / 2 + 1)] : [c + s * (STREET_WIDTH / 2 + 1), t];
+          const probe = axis === 0 ? [t, curb + s * 1] : [curb + s * 1, t];
           const D = districtNear(probe[0], probe[1]);
           const walk = D.sidewalk ?? SIDEWALK_W;
           const depth = rng.range(WALK_IN, Math.max(WALK_IN + 0.3, walk - 0.5));
-          const off = STREET_WIDTH / 2 + depth;
-          const x = axis === 0 ? t : c + s * off;
-          const z = axis === 0 ? c + s * off : t;
+          const off = curb + s * depth; // 연석에서 인도 안쪽으로
+          const x = axis === 0 ? t : off;
+          const z = axis === 0 ? off : t;
           if (onIntersection(x, z)) continue;
           const dens = (DENSITY[D.name] ?? 0.2) * detailAt(x, z);
           if (!rng.chance(dens)) continue;
@@ -175,7 +180,7 @@ export function createCrowd(scene, rng, mats) {
         }
       }
     }
-  }
+  });
 
   // 체형별로 인스턴스 메시를 나눈다 (지오메트리가 다르므로).
   const m = new THREE.Matrix4();

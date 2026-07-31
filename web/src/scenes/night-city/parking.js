@@ -31,24 +31,37 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import {
-  STREET_WIDTH,
   CITY_HALF,
   blockCenter,
   coreDistance,
-  gridLines,
+  roads,
   onIntersection,
   blockIndexAt,
 } from './layout.js';
 import { districtAt } from './district.js';
 import { claim, TIER } from './siteplan.js';
+import { roadOpen, roadOpenZ } from './parcel.js';
 
-// 갓길 차선의 중심.
+// 갓길 차선 — **연석에서 안쪽으로** 이만큼.
 //
-// 도로 반폭(11m)에서 **가장 넓은 차의 반폭 + 여유** 만큼 안쪽이어야 한다.
-// 차 폭이 최대 2.1m 이므로 1.05 + 0.35 = 1.4m 를 뺀다. 이 계산을 안 하면
-// 차가 연석을 물고 선다.
+// ── 왜 도로 반폭에서 재지 않는가 (실측으로 고침) ──────────────────────────
+// 전에는 `STREET_WIDTH / 2 - 1.4` 로 격자선에서 쟀다. 도로 반폭이 항상
+// 11m 라고 믿은 것이다. 그런데 구간별 격자가 들어온 뒤로 도로 폭은
+// 8·15·16·22·38m 로 갈라졌고, 피치 74 구간의 실제 반폭은 **4m** 였다.
+//
+// 그래서 차가 5.6m 씩 인도 안으로 들어가 건물 밑에 섰다. 배치 검사가
+// **1,978대 중 1,137대(57%)** 를 그렇게 찾아냈다.
+//
+// 연석에서 재면 도로가 넓든 좁든, 구간 경계에서 비대칭이든 항상 맞는다.
 const MAX_CAR_W = 2.1;
-const CURB_LANE = STREET_WIDTH / 2 - (MAX_CAR_W / 2 + 0.35);
+const CURB_GAP = MAX_CAR_W / 2 + 0.35;
+
+// 이보다 좁은 길에는 세우지 않는다.
+//
+// 8m 짜리 1차 매립지 길에 양쪽 주차를 하면 남는 차로가 3m 뿐이라 차가 못
+// 지나간다. 실제로 오래된 좁은 길이 그렇고, **거기에 차가 없다는 것 자체가**
+// 그 구역의 성격이다 (docs/city.md 1기 — 마차가 다니던 시절의 길).
+const MIN_ROAD_FOR_PARKING = 13;
 // 교차로에서 이만큼은 비운다. 실제 도로교통법의 주정차 금지 거리와 비슷하다.
 const CLEAR_INTERSECTION = 16;
 
@@ -88,31 +101,40 @@ export function createParking(scene, rng, mats) {
   ]);
 
   const spots = [];
-  const lines = gridLines();
+  const rs = roads();
 
   // 도로를 따라 훑으며 자리를 잡는다. 간격은 차 길이 + 앞뒤 여유.
   const scan = (alongX) => {
-    for (const c of lines) {
+    rs.forEach((r, bi) => {
+      // 좁은 길에는 갓길 주차가 없다
+      if (r.width < MIN_ROAD_FOR_PARKING) return;
+      // 양쪽 연석에서 안쪽으로
+      const lanes = [r.lo + CURB_GAP, r.hi - CURB_GAP];
+
       for (let t = -CITY_HALF + 10; t < CITY_HALF - 10; ) {
         const size = SIZES[rng.int(0, SIZES.length - 1)];
         const step = size.d + rng.range(0.9, 2.6);
 
-        for (const s of [-1, 1]) {
-          const x = alongX ? t : c + s * CURB_LANE;
-          const z = alongX ? c + s * CURB_LANE : t;
+        for (let li = 0; li < 2; li++) {
+          const s = li === 0 ? -1 : 1;
+          const lane = lanes[li];
+          const x = alongX ? t : lane;
+          const z = alongX ? lane : t;
 
+          // 병합으로 도로가 없어진 구간에는 세울 자리 자체가 없다
+          if (!(alongX ? roadOpenZ(bi, t) : roadOpen(bi, t))) continue;
           // 교차로 근처는 비운다
-          if (onIntersection(alongX ? t : c, alongX ? c : t)) continue;
-          // t 는 도로를 따라간 위치이고 lines 는 교차 도로의 위치다.
+          if (onIntersection(alongX ? t : lane, alongX ? lane : t)) continue;
+          // t 는 도로를 따라간 위치이고 교차 도로는 rs 다.
           // 가장 가까운 교차로까지의 거리가 기준보다 짧으면 비운다.
           let nearCross = Infinity;
-          for (const L of lines) nearCross = Math.min(nearCross, Math.abs(t - L));
+          for (const cr of rs) nearCross = Math.min(nearCross, Math.abs(t - cr.mid));
           if (nearCross < CLEAR_INTERSECTION) continue;
 
           // 구역이 정한 밀도
           const ix = blockIndexAt(x);
           const iz = blockIndexAt(z);
-          const D = districtAt(ix, iz, coreDistance(blockCenter(ix), blockCenter(iz)));
+          const D = districtAt(ix, iz);
           if (!rng.chance(DENSITY[D.name] ?? 0.5)) continue;
 
           // 배치 계획에 묻는다. 골목 입구·계단 착지점 앞에는 못 세운다.
@@ -142,7 +164,7 @@ export function createParking(scene, rng, mats) {
         }
         t += step;
       }
-    }
+    });
   };
   scan(true);
   scan(false);

@@ -25,7 +25,7 @@ import { autoBox } from '../../core/profile.js';
 import {
   FLOOR_HEIGHT,
   PODIUM_FLOOR,
-  BLOCK_SIZE,
+  blockRect,
   SIDEWALK_W,
   blockLots,
   pickHeight,
@@ -41,7 +41,7 @@ import { retrofit } from './retrofit.js';
 import { bazaarBlock } from './bazaar.js';
 import { factoryBlock } from './factory.js';
 import { housingSlab } from './housing.js';
-import { corpoTower } from './corpo.js';
+import { corpoTower, corpoCluster } from './corpo.js';
 import { slumBlock } from './slum.js';
 import { applySkin, facadeRelief } from './facade.js';
 import { districtAt, pickArchetypeIn } from './district.js';
@@ -69,7 +69,12 @@ const SHOP_WASH = SHOP_TINTS.map((hex) => rgb01(hex, 0.62));
 // 실측: 건물 지오메트리 958,000 삼각형 중 대부분이 1층 점포였고, 그 절반 이상이
 // 보이지 않는 면이었다. 이건 LOD 가 아니라 그냥 낭비다 — 지워도 잃는 게 없다.
 function streetFaces(r, blk, walk = SIDEWALK_W) {
-  const half = BLOCK_SIZE / 2;
+  // 블록 경계는 blockRect 하나에서 온다. 대지 병합이 들어오면 이 함수가
+  // **자동으로 대지 경계**를 보게 된다 — 여기가 안 따라오면 병합한 대지의
+  // 안쪽 필지가 "길에 면했다" 고 잘못 판정된다.
+  // 대지 경계다. 병합한 대지에서는 **안쪽 필지가 길에 안 면하는 것이 정상**
+  // 이고, 그게 연속된 벽을 만든다.
+  const R = blk.rect || blockRect(blk.ix, blk.iz);
   // ── 인도 폭을 **인자로 받는다** (실측으로 고침) ─────────────────────────
   // 여유는 그 블록의 실제 인도 폭보다 **커야** 한다.
   //
@@ -84,10 +89,10 @@ function streetFaces(r, blk, walk = SIDEWALK_W) {
   // 같은 값을 두 곳에서 다른 출처로 계산하면 반드시 이런 일이 난다.
   const m = walk + 1.6;
   return {
-    px: r.x1 > blk.cx + half - m,
-    nx: r.x0 < blk.cx - half + m,
-    pz: r.z1 > blk.cz + half - m,
-    nz: r.z0 < blk.cz - half + m,
+    px: r.x1 > R.x1 - m,
+    nx: r.x0 < R.x0 + m,
+    pz: r.z1 > R.z1 - m,
+    nz: r.z0 < R.z0 + m,
   };
 }
 
@@ -400,9 +405,38 @@ export function createTowers(scene, rng, mats, blocks) {
   // 그래서 vertical 이 좌표 해시로 뽑은 임의 높이에 다리를 놓았다.
   // 이제 vertical 은 이 목록에서 **양 끝이 실제로 닿는 쌍**만 고른다.
   const anchors = [];
+
+  // ── 앵커의 solid — 필지와 그려진 것의 **교집합** ─────────────────────────
+  //
+  // rect 만으로는 부족하다. 기업 타워는 대지를 비우므로(광장) 필지
+  // 가장자리에 벽이 없고, 거기에 다리를 물리면 허공에 뜬다.
+  //
+  // 그렇다고 그려진 경계만 쓰면 반대로 틀린다. 일반 타워는 포디움이 몸통보다
+  // 넓어서, 그려진 상자를 쓰면 40m 높이의 다리가 **지상 포디움 자리**에
+  // 물린다.
+  //
+  // 교집합이 둘 다 맞는다 — "필지 안이면서 실제로 그린 곳".
+  //   기업   필지 ∩ 타워   = 타워   (좁아진다)
+  //   일반   몸통 ∩ 전체   = 몸통   (넓어지지 않는다)
+  //   슬럼   필지 ∩ 골조   = 골조
+  const solidOf = (rect, drawn) => {
+    if (!drawn) return rect;
+    const out = {
+      x0: Math.max(rect.x0, drawn.x0), x1: Math.min(rect.x1, drawn.x1),
+      z0: Math.max(rect.z0, drawn.z0), z1: Math.min(rect.z1, drawn.z1),
+    };
+    // 교집합이 비면(있을 수 없지만) 필지로 되돌린다
+    return out.x1 > out.x0 && out.z1 > out.z0 ? out : rect;
+  };
+
   let count = 0;
   let tallest = 0;
   let beaconIdx = 0;
+  let lotIdx = 0;
+  // streetFaces 건강 지표 — 이 함수가 간판 1,602->9 사고를 냈다.
+  // 면한 면의 **비율**을 세면 붕괴가 절대 개수보다 먼저 드러난다.
+  let faceOpen = 0;
+  let faceAll = 0;
   const districts = new Set();
 
   // 랜드마크가 선 블록은 통째로 비운다 (landmark.js 가 채운다)
@@ -415,7 +449,7 @@ export function createTowers(scene, rng, mats, blocks) {
     // 구역을 **블록 단위로** 먼저 구한다. 인도 폭·필지 잘기·골목 밀도를
     // 구역이 정하므로 필지를 나누기 전에 알아야 한다.
     const blkCore = coreDistance(blk.cx, blk.cz);
-    const BD = districtAt(blk.ix, blk.iz, blkCore);
+    const BD = districtAt(blk.ix, blk.iz);
     // 외곽 블록은 원래 성기다 (layout.detailAt 주석 참고).
     // 거리 기반으로 '줄이는' 것이 아니라 도시 구조로 그렇게 만든다.
     const detail = detailAt(blk.cx, blk.cz);
@@ -432,15 +466,30 @@ export function createTowers(scene, rng, mats, blocks) {
       const r = shrink(rect, rng.range(0.35, 1.4));
       if (r.x1 - r.x0 < 6.5 || r.z1 - r.z0 < 6.5) continue;
 
+      // ── 배치 검사용 표시 ──────────────────────────────────────────────
+      // 여기부터 다음 필지까지 그리는 것이 이 건물 한 채다. 검사는 이
+      // 덩어리의 **실제 경계**를 보고 옆 건물과의 관통을 잡는다
+      // (core/placement.js). 앵커의 rect 는 '필지' 이지 '그린 것' 이 아니므로
+      // 관통 판정에 못 쓴다 — 슬럼은 필지 안에서 비스듬히 앉고, 차양·돌출
+      // 간판은 필지 밖으로 나간다.
+      b.mark('building', `bld:${blk.ix},${blk.iz}#${lotIdx++}`, { zone: BD.name, ix: blk.ix, iz: blk.iz });
+
       const core = blkCore;
       const D = BD;
       // 구역이 높이 성향을 민다 — 기업 구역은 초고층, 상업·공업은 저층 위주.
       // 그래야 스카이라인만 보고도 어느 구역인지 안다.
       const height = pickHeight(rng, Math.max(0, Math.min(1, core - D.heightBias)));
+      // 필지 하나 = 건물 한 채. **여기서 한 번만 센다.**
+      //
+      // 전에는 여기서 한 번 세고 구역별 생성기 다섯 갈래에서 또 한 번씩 세서
+      // 값이 정확히 두 배였다 (실제 439동을 875동으로 신고했다). 배치 검사가
+      // 지오메트리에서 직접 센 439 와 어긋나서 드러났다 (core/placement.js).
       count++;
       if (height > tallest) tallest = height;
 
       const faces = streetFaces(r, blk, BD.sidewalk);
+      faceAll += 4;
+      for (const sd of SIDES) if (faces[sd]) faceOpen++;
 
       // ── 상업 구역은 생성기가 다르다 ──────────────────────────────────
       // 번화가는 계획된 상업지구가 아니라 **계획이 터진 자리**다 (docs/city.md
@@ -451,9 +500,8 @@ export function createTowers(scene, rng, mats, blocks) {
       if (D.name === '슬럼') {
         rng.int(2, 3); // 난수 소비를 맞춘다
         const sl = slumBlock(b, r, rng, mats, pools);
-        count++;
         if (sl.top > tallest) tallest = sl.top;
-        anchors.push({ rect: r, top: sl.top, zone: D.name, faces });
+        anchors.push({ rect: r, solid: solidOf(r, b.takeMark()), top: sl.top, zone: D.name, faces });
         districts.add(D.name);
         continue;
       }
@@ -462,15 +510,28 @@ export function createTowers(scene, rng, mats, blocks) {
       // 대지를 꽉 채우지 않고 비운다 — 광장이 부의 표시다 (corpo.js 머리말).
       if (D.name === '기업') {
         rng.int(2, 3); // 난수 소비를 맞춘다
-        const ct = corpoTower(b, r, rng, mats, height, pools, signs);
+        // ── 군집을 먼저 시도한다 ────────────────────────────────────────
+        // 대지마다 타워 하나면 벽이 아니라 열주(列柱)가 된다. 여러 채를
+        // 좁은 간격으로 세워야 협곡이 생긴다 (corpo.js corpoCluster 머리말).
+        // 대지가 작아 군집이 안 되면 단동 광장형으로 떨어진다.
+        const label = `corpo:${blk.ix},${blk.iz}`;
+        // 공유 기단·광장은 건물이 아니라 받침이다. 'building' 으로 두면
+        // 그 안에 선 타워들과 겹쳐 관통 경고가 뜬다.
+        b.mark('podium', label);
+        const ct = corpoCluster(b, r, rng, mats, height, pools, signs, label)
+                || corpoTower(b, r, rng, mats, height, pools, signs, label);
         if (ct) {
-          count++;
+          for (const t of ct.towers) {
+            count++;
+            // solid 는 corpo.js 가 **실제로 채운** 사각형이다. rect 를 그대로
+            // 쓰면 원통 타워의 빈 모서리·트윈의 빈 가운데에 브릿지가 닿는다.
+            anchors.push({ rect: t.rect, solid: t.solid || t.rect, top: t.top, zone: D.name, faces });
+          }
           if (ct.top > tallest) tallest = ct.top;
-          anchors.push({ rect: r, top: ct.top, zone: D.name, faces });
           districts.add(D.name);
           continue;
         }
-        // 대지가 너무 작아 광장을 못 내면 공통 타워로 떨어진다
+        // 둘 다 안 되면 공통 타워로 떨어진다
       }
 
       // 주거 구역 — 1기. 공장 노동자를 위해 빨리, 똑같이 지은 집.
@@ -479,9 +540,8 @@ export function createTowers(scene, rng, mats, blocks) {
       if (D.name === '주거') {
         rng.int(2, 3); // 난수 소비를 맞춘다
         const hs = housingSlab(b, r, rng, mats, faces, detail, pools);
-        count++;
         if (hs.top > tallest) tallest = hs.top;
-        anchors.push({ rect: r, top: hs.top, zone: D.name, faces });
+        anchors.push({ rect: r, solid: solidOf(r, b.takeMark()), top: hs.top, zone: D.name, faces });
         districts.add(D.name);
         continue;
       }
@@ -492,9 +552,8 @@ export function createTowers(scene, rng, mats, blocks) {
       if (D.name === '공업') {
         rng.int(2, 3); // 난수 소비를 맞춘다
         const fb = factoryBlock(b, r, rng, mats, faces, detail, pools);
-        count++;
         if (fb.top > tallest) tallest = fb.top;
-        anchors.push({ rect: r, top: fb.top, zone: D.name, faces });
+        anchors.push({ rect: r, solid: solidOf(r, b.takeMark()), top: fb.top, zone: D.name, faces });
         districts.add(D.name);
         continue;
       }
@@ -503,9 +562,8 @@ export function createTowers(scene, rng, mats, blocks) {
         // 난수 소비를 맞춘다 — 건너뛰면 뒤의 모든 생성이 밀린다
         rng.int(2, 3);
         const bz = bazaarBlock(b, r, rng, mats, D, faces, detail, signs);
-        count++;
         if (bz.top > tallest) tallest = bz.top;
-        anchors.push({ rect: r, top: bz.top, zone: D.name, faces });
+        anchors.push({ rect: r, solid: solidOf(r, b.takeMark()), top: bz.top, zone: D.name, faces });
         districts.add(D.name);
         continue;
       }
@@ -533,14 +591,17 @@ export function createTowers(scene, rng, mats, blocks) {
           megaBoard(signs, rng, shaftRect, podH, height);
         }
         createCrown(b, end.rect, end.top, height, rng, mats, beaconIdx++);
-        anchors.push({ rect: shaftRect, top: height, zone: D.name, faces });
+        anchors.push({ rect: shaftRect, solid: solidOf(shaftRect, b.takeMark()), top: height, zone: D.name, faces });
       } else {
         createCrown(b, r, podH, height, rng, mats, beaconIdx++);
-        anchors.push({ rect: r, top: podH, zone: D.name, faces });
+        anchors.push({ rect: r, solid: solidOf(r, b.takeMark()), top: podH, zone: D.name, faces });
       }
       districts.add(D.name);
     }
   }
 
-  return { group: b.build(scene), signs, pools, alleys, anchors, count, tallest, districts: [...districts] };
+  return {
+    group: b.build(scene), signs, pools, alleys, anchors, count, tallest,
+    districts: [...districts], faceOpen, faceAll,
+  };
 }

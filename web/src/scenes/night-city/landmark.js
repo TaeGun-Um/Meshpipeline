@@ -16,15 +16,24 @@ import { lathe } from '../../core/profile.js';
 import { NEON } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 import {
-  PITCH,
+  blockCenter,
   FLOOR_HEIGHT,
   PANEL_TILE,
 } from './layout.js';
 
 // 랜드마크가 차지하는 블록. towers.js 는 이 블록을 건너뛴다.
+//
+// ── 격자가 6x6 이던 시절의 값을 고쳤다 ────────────────────────────────────
+// (2,3)·(4,1) 은 6x6 격자에서 각각 도심 한가운데와 대각선 반대편이었다.
+// 12x12 로 늘린 뒤에는 둘 다 변두리이고 서로 붙어 있다 (코어 거리 0.55·0.58).
+// 위 머리말이 말하는 "도심 한가운데" 와 "대각선 반대편" 이 성립하지 않는다.
+//
+// 좌표 계산식(`(ix - 2.5) * PITCH`)도 같은 시절 것이라 함께 틀려 있었는데,
+// 두 오류가 서로를 가려서 **결과적으로는 도심 근처에 서 있었다.** 식만
+// 고치면 랜드마크가 변두리로 밀려나므로 블록도 같이 고친다.
 export const LANDMARK_BLOCKS = [
-  { ix: 2, iz: 3, kind: 'hq' },
-  { ix: 4, iz: 1, kind: 'twin' },
+  { ix: 6, iz: 6, kind: 'hq' },   // 도심 한가운데 (코어 거리 0.05)
+  { ix: 9, iz: 3, kind: 'twin' }, // 대각선 반대편, 항만 반대쪽 내륙
 ];
 
 // ── 본사 타워 ──────────────────────────────────────────────────────────────
@@ -159,8 +168,17 @@ export function createLandmarks(scene, mats) {
   const out = [];
 
   for (const lm of LANDMARK_BLOCKS) {
-    const cx = (lm.ix - 2.5) * PITCH;
-    const cz = (lm.iz - 2.5) * PITCH;
+    // ── 블록 중심은 blockCenter 가 유일한 출처다 ──────────────────────────
+    // 전에는 `(ix - 2.5) * PITCH` 였다. GRID 가 6 이던 시절의 식이고
+    // ((6-1)/2 = 2.5), 격자가 12x12 에 구간별 피치로 바뀐 뒤로는 완전히
+    // 틀린 좌표를 준다.
+    //
+    // towers.js 는 LANDMARK_BLOCKS 의 블록을 **비워 두는데** 랜드마크는
+    // 엉뚱한 자리에 섰다. 즉 그 블록에는 구멍이 뚫리고, 420m 짜리 본사
+    // 타워는 이미 건물이 선 다른 블록 위에 겹쳐 있었다.
+    const cx = blockCenter(lm.ix);
+    const cz = blockCenter(lm.iz);
+    b.mark('building', `landmark:${lm.kind}`, { zone: '랜드마크' });
     const apex = lm.kind === 'hq' ? hqTower(b, cx, cz, mats) : twinTower(b, cx, cz, mats);
     out.push({ kind: lm.kind, x: cx, z: cz, apex });
   }

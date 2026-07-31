@@ -23,20 +23,18 @@
 import { upPlane } from '../../core/boxfaces.js';
 import { claim, TIER } from './siteplan.js';
 import { districtAt } from './district.js';
+import { parcels, blockRect, roadOpen, roadOpenZ } from './parcel.js';
 import { coreDistance } from './layout.js';
 import {
   GRID,
   CITY_HALF,
-  BLOCK_SIZE,
-  STREET_WIDTH,
   CURB_HEIGHT,
   SIDEWALK_W,
   blockCenter,
-  gridLines,
+  roads,
   onIntersection,
 } from './layout.js';
 
-const HALF_ROAD = STREET_WIDTH / 2;
 // 판 위 2cm. 보도블록과 같은 높이에 두면 Z-파이팅이 난다.
 const ON_WALK = CURB_HEIGHT + 0.02;
 const ON_ROAD = 0.02;
@@ -49,15 +47,16 @@ function curbLines(b, mats) {
   const EDGE = 0.5; // 마감선 폭
   const GUT = 1.1; // 측구 폭
 
-  for (let ix = 0; ix < GRID; ix++) {
-    for (let iz = 0; iz < GRID; iz++) {
-      const cx = blockCenter(ix);
-      const cz = blockCenter(iz);
-      const h = BLOCK_SIZE / 2;
+  for (const p of parcels()) {
+    {
+      const R = p.rect;
+      const cx = (R.x0 + R.x1) / 2;
+      const cz = (R.z0 + R.z1) / 2;
 
       for (const [dx, dz] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
         const alongX = dx === 0;
-        const len = BLOCK_SIZE;
+        const len = alongX ? R.x1 - R.x0 : R.z1 - R.z0;
+        const h = alongX ? (R.z1 - R.z0) / 2 : (R.x1 - R.x0) / 2;
         // 인도 쪽 마감선 — 블록 경계에서 안쪽으로 EDGE/2
         const ex = cx + dx * (h - EDGE / 2);
         const ez = cz + dz * (h - EDGE / 2);
@@ -83,13 +82,15 @@ function curbLines(b, mats) {
 // 도로 설계에 따라 등간격이다.
 function drains(b, mats) {
   const STEP = 22;
-  for (let ix = 0; ix < GRID; ix++) {
-    for (let iz = 0; iz < GRID; iz++) {
-      const cx = blockCenter(ix);
-      const cz = blockCenter(iz);
-      const h = BLOCK_SIZE / 2 + 0.7;
+  for (const p of parcels()) {
+    {
+      const R = p.rect;
+      const cx = (R.x0 + R.x1) / 2;
+      const cz = (R.z0 + R.z1) / 2;
+      const h = (R.x1 - R.x0) / 2 + 0.7;
+      const halfLen = (R.x1 - R.x0) / 2;
 
-      for (let t = -BLOCK_SIZE / 2 + STEP / 2; t < BLOCK_SIZE / 2; t += STEP) {
+      for (let t = -halfLen + STEP / 2; t < halfLen; t += STEP) {
         for (const s of [-1, 1]) {
           b.add(upPlane(1.0, 0.42, [cx + t, ON_ROAD + 0.001, cz + s * h]), mats.drainMat);
           b.add(upPlane(0.42, 1.0, [cx + s * h, ON_ROAD + 0.001, cz + t]), mats.drainMat);
@@ -118,32 +119,31 @@ function drains(b, mats) {
 function tactile(b, mats) {
   const W = 2.4;  // 폭 — 횡단보도 띠(2.6m) 와 맞춘다
   const D = 0.7;  // 깊이
-  const lines = gridLines();
-  // 연석에서 안쪽으로. 0 이면 연석 마감선과 겹친다.
-  const back = HALF_ROAD + 0.75;
+  // 연석에서 인도 안쪽으로. 0 이면 연석 마감선과 겹친다.
+  // 격자선에서 재지 않는다 — 구간 경계에서 도로가 비대칭이라 한쪽이 어긋난다.
+  const BACK = 0.75;
+  const SIDE = 2.2;
 
-  for (const cx of lines) {
-    for (const cz of lines) {
-      if (Math.abs(cx) > CITY_HALF || Math.abs(cz) > CITY_HALF) continue;
+  roads().forEach((rx, xi) => {
+    if (Math.abs(rx.mid) > CITY_HALF) return;
+    roads().forEach((rz, zi) => {
+      if (Math.abs(rz.mid) > CITY_HALF) return;
+      if (!roadOpen(xi, rz.mid) || !roadOpenZ(zi, rx.mid)) return;
       // 교차로의 네 귀퉁이. 각 귀퉁이에서 두 방향 횡단보도를 마주본다.
-      for (const sx of [-1, 1]) {
-        for (const sz of [-1, 1]) {
+      for (const ex of [[rx.lo - SIDE, rx.lo - BACK], [rx.hi + SIDE, rx.hi + BACK]]) {
+        for (const ez of [[rz.lo - SIDE, rz.lo - BACK], [rz.hi + SIDE, rz.hi + BACK]]) {
           // (a) X 방향으로 건너가는 횡단보도 앞 — 연석은 z 축에 평행
-          const ax = cx + sx * (HALF_ROAD + 2.2);
-          const az = cz + sz * back;
-          if (claim(ax, az, 1.6, TIER.SAFETY, 'tactile')) {
-            b.add(upPlane(W, D, [ax, ON_WALK + 0.001, az]), mats.tactileMat);
+          if (claim(ex[0], ez[1], 1.6, TIER.SAFETY, 'tactile')) {
+            b.add(upPlane(W, D, [ex[0], ON_WALK + 0.001, ez[1]]), mats.tactileMat);
           }
           // (b) Z 방향으로 건너가는 횡단보도 앞
-          const bx = cx + sx * back;
-          const bz = cz + sz * (HALF_ROAD + 2.2);
-          if (claim(bx, bz, 1.6, TIER.SAFETY, 'tactile')) {
-            b.add(upPlane(D, W, [bx, ON_WALK + 0.001, bz]), mats.tactileMat);
+          if (claim(ex[1], ez[0], 1.6, TIER.SAFETY, 'tactile')) {
+            b.add(upPlane(D, W, [ex[1], ON_WALK + 0.001, ez[0]]), mats.tactileMat);
           }
         }
       }
-    }
-  }
+    });
+  });
 }
 
 // ── 맨홀 · 점검구 ──────────────────────────────────────────────────────────
@@ -151,23 +151,27 @@ function tactile(b, mats) {
 // 위치가 불규칙해야 하는 것들. 텍스처에 그리면 6m 마다 격자로 늘어선다.
 // 좌표를 난수로 뽑되 도로와 인도에 나눠 뿌린다.
 function covers(b, rng, mats) {
-  const lines = gridLines();
-  // 차도의 맨홀 — 차선 사이에 앉는다
-  for (const c of lines) {
+  // 차도의 맨홀 — 차선 사이에 앉는다. 도로 폭이 구간마다 다르므로
+  // 그 도로의 실제 반폭에 비례해 흩는다 (8m 짜리 길에 ±6.6m 로 뿌리면
+  // 인도 밑으로 들어간다).
+  roads().forEach((r, bi) => {
+    const spread = (r.width / 2) * 0.6;
     for (let t = -GRID * 44 + 18; t < GRID * 44; t += rng.range(26, 52)) {
-      if (onIntersection(t, c)) continue;
-      const off = rng.range(-HALF_ROAD * 0.6, HALF_ROAD * 0.6);
-      b.cylinder(0.42, 0.42, 0.04, [t, ON_ROAD + 0.02, c + off], mats.manholeMat, 10);
-      b.cylinder(0.42, 0.42, 0.04, [c + off, ON_ROAD + 0.02, t], mats.manholeMat, 10);
+      if (onIntersection(t, r.mid)) continue;
+      const off = rng.range(-spread, spread);
+      if (roadOpenZ(bi, t)) b.cylinder(0.42, 0.42, 0.04, [t, ON_ROAD + 0.02, r.mid + off], mats.manholeMat, 10);
+      if (roadOpen(bi, t)) b.cylinder(0.42, 0.42, 0.04, [r.mid + off, ON_ROAD + 0.02, t], mats.manholeMat, 10);
     }
-  }
+  });
 
   // 인도의 점검구 — 사각형. 맨홀(원형)과 형태를 달리해야 둘 다 눈에 띈다.
-  for (let ix = 0; ix < GRID; ix++) {
-    for (let iz = 0; iz < GRID; iz++) {
-      const cx = blockCenter(ix);
-      const cz = blockCenter(iz);
-      const h = BLOCK_SIZE / 2;
+  for (const p of parcels()) {
+    {
+      const ix = p.ix, iz = p.iz;
+      const R = p.rect;
+      const cx = (R.x0 + R.x1) / 2;
+      const cz = (R.z0 + R.z1) / 2;
+      const h = (R.x1 - R.x0) / 2;
       const n = rng.int(4, 9);
       for (let i = 0; i < n; i++) {
         // 인도 띠 안에서만 — 안쪽은 건물이다
@@ -175,7 +179,7 @@ function covers(b, rng, mats) {
         const along = rng.range(-h + 4, h - 4);
         // 인도 폭은 구역이 정한다. 전역을 쓰면 좁은 구역(공업 3.2m)에서
         // 점검구가 차도나 건물 밑으로 나간다 (towers.streetFaces 와 같은 실수).
-        const walk = districtAt(ix, iz, coreDistance(cx, cz)).sidewalk ?? SIDEWALK_W;
+        const walk = districtAt(ix, iz).sidewalk ?? SIDEWALK_W;
         const depth = rng.range(0.7, Math.max(1.0, walk - 0.9));
         const w = rng.range(0.6, 1.1);
         const d = rng.range(0.5, 0.9);
@@ -191,18 +195,20 @@ function covers(b, rng, mats) {
 
 // 젖은 자국 — 측구 근처에 고인 물. 비 오는 도시라 노면이 균질하면 안 된다.
 function puddles(b, rng, mats) {
-  const lines = gridLines();
-  for (const c of lines) {
+  // 물은 측구(도로 가장자리)에 고인다. 도로 반폭의 55~92% 지점 — 폭이
+  // 구간마다 다르므로 그 도로의 반폭을 쓴다.
+  roads().forEach((r, bi) => {
+    const half = r.width / 2;
     for (let t = -GRID * 44; t < GRID * 44; t += rng.range(14, 34)) {
-      if (onIntersection(t, c)) continue;
+      if (onIntersection(t, r.mid)) continue;
       const s = rng.chance(0.5) ? 1 : -1;
-      const off = s * rng.range(HALF_ROAD * 0.55, HALF_ROAD * 0.92);
+      const off = s * rng.range(half * 0.55, half * 0.92);
       const w = rng.range(2.4, 6.5);
       const d = rng.range(1.2, 3.0);
-      b.add(upPlane(w, d, [t, ON_ROAD + 0.003, c + off]), mats.puddleMat);
-      b.add(upPlane(d, w, [c + off, ON_ROAD + 0.003, t]), mats.puddleMat);
+      if (roadOpenZ(bi, t)) b.add(upPlane(w, d, [t, ON_ROAD + 0.003, r.mid + off]), mats.puddleMat);
+      if (roadOpen(bi, t)) b.add(upPlane(d, w, [r.mid + off, ON_ROAD + 0.003, t]), mats.puddleMat);
     }
-  }
+  });
 }
 
 export function dressSidewalks(b, rng, mats) {

@@ -126,7 +126,11 @@ export function createSignage(scene, signs, mats) {
   const b = new MeshBuilder('Signage', { castShadow: false, receiveShadow: false });
   const pools = [];
 
+  let i = 0;
   for (const req of signs) {
+    // 간판마다 표시를 건다. 검사가 보는 것은 "이 간판이 건물에 붙어 있나" 다 —
+    // 벽감 깊이를 빼먹어 세로 간판이 허공에 1.3m 떠 있던 적이 있다.
+    b.mark('sign', `sign#${i++}`, { kind: req.kind, side: req.side });
     if (req.kind === 'blade') bladeSign(b, req, mats);
     else flatSign(b, req, mats);
     signPools(pools, req);

@@ -88,8 +88,10 @@ function sawtooth(b, r, y, rng, mats) {
 //
 // 원통이 이 구역의 유일한 곡면이다. 도시 전체가 직각인데 여기만 둥글어서
 // 멀리서도 공업지구가 어디인지 알 수 있다.
-function silo(b, x, z, rng, mats) {
-  const r = rng.range(2.2, 3.6);
+// room 은 이 자리에서 필지 경계까지의 거리다. **몸통이 아니라 딸린 것까지**
+// 그 안에 들어가야 한다 — 사다리가 r+0.12 만큼 더 나간다.
+function silo(b, x, z, rng, mats, room = Infinity) {
+  const r = Math.min(rng.range(2.2, 3.6), Math.max(0.9, room - 0.4));
   const h = rng.range(9, 17);
   b.cylinder(r, r, h, [x, h / 2, z], mats.rustMat, 14);
   // 원뿔 지붕
@@ -110,7 +112,13 @@ function silo(b, x, z, rng, mats) {
 //
 // 이 구역에서 유일하게 하늘을 찌르는 것. 도심의 타워가 하는 일을
 // 여기서는 굴뚝이 한다.
-function stack(b, x, z, rng, mats) {
+// ── room 을 왜 받는가 (배치 검사가 잡았다) ────────────────────────────────
+// 굴뚝 몸통은 반경 2m 도 안 되는데 **지지 케이블이 h*0.42 만큼 퍼진다.**
+// 높이가 42m 까지 가므로 케이블 끝이 중심에서 **17.6m** 나간다.
+//
+// 굴뚝은 필지 중심에서 ±30% 지점에 서므로, 그 케이블이 옆 필지 건물을
+// 통째로 관통했다. 공업 구역 건물 관통 3쌍의 주범이다.
+function stack(b, x, z, rng, mats, room = Infinity) {
   const h = rng.range(22, 42);
   const r0 = rng.range(1.3, 2.0);
   b.add(lathe([[r0, 0], [r0 * 0.78, h * 0.6], [r0 * 0.66, h], [r0 * 0.58, h]], 12, [x, 0, z]), mats.rustMat);
@@ -119,13 +127,17 @@ function stack(b, x, z, rng, mats) {
     const by = h * (0.62 + i * 0.11);
     b.cylinder(r0 * 0.72, r0 * 0.72, 1.1, [x, by, z], mats.hazardMat, 12);
   }
-  // 지지 케이블 셋
-  for (let i = 0; i < 3; i++) {
-    const a = (i / 3) * Math.PI * 2;
-    b.add(
-      tubeBetween([x, h * 0.82, z], [x + Math.cos(a) * h * 0.42, 0, z + Math.sin(a) * h * 0.42], 0.05, 4),
-      mats.cableMat
-    );
+  // 지지 케이블 셋 — 필지를 벗어나지 않는 범위에서만 펼친다.
+  // 자리가 없으면 아예 안 단다. 케이블 없는 굴뚝이 남의 건물을 뚫는 것보다 낫다.
+  const guy = Math.min(h * 0.42, room - 0.6);
+  if (guy > 3) {
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      b.add(
+        tubeBetween([x, h * 0.82, z], [x + Math.cos(a) * guy, 0, z + Math.sin(a) * guy], 0.05, 4),
+        mats.cableMat
+      );
+    }
   }
   b.sphere(0.2, [x, h + 0.4, z], neon(NEON.amber));
 }
@@ -247,13 +259,22 @@ export function factoryBlock(b, r, rng, mats, faces, detail, pools) {
 
   sawtooth(b, shrink(r, 0.6), h, rng, mats);
 
-  // 사일로·굴뚝 — 건물보다 눈에 띈다
+  // 사일로·굴뚝 — 건물보다 눈에 띈다.
+  //
+  // 자리마다 **필지 경계까지 남은 거리**를 함께 넘긴다. 이걸 안 넘겼더니
+  // 굴뚝 지지 케이블(최대 17.6m)이 옆 필지 건물을 관통했다 (배치 검사).
+  const room = (px, pz) => Math.min(px - r.x0, r.x1 - px, pz - r.z0, r.z1 - pz);
+
   const silos = rng.int(0, 3);
   for (let i = 0; i < silos; i++) {
-    silo(b, c.x + rng.range(-s.w * 0.32, s.w * 0.32), c.z + rng.range(-s.d * 0.32, s.d * 0.32), rng, mats);
+    const sx = c.x + rng.range(-s.w * 0.32, s.w * 0.32);
+    const sz = c.z + rng.range(-s.d * 0.32, s.d * 0.32);
+    silo(b, sx, sz, rng, mats, room(sx, sz));
   }
   if (rng.chance(0.45)) {
-    stack(b, c.x + rng.range(-s.w * 0.3, s.w * 0.3), c.z + rng.range(-s.d * 0.3, s.d * 0.3), rng, mats);
+    const kx = c.x + rng.range(-s.w * 0.3, s.w * 0.3);
+    const kz = c.z + rng.range(-s.d * 0.3, s.d * 0.3);
+    stack(b, kx, kz, rng, mats, room(kx, kz));
   }
   if (rng.chance(0.6 * detail)) pipeRack(b, r, rng, mats);
 

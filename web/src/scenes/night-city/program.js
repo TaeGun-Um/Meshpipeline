@@ -11,6 +11,8 @@ import { MeshBuilder } from '../../core/builder.js';
 import { autoBox, lathe } from '../../core/profile.js';
 import { upPlane, downPlane } from '../../core/boxfaces.js';
 import { BLOCK_SIZE, CURB_HEIGHT, PIT_INSET } from './layout.js';
+// BLOCK_SIZE 는 여기서 '블록 경계' 가 아니라 '안쪽으로 얼마나 물릴까' 의
+// 기준으로만 쓴다. 경계가 필요해지면 blockRect 로 바꾼다 (대지 병합 때).
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon, neonSoft } from '../../shared/masters.js';
 
@@ -248,6 +250,9 @@ export function createPrograms(scene, rng, mats, blocks) {
   const tally = { construction: 0, plaza: 0, lot: 0 };
 
   for (const blk of blocks) {
+    if (blk.program !== 'towers' && blk.program !== 'landmark') {
+      b.mark('program', `${blk.program}:${blk.ix},${blk.iz}`, { program: blk.program });
+    }
     if (blk.program === 'construction') {
       constructionSite(b, blk.cx, blk.cz, rng, mats, pools);
       tally.construction++;

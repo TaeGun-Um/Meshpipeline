@@ -7,10 +7,27 @@
 
 import { hash2 } from '../../core/textures.js';
 
-// 블록 한 변 + 도로 폭 = 격자 간격
+// 블록 한 변. 구간 피치가 달라져도 **판 크기는 일정하다** — 이 도시는
+// 블록을 표준 규격으로 찍어 냈고, 매립 차수마다 달라진 것은 그 사이의 길이다.
 export const BLOCK_SIZE = 66;
-export const STREET_WIDTH = 22;
-export const PITCH = BLOCK_SIZE + STREET_WIDTH; // 88
+
+// 이름뿐인 도로 폭. **모듈 밖으로 내보내지 않는다.**
+//
+// ── 왜 상수를 없앴는가 (아홉 번째 결합 오류) ───────────────────────────────
+// 원래 `PITCH = BLOCK_SIZE + STREET_WIDTH` 였고 셋이 한 몸이었다. 그런데
+// 구간별 격자(SPANS)가 들어오면서 피치가 74·88·104·82 로 갈라졌는데
+// BLOCK_SIZE 와 STREET_WIDTH 는 고정으로 남았다. 66+22=88 은 **두 번째
+// 구간에서만** 맞는다.
+//
+// 그 결과 여섯 모듈이 "도로 반폭은 11m" 라고 믿고 물건을 놓았고,
+// 피치 74 구간의 실제 도로는 8m 였다. 갓길 주차 1,137대(전체의 57%)가
+// 인도와 건물 안에 서 있었다. 배치 검사기를 만들고서야 나왔다.
+//
+// 그래서 이제 도로는 상수가 아니라 **블록 판 사이에 남은 공간**이다.
+// 아래 roads() 하나가 유일한 출처이고, 이 숫자는 바깥 경계 도로에만 쓴다
+// (그쪽은 마주 볼 블록이 없어 다른 근거가 없다).
+const NOMINAL_STREET = 22;
+export const PITCH = BLOCK_SIZE + NOMINAL_STREET; // 88 — 기본 피치
 
 // 상세 지오메트리를 만드는 범위. 12x12 블록 = 1,056m 사방.
 //
@@ -49,9 +66,23 @@ export const PIT_INSET = 3;
 export const FLOOR_HEIGHT = 3.6; // 오피스·주거 기준층
 export const PODIUM_FLOOR = 4.6; // 저층 상가는 층고가 높다
 
-// 고가도로가 지나는 격자선 (x = 이 값 근처의 도로 위)
-export const HIGHWAY_X = -PITCH / 2;
+// ── 고가도로 ───────────────────────────────────────────────────────────────
+//
+// 고가도로는 **도로 위**를 지난다. 당연한 말 같지만 전에는 그렇지 않았다.
+//
+// `HIGHWAY_X = -PITCH / 2 = -44` 였다. 등간격 격자에서는 -44 가 격자선이라
+// 맞았는데, 구간별 피치가 들어오면서 -44 는 **블록 5 판(-102~-36) 안쪽**이
+// 됐다. 그래서 상판·교각·기초가 도시를 남북으로 가로지르며 건물 위를
+// 지나갔다. 9·11·12번과 같은 뿌리다 — 파생 상수를 안 따라갔다.
+//
+// 이제 상수가 아니라 **도로를 고른다.** 도로가 어디인지는 roads() 하나가
+// 알고 있으므로, 격자가 또 바뀌어도 따라온다.
+export const HIGHWAY_BAND = 6; // roads() 의 몇 번째 띠를 타는가 (도심 서쪽)
 export const HIGHWAY_Y = 26;
+
+export function highwayX() {
+  return roads()[HIGHWAY_BAND].mid;
+}
 
 // ── 격자 좌표 ──────────────────────────────────────────────────────────────
 
@@ -102,6 +133,24 @@ export function blockCenter(i) {
   return CENTERS.centers[Math.max(0, Math.min(GRID - 1, i))];
 }
 
+// ── 블록이 차지한 사각형 ───────────────────────────────────────────────────
+//
+// **블록의 '경계' 가 필요한 곳은 전부 여기를 부른다.**
+//
+// 전에는 여덟 모듈이 각자 `blockCenter(i) ± BLOCK_SIZE/2` 를 썼다. 지금은
+// 그 식이 맞지만, 대지 병합(여러 칸을 한 대지로)이 들어오면 **한 곳도 빠짐없이**
+// 틀리게 된다. 그때 여덟 곳을 찾아 고치는 것과 여기 한 곳을 고치는 것의
+// 차이다.
+//
+// roads() 를 단일 출처로 만들어 두었더니 격자 불일치 수정이 자동으로
+// 전파됐다 (docs/status.md 0.1). 같은 이유로 먼저 모아 둔다.
+export function blockRect(ix, iz) {
+  const h = BLOCK_SIZE / 2;
+  const cx = blockCenter(ix);
+  const cz = blockCenter(iz);
+  return { x0: cx - h, x1: cx + h, z0: cz - h, z1: cz + h };
+}
+
 // 그 블록의 피치 (도로 폭을 포함한 간격).
 export function blockPitch(i) {
   return CENTERS.pitches[Math.max(0, Math.min(GRID - 1, i))];
@@ -125,24 +174,61 @@ export function blockIndexAt(v) {
   return best;
 }
 
-// 격자선(도로 중심)까지의 거리. 도로 중심에서 0, 블록 중심에서 PITCH/2.
-// JS 의 % 는 음수에 음수를 돌려주므로 한 번 더 더해서 양수로 만든다.
-// 가장 가까운 도로 중심선까지의 거리.
+// ── 도로 ───────────────────────────────────────────────────────────────────
 //
-// 전에는 나머지 연산(%)으로 구했는데 그건 **등간격일 때만** 맞다.
-// 구간마다 피치가 다르므로 실제 선 목록에서 최소 거리를 찾는다.
-let LINES_CACHE = null;
-function gridDist(v) {
-  if (!LINES_CACHE) LINES_CACHE = gridLines();
-  let best = Infinity;
-  for (const L of LINES_CACHE) best = Math.min(best, Math.abs(v - L));
-  return best;
+// **도로는 폭이 정해진 것이 아니라 블록 판 사이에 남은 공간이다.**
+//
+// 블록 i 는 폭 blockPitch(i) 짜리 칸을 갖고, 그 한가운데에 66m 판이 놓인다.
+// 그래서 판 양옆에 (피치 - 66)/2 씩 여백이 남고, 이웃한 두 여백이 만나
+// 도로가 된다.
+//
+//   74 · 74   4 + 4  =  8m   1차 매립 — 마차가 다니던 시절이라 좁다
+//   88 · 88  11 + 11 = 22m   2차
+//   104·104  19 + 19 = 38m   3차 — 트럭 시대
+//   82 · 82   8 + 8  = 16m   4차
+//   74 · 88   4 + 11 = 15m   **구간 경계. 격자선 기준으로 비대칭이다**
+//
+// 마지막 줄이 요점이다. 구간이 바뀌는 자리에서는 도로가 한쪽으로 치우친다.
+// 그래서 "격자선에서 ±얼마" 로 물건을 놓으면 반드시 한쪽이 틀린다.
+// **연석(블록 판 가장자리)에서부터 재야 한다** — 그게 lo·hi 다.
+let ROADS_CACHE = null;
+export function roads() {
+  if (ROADS_CACHE) return ROADS_CACHE;
+  const h = BLOCK_SIZE / 2;
+  const out = [];
+
+  // 바깥 경계 도로는 마주 볼 블록이 없다. 안쪽 여백을 거울처럼 접어 쓴다.
+  const firstEdge = blockCenter(0) - h;
+  out.push({ lo: firstEdge - (blockPitch(0) - BLOCK_SIZE), hi: firstEdge });
+  for (let i = 0; i + 1 < GRID; i++) {
+    out.push({ lo: blockCenter(i) + h, hi: blockCenter(i + 1) - h });
+  }
+  const lastEdge = blockCenter(GRID - 1) + h;
+  out.push({ lo: lastEdge, hi: lastEdge + (blockPitch(GRID - 1) - BLOCK_SIZE) });
+
+  for (const r of out) {
+    r.mid = (r.lo + r.hi) / 2;
+    r.width = r.hi - r.lo;
+  }
+  ROADS_CACHE = out;
+  return out;
 }
 
-// 교차로 안인지 — 두 축이 모두 도로 폭 안.
+// 좌표 v 가 든 도로. 인도·블록 위면 null.
+export function roadAt(v) {
+  for (const r of roads()) {
+    if (v >= r.lo && v <= r.hi) return r;
+  }
+  return null;
+}
+
+export function inRoad(v) {
+  return roadAt(v) !== null;
+}
+
+// 교차로 안인지 — 두 축이 모두 도로 띠 안.
 export function onIntersection(x, z) {
-  const half = STREET_WIDTH / 2;
-  return gridDist(x) <= half && gridDist(z) <= half;
+  return inRoad(x) && inRoad(z);
 }
 
 // 격자선 좌표 목록 (도로 중심선). 바깥 경계 도로까지 GRID+1 개.
@@ -310,12 +396,9 @@ let ALLEY_CACHE = null;
 export function allAlleyRects() {
   if (ALLEY_CACHE) return ALLEY_CACHE;
   ALLEY_CACHE = [];
-  const h = BLOCK_SIZE / 2;
   for (let ix = 0; ix < GRID; ix++) {
     for (let iz = 0; iz < GRID; iz++) {
-      const cx = blockCenter(ix);
-      const cz = blockCenter(iz);
-      const a = alleyFor(ix, iz, { x0: cx - h, x1: cx + h, z0: cz - h, z1: cz + h }, alleyRateAt(ix, iz));
+      const a = alleyFor(ix, iz, blockRect(ix, iz), alleyRateAt(ix, iz));
       if (a) ALLEY_CACHE.push({ ...a, ix, iz });
     }
   }
@@ -361,15 +444,6 @@ export function subtractAlley(root, a) {
   return out;
 }
 
-// 블록을 타워 몇 개로 쪼갤지, 각 타워의 사각형 범위를 돌려준다.
-//
-// 블록을 통째로 한 타워로 쓰면 66m 짜리 뚱뚱한 상자만 늘어선다. 실제 도시처럼
-// 큰 덩어리 하나 + 작은 것 몇 개로 쪼개야 정면에 깊이가 생긴다.
-export function subdivideBlock(rng, cx, cz) {
-  const half = BLOCK_SIZE / 2;
-  return subdivideRect(rng, { x0: cx - half, x1: cx + half, z0: cz - half, z1: cz + half });
-}
-
 // 블록 하나를 필지들과 골목으로 나눈다.
 //
 // 골목을 **먼저** 빼내는 것이 핵심이다. 필지를 나눈 뒤 사이를 벌리면 골목이
@@ -381,8 +455,9 @@ export function subdivideBlock(rng, cx, cz) {
 // 쓰므로 layout 이 district 를 import 하면 순환이 된다. 구역은 좌표 해시라
 // 부르는 쪽에서 구해 넘기면 그만이다.
 export function blockLots(rng, blk, D = null) {
-  const half = BLOCK_SIZE / 2;
-  const root = { x0: blk.cx - half, x1: blk.cx + half, z0: blk.cz - half, z1: blk.cz + half };
+  // 대지 사각형은 **부르는 쪽이 준다.** parcel.js 가 district 를 보고
+  // layout 이 district 를 보면 순환이 되므로, blockList 가 만들어 넘긴다.
+  const root = blk.rect || blockRect(blk.ix, blk.iz);
   const walk = D?.sidewalk ?? SIDEWALK_W;
 
   // 골목은 **블록 전체**를 기준으로 정한다. 인도를 뺀 안쪽만 보면 골목이
@@ -417,20 +492,27 @@ function subdivideRect(rng, root, grain = null) {
   }
   // 통짜 한 동 (메가빌딩). 레퍼런스의 주인공은 폭 60~100m 짜리 거대 덩어리다.
   // 이 확률을 0.1 까지 낮췄더니 도시가 잘게 쪼개져 "빌딩 숲" 이 아니라
-  // "기둥 밭" 처럼 보였다.
-  if (mode < 0.26) return [root];
+  // "기둥 밭" 처럼 보였다. 사용자가 다시 "원래 건물들도 좀 크기 키우던지"
+  // 라고 해서 0.26 -> 0.42 로 올린다.
+  if (mode < 0.42) return [root];
 
   // 재귀 이분할(BSP). 한 번에 4등분하는 것보다 필지 크기가 다양해진다.
   //
   // 밀도는 "작은 건물이 많다" 가 아니라 **큰 것 옆에 작은 것이 붙어 있다** 는
   // 데서 온다. 균등 분할은 다 비슷한 크기를 만들어 그 인상이 안 나온다.
-  const depth = mode < 0.6 ? 1 : mode < 0.87 ? 2 : 3;
+  // 3단 분할(= 최대 8필지)은 뺐다. 66m 블록을 여덟으로 쪼개면 한 필지가
+  // 20m 도 안 되고, 그 크기의 건물은 레퍼런스에 하나도 없다.
+  const depth = mode < 0.8 ? 1 : 2;
   return split(rng, root, depth);
 }
 
-// 이보다 작으면 더 쪼개지 않는다. 17m 는 창 10칸 폭이다 —
-// 이보다 좁으면 정면에 창이 대여섯 개밖에 안 들어가 건물이 장난감처럼 보인다.
-const MIN_LOT = 17;
+// 이보다 작으면 더 쪼개지 않는다.
+//
+// 17m 로 잡았을 때 근거는 "창 10칸 폭" 이었다. 창은 그것으로 충분했지만
+// **건물로는 충분하지 않았다** — 17m 짜리가 즐비하니 도시가 기둥 밭이 됐다.
+// 24m 는 사무소 한 채의 최소 정면에 가깝고, 66m 블록이 최대 두 필지로만
+// 갈린다는 뜻이기도 하다.
+const MIN_LOT = 24;
 
 function split(rng, r, depth) {
   const w = r.x1 - r.x0;

@@ -44,7 +44,9 @@ import { createPort } from './port.js';
 import { createCrowd } from './crowd.js';
 import { createHolo } from './holo.js';
 import { resetPlan, TIER, claim } from './siteplan.js';
-import { allAlleyRects, ALLEY_WIDTH, setAlleyRateHook, coreDistance } from './layout.js';
+import { resetLedger } from '../../core/placement.js';
+import { checkPlacement } from './placecheck.js';
+import { allAlleyRects, ALLEY_WIDTH, setAlleyRateHook } from './layout.js';
 import { districtAt } from './district.js';
 import { createSignage } from './signage.js';
 import { createHighway } from './highway.js';
@@ -55,6 +57,7 @@ import { GRID, blockCenter, CURB_HEIGHT, blockProgram } from './layout.js';
 import { createLandmarks, LANDMARK_BLOCKS } from './landmark.js';
 import { createPrograms } from './program.js';
 import { createStreetLife } from './streetlife.js';
+import { parcels } from './parcel.js';
 
 class NightCity extends Scene {
   constructor() {
@@ -105,6 +108,9 @@ class NightCity extends Scene {
     // **놓는 순서 = 우선순위** 다. 아래 순서가 그대로 실제 도시계획의 순서다.
     //   진입 동선(골목 입구) -> 수직 동선(계단·기둥) -> 조명 -> 편의 시설
     resetPlan();
+    // 배치 '검사' 의 기록도 함께 비운다. siteplan 이 놓기 전에 묻는 쪽이라면
+    // 이쪽은 놓은 뒤에 재는 쪽이다 (core/placement.js).
+    resetLedger();
 
     // ── 빌드 순서 = 배치 우선순위 ────────────────────────────────────────
     // 골목 입구(진입 동선) -> 건물 -> 수직 동선 -> 조명·노면 -> 편의 시설.
@@ -116,7 +122,7 @@ class NightCity extends Scene {
     // layout 이 구역별 골목 밀도를 알 수 있게 연결한다. layout 이 district 를
     // 직접 import 하면 순환 참조가 되므로 함수를 주입하는 쪽을 택했다.
     setAlleyRateHook((ix, iz) =>
-      districtAt(ix, iz, coreDistance(blockCenter(ix), blockCenter(iz))).alleyRate
+      districtAt(ix, iz).alleyRate
     );
 
     // 1) 골목 입구를 먼저 비워 둔다. 좌표 해시로 정해지므로 건물을 세우기
@@ -250,8 +256,18 @@ class NightCity extends Scene {
       this.bakeEnvironment(scene, renderer, { source: 'scene', intensity: 0.9, far: 4000 })
     );
 
+    // ── 배치 검사 ─────────────────────────────────────────────────────────
+    //
+    // 모든 것이 씬에 올라간 **뒤에** 잰다. 그려진 지오메트리의 경계와 인스턴스
+    // 행렬을 읽어 관통·부유·차도 침범을 숫자로 본다 (placecheck.js).
+    //
+    // 빌드마다 돌린다. 손으로 부르는 검사는 안 부르게 되고, 안 부르는 검사는
+    // 없는 것과 같다. 결과는 __audit() 이 경고로 올린다.
+    const placement = await step('배치 검사', 98, () => checkPlacement(scene));
+
     return {
       built,
+      placement,
       // 감사(core/audit.js)가 "사라진 것" 을 잡을 수 있게 개수를 넘긴다.
       // 화면을 안 보고도 회귀가 잡히는 유일한 경로다.
       counts: {
@@ -260,6 +276,9 @@ class NightCity extends Scene {
         사람: crowd.count,
         가로시설: life.count,
         골목: alleys.count,
+        // 아래 둘은 개수가 아니라 **비율**을 만들기 위한 재료다 (core/audit.js).
+        필지면: towers.faceAll,
+        면한면: towers.faceOpen,
       },
       stats: [
         `구역 ${towers.districts.join('·')}`,
@@ -302,15 +321,16 @@ class NightCity extends Scene {
 
 function blockList() {
   const reserved = new Set(LANDMARK_BLOCKS.map((l) => `${l.ix},${l.iz}`));
-  const out = [];
-  for (let ix = 0; ix < GRID; ix++) {
-    for (let iz = 0; iz < GRID; iz++) {
-      // 랜드마크 블록은 용도 배정에서 뺀다 — 거기엔 이미 손으로 지은 게 있다
-      const program = reserved.has(`${ix},${iz}`) ? 'landmark' : blockProgram(ix, iz);
-      out.push({ ix, iz, program, cx: blockCenter(ix), cz: blockCenter(iz) });
-    }
-  }
-  return out;
+  // **칸이 아니라 대지 단위**로 돈다. 병합한 대지는 한 번만 지어야 하고,
+  // 필지 분할도 대지 전체를 한 덩어리로 나눠야 안쪽에 도로 없는 속이 생긴다.
+  return parcels().map((p) => {
+    const program = reserved.has(`${p.ix},${p.iz}`) ? 'landmark' : blockProgram(p.ix, p.iz);
+    return {
+      ix: p.ix, iz: p.iz, program, rect: p.rect, cells: p.cells.length,
+      cx: (p.rect.x0 + p.rect.x1) / 2,
+      cz: (p.rect.z0 + p.rect.z1) / 2,
+    };
+  });
 }
 
 export default new NightCity();
