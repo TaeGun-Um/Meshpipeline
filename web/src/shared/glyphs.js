@@ -38,99 +38,355 @@ function glyphInk(id, fx, fy) {
   return 0;
 }
 
+// ── 픽토그램 ───────────────────────────────────────────────────────────────
+//
+// ── 왜 필요한가 (사용자 지적) ──────────────────────────────────────────────
+// "지금은 너무 갯수가 적고 색깔놀이임, 감성이 없어"
+//
+// 레퍼런스와 대조하니 빠진 것이 **색이 아니라 내용**이었다. 레퍼런스의 간판은
+// 전부 무엇을 파는지 말하고 있다 — 라멘 그릇, 의체 옆얼굴, 칵테일잔, 잉어,
+// 칩·렌치·헤드폰. 지금 간판은 추상 글리프 격자뿐이라 **무엇을 파는지 말하지
+// 않는다.** 그게 "색깔놀이" 의 정체다.
+//
+// ── 어떻게 그리는가 ────────────────────────────────────────────────────────
+// 네온은 **면이 아니라 선**이다. 채우면 스티커가 되고 선으로 그려야 튜브가
+// 된다. 그래서 거리장(SDF)으로 도형까지의 거리를 구하고 그 거리가 얇은
+// 띠 안일 때만 잉크를 놓는다. 이러면 굵기를 한 값으로 조절할 수 있고,
+// 안쪽에 더 밝은 심(core)을 넣어 진짜 유리관처럼 보이게 할 수 있다.
+const F = Math.hypot;
+
+function sdSeg(u, v, ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const t = Math.max(0, Math.min(1, ((u - ax) * dx + (v - ay) * dy) / (dx * dx + dy * dy || 1e-6)));
+  return F(u - ax - dx * t, v - ay - dy * t);
+}
+const sdCircle = (u, v, cx, cy, r) => Math.abs(F(u - cx, v - cy) - r);
+
+// 호 — 원까지의 거리를 구하되 각도 구간 밖이면 끝점까지의 거리로 잇는다.
+// 이렇게 안 하면 호가 원 전체로 이어져 그릇이 접시가 된다.
+function sdArc(u, v, cx, cy, r, a0, a1) {
+  let a = Math.atan2(v - cy, u - cx);
+  if (a < 0) a += Math.PI * 2;
+  let s = a0;
+  let e = a1;
+  if (e < s) e += Math.PI * 2;
+  if (a < s) a += Math.PI * 2;
+  if (a >= s && a <= e) return Math.abs(F(u - cx, v - cy) - r);
+  const p0 = [cx + Math.cos(s) * r, cy + Math.sin(s) * r];
+  const p1 = [cx + Math.cos(e) * r, cy + Math.sin(e) * r];
+  return Math.min(F(u - p0[0], v - p0[1]), F(u - p1[0], v - p1[1]));
+}
+const sdBox = (u, v, cx, cy, hw, hh) => {
+  const dx = Math.abs(u - cx) - hw;
+  const dy = Math.abs(v - cy) - hh;
+  return Math.abs(Math.max(dx, dy)); // 테두리까지의 거리 (근사)
+};
+
+// ── 열 가지 업종 ───────────────────────────────────────────────────────────
+//
+// 좌표계는 픽토그램 칸 안에서 0..1 이다. 각 함수는 **선까지의 거리**를 준다.
+//
+// 종류를 고를 때 기준은 "이 도시에 있을 법한 가게" 다. 레퍼런스의 목록이
+// 그대로 답이었다 — 라멘·의체·바·호텔·전자·약국·클럽·정비·전당·국수.
+const PICTS = [
+  // 0 라멘 — 그릇 + 면 + 젓가락 + 김
+  (u, v) => Math.min(
+    sdArc(u, v, 0.5, 0.46, 0.30, 0.05, Math.PI - 0.05),
+    sdSeg(u, v, 0.18, 0.46, 0.82, 0.46),
+    sdSeg(u, v, 0.62, 0.16, 0.86, 0.40),
+    sdSeg(u, v, 0.68, 0.14, 0.90, 0.36),
+    sdArc(u, v, 0.40, 0.16, 0.07, 0.9, 3.9),
+    sdArc(u, v, 0.55, 0.12, 0.07, 3.9, 0.9)
+  ),
+  // 1 의체 — 옆얼굴 윤곽 + 렌즈 + 접속 단자
+  (u, v) => Math.min(
+    sdArc(u, v, 0.46, 0.44, 0.30, 1.5, 5.1),
+    sdSeg(u, v, 0.30, 0.70, 0.62, 0.72),
+    sdCircle(u, v, 0.58, 0.40, 0.075),
+    sdCircle(u, v, 0.58, 0.40, 0.025),
+    sdSeg(u, v, 0.24, 0.30, 0.18, 0.24),
+    sdSeg(u, v, 0.24, 0.42, 0.16, 0.42)
+  ),
+  // 2 바 — 칵테일잔 + 올리브 + 꽂이
+  (u, v) => Math.min(
+    sdSeg(u, v, 0.24, 0.20, 0.76, 0.20),
+    sdSeg(u, v, 0.24, 0.20, 0.50, 0.54),
+    sdSeg(u, v, 0.76, 0.20, 0.50, 0.54),
+    sdSeg(u, v, 0.50, 0.54, 0.50, 0.78),
+    sdSeg(u, v, 0.34, 0.80, 0.66, 0.80),
+    sdCircle(u, v, 0.62, 0.30, 0.05)
+  ),
+  // 3 잉어 — 몸통 + 꼬리 + 눈 + 지느러미
+  (u, v) => Math.min(
+    sdArc(u, v, 0.46, 0.50, 0.26, 0.0, Math.PI),
+    sdArc(u, v, 0.46, 0.50, 0.26, Math.PI, Math.PI * 2),
+    sdSeg(u, v, 0.72, 0.50, 0.92, 0.32),
+    sdSeg(u, v, 0.72, 0.50, 0.92, 0.68),
+    sdSeg(u, v, 0.92, 0.32, 0.92, 0.68),
+    sdCircle(u, v, 0.30, 0.44, 0.035)
+  ),
+  // 4 전자 — 칩 + 다리
+  (u, v) => {
+    let d = sdBox(u, v, 0.5, 0.5, 0.22, 0.22);
+    for (let i = 0; i < 3; i++) {
+      const t = 0.34 + i * 0.16;
+      d = Math.min(d,
+        sdSeg(u, v, 0.28, t, 0.16, t),
+        sdSeg(u, v, 0.72, t, 0.84, t),
+        sdSeg(u, v, t, 0.28, t, 0.16),
+        sdSeg(u, v, t, 0.72, t, 0.84));
+    }
+    return d;
+  },
+  // 5 안구 이식 — 눈 윤곽 + 홍채 + 조준환
+  (u, v) => Math.min(
+    sdArc(u, v, 0.5, 0.72, 0.40, 3.6, 5.8),
+    sdArc(u, v, 0.5, 0.28, 0.40, 0.5, 2.7),
+    sdCircle(u, v, 0.5, 0.5, 0.13),
+    sdCircle(u, v, 0.5, 0.5, 0.045),
+    sdSeg(u, v, 0.5, 0.02, 0.5, 0.12),
+    sdSeg(u, v, 0.5, 0.88, 0.5, 0.98)
+  ),
+  // 6 약국 — 캡슐 + 십자
+  (u, v) => Math.min(
+    sdArc(u, v, 0.34, 0.66, 0.16, Math.PI * 0.75, Math.PI * 1.75),
+    sdArc(u, v, 0.58, 0.42, 0.16, Math.PI * 1.75, Math.PI * 0.75),
+    sdSeg(u, v, 0.23, 0.55, 0.47, 0.31),
+    sdSeg(u, v, 0.45, 0.77, 0.69, 0.53),
+    sdSeg(u, v, 0.74, 0.74, 0.94, 0.74),
+    sdSeg(u, v, 0.84, 0.64, 0.84, 0.84)
+  ),
+  // 7 클럽 — 스피커 + 음파
+  (u, v) => Math.min(
+    sdBox(u, v, 0.34, 0.5, 0.16, 0.28),
+    sdCircle(u, v, 0.34, 0.58, 0.09),
+    sdCircle(u, v, 0.34, 0.34, 0.04),
+    sdArc(u, v, 0.52, 0.5, 0.18, -1.0, 1.0),
+    sdArc(u, v, 0.52, 0.5, 0.30, -0.9, 0.9),
+    sdArc(u, v, 0.52, 0.5, 0.42, -0.8, 0.8)
+  ),
+  // 8 정비 — 렌치 + 볼트
+  (u, v) => Math.min(
+    sdSeg(u, v, 0.26, 0.74, 0.66, 0.34),
+    sdArc(u, v, 0.74, 0.26, 0.13, 2.0, 5.6),
+    sdCircle(u, v, 0.26, 0.74, 0.10),
+    sdCircle(u, v, 0.26, 0.74, 0.035)
+  ),
+  // 9 호텔 — 침대 + 지붕
+  (u, v) => Math.min(
+    sdSeg(u, v, 0.16, 0.62, 0.84, 0.62),
+    sdSeg(u, v, 0.16, 0.62, 0.16, 0.80),
+    sdSeg(u, v, 0.84, 0.62, 0.84, 0.80),
+    sdSeg(u, v, 0.16, 0.50, 0.42, 0.50),
+    sdArc(u, v, 0.30, 0.44, 0.09, Math.PI, Math.PI * 2),
+    sdSeg(u, v, 0.14, 0.26, 0.50, 0.10),
+    sdSeg(u, v, 0.50, 0.10, 0.86, 0.26)
+  ),
+];
+
+// 픽토그램 잉크. 바깥은 관, 안쪽은 더 밝은 심.
+//
+// 심을 넣는 이유: 균일한 굵기로 그리면 "선" 이지 "네온" 이 아니다. 실제
+// 네온관은 가운데가 타서 하얗고 가장자리로 갈수록 색이 진해진다. 값 두 개로
+// 그 인상이 난다.
+// 굵기는 **고정값**이다. 처음에 테두리 관 굵기에서 유도했더니
+// (tube*1.5/박스폭) 박스가 작을수록 선이 굵어져 그림이 덩어리로 뭉갰다.
+// 선화는 박스 크기와 무관하게 같은 비율의 선이어야 한다.
+const PICT_W = 0.042;
+function pictInk(id, u, v) {
+  if (u < 0 || u > 1 || v < 0 || v > 1) return 0;
+  const d = PICTS[id % PICTS.length](u, v);
+  if (d > PICT_W) return 0;
+  return d < PICT_W * 0.40 ? 2 : 1; // 2 = 심, 1 = 관
+}
+
+// ── 네온 튜브 테두리 ───────────────────────────────────────────────────────
+//
+// 레퍼런스의 간판은 예외 없이 **테두리가 관**이다. 그냥 밝은 띠를 두르면
+// 액자이고, 두 줄로 두르면 관이 된다.
+//
+// ── 좌표는 UV 가 아니라 물리 단위로 (실측으로 고침) ────────────────────────
+// 처음에 u·v 정규좌표로 거리를 쟀다. 그런데 세로 간판은 128x768, 즉 1:6 이라
+// **가로 관이 세로 관보다 6배 굵어졌다.** 텍스처를 ASCII 로 찍어 보니
+// 테두리가 간판 절반을 먹고 있었다.
+//
+// 그래서 짧은 변을 1 로 놓은 좌표(pu, pv)를 쓴다. 배너는 pu 0..4,
+// 세로 간판은 pv 0..6, 광고판은 둘 다 0..1 이다. 이 좌표에서는 거리가
+// 등방이라 관 굵기·픽토그램 모양이 비율과 무관해진다.
+function frameInk(pu, pv, W, H, m, w) {
+  const outer = Math.min(pu, pv, W - pu, H - pv);
+  if (Math.abs(outer - m) < w) return 2;
+  if (Math.abs(outer - (m + w * 3.4)) < w * 0.62) return 1;
+  return 0;
+}
+
+// ── 라틴 문자 줄 ───────────────────────────────────────────────────────────
+//
+// 레퍼런스의 간판은 큰 표의문자 아래 **작은 로마자 줄**이 반드시 있다
+// (KIROSHI OPTICALS · MIRAI RAMEN · BETTER BODY. BETTER LIFE.).
+// 이 거리에서 글자는 안 읽히므로 폭이 제각각인 막대의 줄로 충분하다 —
+// 중요한 것은 **글자 위계가 있다는 사실**이지 내용이 아니다.
+function latinInk(seed, u, v, cols) {
+  if (v < 0.28 || v > 0.72) return 0;
+  const i = Math.floor(u * cols);
+  if (i < 0 || i >= cols) return 0;
+  const f = u * cols - i;
+  const h = hash2(seed * 31 + i, 7);
+  if (h < 0.18) return 0;              // 단어 사이 공백
+  const w = 0.34 + h * 0.42;           // 글자 폭이 제각각이어야 글로 보인다
+  return f > 0.12 && f < 0.12 + w ? 1 : 0;
+}
+
 // 주사선. 간판이 "화면" 으로 읽히게 만든다 — 밝기를 주기적으로 눌러서
 // 발광면이 통짜 색면이 되지 않게 한다.
 function scanline(v, px) {
   return ((v * px) | 0) % 3 === 0 ? 0.72 : 1.0;
 }
 
-// 발광 간판의 픽셀 함수. 세 종류 간판이 이걸 공유한다.
-//   glyphs  [열, 행] 글자 격자
-//   margin  테두리 여백 (0..0.5)
-//   px      세로 픽셀 수 (주사선 간격 계산용)
-function signPainter(seed, scheme, glyphs, margin, px) {
+// ── 간판 하나를 그린다 ─────────────────────────────────────────────────────
+//
+// 구성이 레퍼런스와 같아야 한다. 셋을 쌓는다.
+//
+//   1) 네온 튜브 테두리   (frameInk)
+//   2) 픽토그램 + 큰 표의문자   무엇을 파는가
+//   3) 작은 라틴 줄            글자 위계
+//
+// layout 은 그 셋을 어떻게 배치할지다. 가로 배너·세로 간판·광고판이
+// 서로 다른 배치를 갖는다 — 세로 간판을 가로 간판 돌려서 만들면
+// 픽토그램이 눕고 글자 순서가 어긋난다.
+function signPainter(seed, scheme, layout, size) {
   const ground = rgb255(scheme.ground);
   const glyph = rgb255(scheme.glyph);
   const edge = rgb255(scheme.edge);
   const grime = tiledFbm(seed + 3, 5, 3);
-  const [gc, gr] = glyphs;
+  const trade = (hash2(seed * 17, 3) * PICTS.length) | 0;
+
+  // 짧은 변을 1 로 놓은 물리 좌표. 배치는 전부 이 단위로 적는다.
+  const [sw, sh] = size;
+  const S = Math.min(sw, sh);
+  const W = sw / S;
+  const H = sh / S;
+  const M = layout.margin;
+  const TW = layout.tube;
+
+  // 잉크를 놓는 헬퍼. lvl 2 = 관의 심(더 밝고 희다), 1 = 관
+  const put = (o, col, lvl, sl) => {
+    const k = lvl === 2 ? 1.0 : 0.70;
+    // 심은 흰색으로 뜬다 — 실제 네온관의 가운데가 그렇다
+    const wash = lvl === 2 ? 0.42 : 0;
+    o.c[0] = col[0] * 0.16; o.c[1] = col[1] * 0.16; o.c[2] = col[2] * 0.16;
+    o.r = 0.3; o.h = 0.85;
+    o.e[0] = (col[0] * k + 255 * wash) * sl;
+    o.e[1] = (col[1] * k + 255 * wash) * sl;
+    o.e[2] = (col[2] * k + 255 * wash) * sl;
+  };
+  // 상자 [x, y, w, h] 안의 지역 좌표. 밖이면 null
+  const local = (pu, pv, B) => {
+    const lu = (pu - B[0]) / B[2];
+    const lv = (pv - B[1]) / B[3];
+    return lu >= 0 && lu <= 1 && lv >= 0 && lv <= 1 ? [lu, lv] : null;
+  };
 
   return (u, v, o) => {
-    const sl = scanline(v, px);
+    const pu = u * W;
+    const pv = v * H;
+    const sl = scanline(v, sh);
     const gm = grime(u, v);
 
-    // 테두리 발광 띠
-    const half = margin * 0.5;
-    if (u < half || u > 1 - half || v < half || v > 1 - half) {
-      o.c[0] = edge[0] * 0.12;
-      o.c[1] = edge[1] * 0.12;
-      o.c[2] = edge[2] * 0.12;
-      o.r = 0.35;
-      o.h = 0.7;
-      o.e[0] = edge[0] * sl;
-      o.e[1] = edge[1] * sl;
-      o.e[2] = edge[2] * sl;
-      return;
-    }
-
-    // 바탕
+    // 바탕 — 어둡다. 네온은 어두운 판 위에 있어야 네온이다
     o.c[0] = ground[0] + gm * 8;
     o.c[1] = ground[1] + gm * 8;
     o.c[2] = ground[2] + gm * 8;
-    o.r = 0.42;
-    o.h = 0.5;
-    o.e[0] = ground[0] * 0.55 * sl;
-    o.e[1] = ground[1] * 0.55 * sl;
-    o.e[2] = ground[2] * 0.55 * sl;
+    o.r = 0.42; o.h = 0.5;
+    o.e[0] = ground[0] * 0.5 * sl;
+    o.e[1] = ground[1] * 0.5 * sl;
+    o.e[2] = ground[2] * 0.5 * sl;
 
-    // 글자 영역
-    const iu = (u - margin) / (1 - margin * 2);
-    const iv = (v - margin) / (1 - margin * 2);
-    if (iu < 0 || iu > 1 || iv < 0 || iv > 1) return;
+    // 1) 테두리 관
+    const fi = frameInk(pu, pv, W, H, M, TW);
+    if (fi) { put(o, edge, fi, sl); return; }
 
-    const cx = Math.min(gc - 1, Math.floor(iu * gc));
-    const cy = Math.min(gr - 1, Math.floor(iv * gr));
-    // 자간 — 글자 사이에 여백을 둔다
-    const fx = (iu * gc - cx - 0.1) / 0.8;
-    const fy = (iv * gr - cy - 0.1) / 0.8;
+    // 2) 픽토그램 — 무엇을 파는가
+    if (layout.pict) {
+      const L = local(pu, pv, layout.pict);
+      if (L) {
+        const pi = pictInk(trade + seed, L[0], L[1]);
+        if (pi) put(o, glyph, pi, sl);
+        return;
+      }
+    }
+
+    // 3) 라틴 줄 — 글자 위계
+    for (let i = 0; i < (layout.latin || []).length; i++) {
+      const B = layout.latin[i];
+      const L = local(pu, pv, B);
+      if (L) {
+        if (latinInk(seed + 13 * (i + 1), L[0], L[1], B[4])) put(o, edge, 1, sl);
+        return;
+      }
+    }
+
+    // 4) 큰 표의문자
+    if (!layout.glyphBox) return;
+    const G = local(pu, pv, layout.glyphBox);
+    if (!G) return;
+    const [gc, gr] = layout.cells;
+    const cx = Math.min(gc - 1, Math.floor(G[0] * gc));
+    const cy = Math.min(gr - 1, Math.floor(G[1] * gr));
+    const fx = (G[0] * gc - cx - 0.08) / 0.84;
+    const fy = (G[1] * gr - cy - 0.08) / 0.84;
     if (fx < 0 || fx > 1 || fy < 0 || fy > 1) return;
 
     const id = (hash2(cx * 7 + seed, cy * 13 + seed) * 4096) | 0;
     if (!glyphInk(id, fx, fy)) return;
-
-    o.c[0] = glyph[0] * 0.16;
-    o.c[1] = glyph[1] * 0.16;
-    o.c[2] = glyph[2] * 0.16;
-    o.r = 0.3;
-    o.h = 0.85;
-    o.e[0] = glyph[0] * sl;
-    o.e[1] = glyph[1] * sl;
-    o.e[2] = glyph[2] * sl;
+    put(o, glyph, 2, sl);
   };
 }
 
-// 텍스처 비율을 형상에 맞추는 것이 중요하다. 정방형으로 굽고 UV로 늘리면
-// 글자가 찌그러진다.
+// 배치는 [x, y, 폭, 높이] — **짧은 변을 1 로 놓은 물리 좌표**다.
+// 그래야 픽토그램이 안 눕고 관 굵기가 비율과 무관해진다.
 
-// 가로 배너 (점포 위, 처마 밑)
+// 가로 배너 (점포 위, 처마 밑). pu 0..4 · pv 0..1
+// 픽토그램 왼쪽 정사각, 큰 글자 넉 자, 아래 라틴 줄.
 export function bannerTextures(seed, scheme) {
-  return bake([512, 128], 1, 1, signPainter(seed, scheme, [5, 1], 0.1, 128), {
-    emissive: true,
-  });
+  const size = [512, 128];
+  return bake(size, 1, 1, signPainter(seed, scheme, {
+    margin: 0.06, tube: 0.020,
+    pict: [0.13, 0.13, 0.74, 0.74],
+    glyphBox: [1.02, 0.06, 2.86, 0.58],
+    cells: [4, 1],
+    latin: [[1.02, 0.68, 2.86, 0.22, 15]],
+  }, size), { emissive: true });
 }
 
-// 세로 간판 (벽에서 직각으로 돌출). 골목·거리의 깊이를 만드는 형태.
+// 세로 간판 (벽에서 직각으로 돌출). pu 0..1 · pv 0..6
+// 위 픽토그램, 가운데 문자 스택, 아래 라틴 — 레퍼런스의 세로 간판 문법.
 export function bladeTextures(seed, scheme) {
-  return bake([128, 768], 1, 1, signPainter(seed, scheme, [1, 6], 0.12, 768), {
-    emissive: true,
-  });
+  const size = [128, 768];
+  return bake(size, 1, 1, signPainter(seed, scheme, {
+    margin: 0.06, tube: 0.020,
+    pict: [0.14, 0.16, 0.72, 0.72],
+    glyphBox: [0.06, 1.05, 0.88, 4.30],
+    cells: [1, 4],
+    latin: [[0.10, 5.48, 0.80, 0.38, 6]],
+  }, size), { emissive: true });
 }
 
-// 대형 광고판 (타워 벽면). 글자를 크게 잡고 여백을 넓혀 "광고" 로 보이게.
+// 대형 광고판 (타워 벽면). pu 0..1 · pv 0..1
+// 글자를 크게 잡고 라틴 두 줄로 위계를 만든다.
 export function billboardTextures(seed, scheme) {
-  return bake([512, 512], 1, 1, signPainter(seed, scheme, [3, 3], 0.07, 512), {
-    emissive: true,
-  });
+  const size = [512, 512];
+  return bake(size, 1, 1, signPainter(seed, scheme, {
+    margin: 0.045, tube: 0.013,
+    pict: [0.60, 0.08, 0.32, 0.32],
+    glyphBox: [0.08, 0.08, 0.46, 0.36],
+    cells: [2, 2],
+    latin: [
+      [0.08, 0.52, 0.84, 0.13, 15],
+      [0.08, 0.70, 0.58, 0.08, 21],
+    ],
+  }, size), { emissive: true });
 }
 
 // ── 초대형 인물 광고판 ─────────────────────────────────────────────────────
