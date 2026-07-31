@@ -25,6 +25,7 @@ import {
   FLOOR_HEIGHT,
   PANEL_TILE,
 } from './layout.js';
+import { districtAt } from './district.js';
 
 // 랜드마크가 차지하는 블록. towers.js 는 이 블록을 건너뛴다.
 //
@@ -96,12 +97,15 @@ export const OPEN_GROUND = new Set(
 // 발광 기둥을 세우면, 안개에 잠겨 형태가 안 보여도 그 네 줄이 보인다.
 function hqTower(b, cx, cz, mats) {
   const H = 420;
+  // 기단 반폭 26 -> 21. 쌍둥이와 같은 이유다 — 기업 인도 7.5m 를 빼면
+  // 블록 반폭 33 에서 쓸 수 있는 것이 25.5 뿐이고, 광장을 남기려면 21 이다.
+  // (아래 fitsBlock 가 강제한다.)
   const stages = [
-    { half: 26, top: 92 },
-    { half: 21, top: 196 },
-    { half: 16.5, top: 292 },
-    { half: 12, top: 362 },
-    { half: 8, top: H },
+    { half: 21, top: 92 },
+    { half: 17, top: 196 },
+    { half: 13.3, top: 292 },
+    { half: 9.7, top: 362 },
+    { half: 6.5, top: H },
   ];
 
   let y = 0;
@@ -174,9 +178,22 @@ function hqTower(b, cx, cz, mats) {
 // 덩어리가 아니라 **구멍**이 정체성인 유일한 건물이다.
 function twinTower(b, cx, cz, mats) {
   const H = 300;
-  const halfW = 13;
-  const halfD = 20;
-  const gap = 19; // 두 동 사이
+  // ── 크기를 줄였다 (사용자 지적) ──────────────────────────────────────────
+  // "쌍둥이 빌딩은 저 좁은곳에 배치되서 도로로 삐져나와 있음."
+  //
+  // 재 보니 도로를 밟지는 않았다 — 폭 45m 에 블록 66m 라 양옆 10.5m 가
+  // 남는다. 그런데 **기업 인도가 7.5m** 다. 남는 것이 3m 뿐이라 300m 짜리
+  // 타워가 광장 없이 인도에 바로 붙어 선다.
+  //
+  // 랜드마크는 블록 하나(66m)를 쓰는데 일반 기업 건물은 2~3칸을 병합한
+  // 대지를 쓴다. **더 작은 땅에 더 큰 것을 올린 것**이 원인이다.
+  // 기업 구역의 성격은 "대지를 꽉 채우지 않는다, 광장이 부의 표시다"
+  // (corpo.js 머리말) 인데 랜드마크가 그 반대였다.
+  //
+  // 아래 fitsBlock 가 이 크기를 강제한다.
+  const halfW = 11.5;
+  const halfD = 17;
+  const gap = 17; // 두 동 사이 -> 전체 반폭 20.0
 
   const slab = mats.skins.slab;
   const sheet = [slab.sets[0].grid.cols * slab.pitch, slab.sets[0].grid.rows * FLOOR_HEIGHT];
@@ -761,6 +778,47 @@ const BUILDERS = {
   hall: undergroundHall,
 };
 
+// ── 랜드마크가 자기 블록에 들어가는가 ──────────────────────────────────────
+//
+// 손으로 찍은 크기는 **그 크기가 무엇을 뜻했는지가 바뀌면 반드시 같이 틀린다**
+// — 이 파일에서 좌표로 두 번 겪었다 (LANDMARK_BLOCKS 머리말). 크기도 같다.
+// 인도 폭이나 블록 크기가 바뀌면 조용히 도로로 나간다.
+//
+// 그래서 종류마다 **실제로 차지하는 반폭**을 적고, 블록에서 인도와 광장을
+// 뺀 값과 비교해 넘으면 터뜨린다. 사람이 눈으로 볼 때까지 기다리지 않는다.
+//
+// 광장 여유(PLAZA)를 두는 이유: 기업 구역의 성격이 "대지를 꽉 채우지 않는다,
+// 광장이 부의 표시다" 이기 때문이다 (corpo.js 머리말). 인도에 딱 붙여 세우면
+// 크기만 크고 그 구역의 건물이 아니게 된다.
+const PLAZA = 4.0;
+const FOOTPRINT = {
+  hq: 21,      // 최하단 단의 반폭
+  twin: 20.0,  // gap/2 + halfW = 8.5 + 11.5
+  depot: 25,   // 번화가 — 광장을 안 둔다. 인도만 비켜나면 된다
+  gate: 33,    // 블록을 관통하는 홀이다. 지면을 직접 깐다
+  neon: 18,    // 캐노피 포함 (half 11 + 7)
+  hall: 33,    // 구덩이가 본체. 지면을 직접 깐다
+};
+// 인도만 비켜나면 되는 것들 — 번화가는 대지를 꽉 채우는 것이 정체다
+const NO_PLAZA = new Set(['depot', 'gate', 'neon', 'hall']);
+
+function fitsBlock(kind, ix, iz) {
+  const R = blockRect(ix, iz);
+  const half = Math.min(R.x1 - R.x0, R.z1 - R.z0) / 2;
+  const walk = districtAt(ix, iz).sidewalk;
+  const room = half - walk - (NO_PLAZA.has(kind) ? 0 : PLAZA);
+  const foot = FOOTPRINT[kind];
+  if (foot === undefined) throw new Error(`랜드마크 '${kind}' 의 반폭이 FOOTPRINT 에 없다`);
+  // 지면을 직접 까는 것(gate·hall)은 블록 전체를 쓰는 것이 설계다
+  if (NO_PLAZA.has(kind) && foot >= half) return;
+  if (foot > room) {
+    throw new Error(
+      `랜드마크 '${kind}' 가 블록을 넘는다: 반폭 ${foot}m > 쓸 수 있는 ${room.toFixed(1)}m ` +
+      `(블록 반폭 ${half} - 인도 ${walk}${NO_PLAZA.has(kind) ? '' : ` - 광장 ${PLAZA}`})`
+    );
+  }
+}
+
 export function createLandmarks(scene, mats) {
   const b = new MeshBuilder('Landmarks');
   const out = [];
@@ -779,6 +837,7 @@ export function createLandmarks(scene, mats) {
     const cz = blockCenter(lm.iz);
     const make = BUILDERS[lm.kind];
     if (!make) throw new Error(`랜드마크 종류 '${lm.kind}' 의 생성기가 없다`);
+    fitsBlock(lm.kind, lm.ix, lm.iz);
     b.mark('building', `landmark:${lm.kind}`, { zone: '랜드마크' });
     const apex = make(b, cx, cz, mats, pools);
     out.push({ kind: lm.kind, x: cx, z: cz, apex });
