@@ -68,23 +68,47 @@ function frameOf(r, side) {
 //
 // 한 층의 한 면에 가게 여러 개를 늘어놓는다. 1층만 상가인 다른 구역과 달리
 // 위층에도 똑같이 들어간다 — 그게 적층 상가의 정의다.
-function shopStrip(b, f, y, rng, mats, D, lit) {
+// ── 켜진 칸과 꺼진 칸 (사용자 지적) ────────────────────────────────────────
+//
+// "건물 하나에, 층 하나에, 방 하나에 간판이 너무 많지 않니"
+//
+// 맞다. 층마다 칸마다 전부 켜져 있어서 **쉬는 자리가 하나도 없었다.**
+// 간판이 빽빽하면 간판이 아니라 벽지가 된다 — 하나도 안 읽힌다.
+//
+// 원인은 `lit` 이 **밝은 간판 ↔ 덜 밝은 간판**만 고른 것이었다.
+// shopfrontMats 도 emissiveIntensity 0.42 로 발광하므로, "꺼진" 칸이
+// 아예 없었다. 실제 상가에는 늘 닫힌 가게·창고·계단실이 섞여 있다.
+//
+// 그래서 상태를 셋으로 나눈다.
+//   켜짐   밝은 점포 정면
+//   흐림   덜 밝은 점포 정면 (영업은 하는데 조명이 약하다)
+//   닫힘   **셔터.** 발광하지 않는다. 이 칸이 있어야 옆 칸이 읽힌다
+//
+// 레퍼런스의 밀도가 그렇다 — 빽빽하되 **어두운 자리가 사이사이에** 있다.
+function shopStrip(b, f, y, rng, mats, D, lit, shut) {
   const n = Math.max(2, Math.round(f.w / 4.2));
   const bw = f.w / n;
 
   for (let i = 0; i < n; i++) {
     const u = -f.w / 2 + bw * (i + 0.5);
 
-    // 가게 안쪽 (발광면). 층마다 밝기를 조금씩 달리해야 줄줄이 같은 판으로
-    // 안 보인다.
     const [ix, iz] = f.at(u, 0.06);
     const [sw, sd] = f.size(bw * 0.88, 0.1);
-    const on = rng.chance(lit);
+    const closed = rng.chance(shut);
+    const on = !closed && rng.chance(lit);
     b.add(
       autoBox(sw, SHOP_FLOOR * 0.62, sd, [ix, y + SHOP_FLOOR * 0.46, iz], 0.02),
-      on ? mats.shopfrontBrightMats[rng.int(0, mats.shopfrontBrightMats.length - 1)]
-         : mats.shopfrontMats[rng.int(0, mats.shopfrontMats.length - 1)]
+      closed ? mats.shutterMat
+        : on ? mats.shopfrontBrightMats[rng.int(0, mats.shopfrontBrightMats.length - 1)]
+             : mats.shopfrontMats[rng.int(0, mats.shopfrontMats.length - 1)]
     );
+    // 닫힌 칸에는 간판도 안 단다. 여기서 걸러야 "꺼진 자리" 가 성립한다
+    if (closed) {
+      const [px2, pz2] = f.at(u - bw / 2, 0.12);
+      const [pw2, pd2] = f.size(0.16, 0.26);
+      b.box(pw2, SHOP_FLOOR, pd2, [px2, y + SHOP_FLOOR / 2, pz2], mats.frameMat);
+      continue;
+    }
 
     // 가게 사이 기둥 — 이게 없으면 층 전체가 한 장의 띠로 보인다
     const [px, pz] = f.at(u - bw / 2, 0.12);
@@ -203,6 +227,9 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs) {
   b.add(rectBox(r, 0, top, PANEL_TILE), mats.tileWallMat);
 
   const litBase = D.shopLit ?? 0.9;
+  // 1층에서 닫힌 칸 비율. 위층은 여기에 층당 0.11 씩 더한다.
+  // 번화가라도 1층의 4분의 1 가까이는 셔터가 내려가 있어야 나머지가 읽힌다.
+  const shutBase = 0.22;
 
   for (const side of SIDES) {
     if (!faces[side]) continue; // 안 보이는 면은 만들지 않는다
@@ -211,8 +238,11 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs) {
 
     for (let fl = 0; fl < floors; fl++) {
       const y = fl * SHOP_FLOOR;
-      // 위층일수록 점등률이 조금씩 떨어진다 — 위로 갈수록 장사가 안 된다
-      shopStrip(b, f, y, rng, mats, D, litBase * (1 - fl * 0.1));
+      // 위층일수록 점등률이 떨어지고 닫힌 칸이 는다.
+      // **1층은 거의 다 열려 있고 위로 갈수록 비어 간다** — 실제 잡거빌딩이
+      // 그렇고, 그 기울기가 있어야 파사드에 위아래 위계가 생긴다.
+      // 전에는 층마다 균일해서 5층짜리가 같은 띠 다섯 장이었다.
+      shopStrip(b, f, y, rng, mats, D, litBase * (1 - fl * 0.1), shutBase + fl * 0.11);
 
       // 2층부터 외부 복도. 1층은 인도가 그 역할을 한다.
       if (fl >= 1) walkway(b, f, y, rng, mats);

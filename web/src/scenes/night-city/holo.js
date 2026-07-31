@@ -252,7 +252,11 @@ export function createHolo(scene, rng, mats, anchors) {
         if (!rng.chance(0.6)) continue;
         const u = -fw / 2 + fw * ((i + 0.5) / n) + rng.range(-1.5, 1.5);
         // rng 는 항상 소비한다 — 건너뛰면 뒤의 모든 생성이 밀린다
-        const dist = Math.min(rng.range(2.2, 4.5), Math.max(1.0, walk - 1.2));
+        // 여유 1.2 -> 2.6. 필지는 인도 안쪽에서 다시 0.35~1.4m 물러나 서고
+        // (towers 의 shrink), 표식 자체도 폭이 있다. 그 둘을 안 빼서 1개가
+        // 차도로 0.53m 나갔다 — status.md 규칙 3 "여유는 기준보다 명확히
+        // 커야 한다" 를 또 어겼다.
+        const dist = Math.min(rng.range(1.8, 3.6), Math.max(0.8, walk - 2.6));
         const mx = alongX ? c.x + u : (outSign > 0 ? a.rect.x1 + dist : a.rect.x0 - dist);
         const mz = alongX ? (outSign > 0 ? a.rect.z1 + dist : a.rect.z0 - dist) : c.z + u;
         b.mark('holo', `holoMarker#${markers}`, { zone: a.zone, axis: alongX ? 'z' : 'x' });

@@ -13,14 +13,78 @@ import { SIGN_SCHEMES, rgb01 } from '../../shared/neon.js';
 
 const STANDOFF = 0.3;
 
+// ── 파사드 배치 대장 (사용자 지적) ─────────────────────────────────────────
+//
+// "측면 간판도 다 너무 일렬로 붙어있고, 간판이랑 겹치기도 하고"
+//
+// 원인 하나가 셋을 다 설명했다. **간판 요청에 면 위 가로 위치가 없었다.**
+// frameOf 가 faceAnchor(면의 중심)만 썼으므로 한 면의 모든 간판이 가운데
+// 한 줄로 쌓였고, y 가 가까우면 그대로 겹쳤다.
+//
+// 지면에는 siteplan.js 가 있다 — 놓기 전에 "그 자리에 뭐가 있나" 를 묻는다.
+// **파사드에는 그게 없었다.** 그래서 같은 일을 면에서 한다.
+//
+// 요청은 side·y·w·h 만 준다. 가로 위치는 **여기서 정한다** — 생산자
+// (bazaar·market·towers·corpo·program·streetlife) 가 여섯이라 각자 정하게
+// 하면 서로를 모른 채 같은 자리를 고른다. 그게 지금 상태다.
+function layoutSigns(reqs) {
+  // 같은 건물의 같은 면끼리 묶는다
+  const groups = new Map();
+  for (const q of reqs) {
+    const r = q.rect;
+    const key = `${r.x0.toFixed(1)},${r.z0.toFixed(1)},${r.x1.toFixed(1)},${r.z1.toFixed(1)}|${q.side}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(q);
+  }
+
+  const out = [];
+  for (const [, list] of groups) {
+    const r = list[0].rect;
+    const az = alongZ(list[0].side);
+    const fw = az ? r.z1 - r.z0 : r.x1 - r.x0;
+    const placed = [];
+
+    // 큰 것부터 자리를 잡는다. 작은 것이 먼저 좋은 자리를 차지하면
+    // 큰 것이 갈 데가 없어져 통째로 버려진다.
+    list.sort((p, q2) => q2.w * q2.h - p.w * p.h);
+
+    for (const q of list) {
+      const w = Math.min(q.w, fw * 0.94);
+      const half = (fw - w) / 2;
+      // 후보 자리 — 요청한 u 가 있으면 거기부터, 없으면 가운데부터 좌우로
+      const cands = [q.u ?? 0];
+      for (let k = 1; k <= 6 && half > 0.2; k++) {
+        const t = (k / 6) * half;
+        cands.push(t, -t);
+      }
+      let ok = null;
+      for (const c of cands) {
+        const u = Math.max(-half, Math.min(half, c));
+        const hit = placed.some((p) =>
+          Math.abs(p.u - u) < (p.w + w) / 2 + 0.35 &&
+          Math.abs(p.cy - (q.y + q.h / 2)) < (p.h + q.h) / 2 + 0.35);
+        if (!hit) { ok = u; break; }
+      }
+      // 자리가 없으면 **버린다.** 겹쳐 놓느니 없는 것이 낫다 —
+      // 겹친 간판은 둘 다 안 읽힌다.
+      if (ok === null) continue;
+      placed.push({ u: ok, w, h: q.h, cy: q.y + q.h / 2 });
+      out.push({ ...q, u: ok, w });
+    }
+  }
+  return out;
+}
+
 // 간판이 붙는 면의 좌표 틀
 function frameOf(req) {
   const a = faceAnchor(req.rect, req.side);
   const o = outward(req.side);
   const az = alongZ(req.side);
+  // 면 위 가로 위치. layoutSigns 가 정해 준다.
+  const u = req.u || 0;
   return {
-    x: a.x,
-    z: a.z,
+    x: a.x + (az ? 0 : u),
+    z: a.z + (az ? u : 0),
     ox: o.ox,
     oz: o.oz,
     // 간판 폭이 뻗는 축
@@ -126,8 +190,11 @@ export function createSignage(scene, signs, mats) {
   const b = new MeshBuilder('Signage', { castShadow: false, receiveShadow: false });
   const pools = [];
 
+  // **놓기 전에 자리를 정리한다.** 이 한 줄이 없어서 간판이 겹쳤다.
+  const laid = layoutSigns(signs);
+
   let i = 0;
-  for (const req of signs) {
+  for (const req of laid) {
     // 간판마다 표시를 건다. 검사가 보는 것은 "이 간판이 건물에 붙어 있나" 다 —
     // 벽감 깊이를 빼먹어 세로 간판이 허공에 1.3m 떠 있던 적이 있다.
     b.mark('sign', `sign#${i++}`, { kind: req.kind, side: req.side });
@@ -136,5 +203,5 @@ export function createSignage(scene, signs, mats) {
     signPools(pools, req);
   }
 
-  return { group: b.build(scene), pools, count: signs.length };
+  return { group: b.build(scene), pools, count: laid.length, dropped: signs.length - laid.length };
 }

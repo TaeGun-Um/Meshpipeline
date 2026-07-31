@@ -513,11 +513,13 @@ export function createAlleys(scene, rng, mats, alleys) {
   for (const a of alleys) {
     // 구역이 벽 높이를 정한다. 골목 벽은 양옆 건물의 옆면을 대신하는 것이라
     // 그 구역 건물보다 높으면 담장이 치솟은 꼴이 된다.
+    // 벽을 안 세우므로 벽 높이도 없다. 창은 양옆 건물 면에 붙으므로
+    // 그 건물 높이를 넘지 않을 만큼만 올린다 (구역별 대표 높이).
     const wallH = WALL_H_BY_ZONE[a.zone] ?? WALL_H_DEFAULT;
     // 벽 높이를 meta 에 실어 둔다. 검사가 "골목 벽이 이웃 건물보다 높나" 를
     // 본다 — 벽 높이를 고정으로 두고 구역 건물 높이를 안 봐서 담장이 공장
     // 위로 치솟은 적이 있다 (docs/status.md 4번).
-    b.mark('alley', `alley:${a.rect.x0.toFixed(0)},${a.rect.z0.toFixed(0)}`, { zone: a.zone, wallH });
+    b.mark('alley', `alley:${a.rect.x0.toFixed(0)},${a.rect.z0.toFixed(0)}`, { zone: a.zone });
     const r = a.rect;
     const c = rectCenter(r);
     const s = rectSize(r);

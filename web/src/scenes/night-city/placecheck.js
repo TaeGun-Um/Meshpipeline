@@ -217,6 +217,25 @@ export function checkPlacement(scene) {
     );
   }
 
+  // ── 2.7) 간판끼리 겹쳤나 ────────────────────────────────────────────────
+  //
+  // **이 검사가 없어서 몰랐다.** 건물 관통·브릿지 부유·보행로 침범은 잡는데
+  // 간판끼리는 아무도 안 봤고, 사용자가 화면을 보고서야 나왔다.
+  //
+  // 원인은 간판 요청에 면 위 가로 위치가 없어서 한 면의 모든 간판이 가운데
+  // 한 줄로 쌓인 것이었다 (signage.layoutSigns 머리말).
+  //
+  // 간판은 얇은 판이라 상자가 겹치면 그건 거의 확실히 **같은 자리에 두 장**
+  // 이다. 문턱을 낮게 잡아도 거짓 양성이 잘 안 난다.
+  const signHits = overlappingPairs(signs, { min: 0.25, cell: 40, needY: true });
+  if (signHits.length) {
+    add(
+      '간판끼리 겹침',
+      `간판 ${signHits.length}쌍이 겹친다 (최대 ${signHits[0].x.toFixed(1)}m)`,
+      signHits.slice(0, 12)
+    );
+  }
+
   // ── 3) 양 끝이 무언가에 닿나 ─────────────────────────────────────────────
   //
   // 브릿지는 앵커 쌍에서 골라 이미 닿아야 한다. 계단은 위 끝이 데크에,
@@ -314,34 +333,17 @@ export function checkPlacement(scene) {
     add('간판이 허공', `간판 ${floatSigns.length}개가 어떤 건물에도 안 붙어 있다`, floatSigns.slice(0, 12));
   }
 
-  // ── 6) 골목 벽이 이웃 건물보다 높나 ─────────────────────────────────────
+  // ── 6) 골목 벽 높이 검사는 폐기했다 ──────────────────────────────────────
   //
-  // 골목 벽은 양옆 건물의 옆면을 대신하는 것이므로 그 구역 건물보다 높으면
-  // 담장이 치솟은 꼴이 된다 (docs/status.md 4번 — 골목 벽이 공장 위로).
-  const tallWalls = [];
-  for (const al of alleys) {
-    const cx = (al.x0 + al.x1) / 2;
-    const cz = (al.z0 + al.z1) / 2;
-    let neighbourTop = 0;
-    for (const bl of buildings) {
-      const dx = Math.max(bl.x0 - cx, 0, cx - bl.x1);
-      const dz = Math.max(bl.z0 - cz, 0, cz - bl.z1);
-      if (Math.hypot(dx, dz) > 40) continue;
-      if (bl.y1 > neighbourTop) neighbourTop = bl.y1;
-    }
-    // ── 상자 높이가 아니라 **벽 높이**를 본다 (검사가 틀렸다) ────────────
-    // 처음에는 원장 상자의 y1 을 썼는데, 그건 골목 안의 배관·빨래줄·실외기
-    // 까지 포함한 값이라 15m 벽이 24m 로 잡혔다. wallH 를 meta 에 실어
-    // 놓고 정작 안 쓴 것 — 이 프로젝트가 여러 번 낸 실수와 같은 모양이다.
-    const wall = al.meta?.wallH ?? al.y1;
-    if (neighbourTop > 0 && wall > neighbourTop + 2) {
-      tallWalls.push({ label: al.label, zone: al.meta?.zone, 벽: +wall.toFixed(1), 이웃건물: +neighbourTop.toFixed(1) });
-    }
-  }
-  if (tallWalls.length) {
-    tallWalls.sort((a, b2) => (b2.벽 - b2.이웃건물) - (a.벽 - a.이웃건물));
-    add('골목 벽이 건물보다 높다', `골목 ${tallWalls.length}곳의 벽이 이웃 건물보다 높다`, tallWalls.slice(0, 12));
-  }
+  // 골목을 다시 만들면서 **벽을 안 세우게 됐다.** 이제 골목은 필지를 자른
+  // 자리를 벌린 틈이고, 벽은 양옆 건물의 옆면이다 (alley.js 머리말).
+  //
+  // 그러니 "골목 벽이 이웃 건물보다 높나" 는 물을 수가 없다 — 벽이 곧 그
+  // 건물이므로 정의상 같은 높이다. 실제로 이 검사가 벽이 사라진 뒤에도
+  // meta.wallH 를 읽고 2건을 신고했다.
+  //
+  // **기능을 끄면 그 기능을 보는 검사도 같이 봐야 한다.** 골목을 껐을 때
+  // allAlleyRects 를 안 껐던 것과 같은 종류다 (status.md 실패 16).
 
   // ── 4) 인도 위 물건이 차도를 침범하나 ────────────────────────────────────
   //

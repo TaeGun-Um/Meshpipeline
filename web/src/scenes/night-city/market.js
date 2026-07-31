@@ -320,14 +320,28 @@ function nightlife(b, r, rng, mats, signs, pools) {
   // 세로 간판 탑 — 모서리에서 지붕까지. 유흥가의 실루엣이 이것이다
   const front = SIDES[rng.int(0, 3)];
   const f = faceFrame(r, front);
-  const stack = Math.max(2, floors - 1);
-  for (let i = 0; i < stack; i++) {
+  // ── 자로 잰 듯한 줄을 깬다 (사용자 지적) ────────────────────────────
+  // "측면 간판도 다 너무 일렬로 붙어있고"
+  //
+  // 등간격으로 쌓았더니 완벽한 수직선이 됐다. 실제 유흥가 간판은 가게마다
+  // 따로 단 것이라 크기도 높이도 제각각이고, **면도 하나가 아니다.**
+  // 자리(u)는 signage.layoutSigns 가 겹치지 않게 정한다.
+  const stack = Math.max(2, floors);
+  let sy = Y + 2.0;
+  for (let i = 0; i < stack && sy < Y + H - 3; i++) {
+    const sh = rng.range(2.6, 5.4);
+    if (sy + sh > Y + H - 1.5) break;
     signs.push({
-      kind: 'blade', rect: r, side: front,
-      y: Y + 2.2 + i * (H - 3.4) / stack,
-      w: 1.0, h: (H - 3.4) / stack - 0.5,
+      kind: 'blade',
+      rect: r,
+      // 정면에 몰지 않는다. 모서리 가게는 두 면에 건다
+      side: rng.chance(0.68) ? front : SIDES[rng.int(0, 3)],
+      y: sy,
+      w: rng.range(0.85, 1.35),
+      h: sh,
       scheme: rng.int(0, 5),
     });
+    sy += sh + rng.range(0.5, 2.2); // 간격이 제각각이어야 줄로 안 보인다
   }
   // 정면 대형 간판 하나 더 — 이름
   signs.push({
