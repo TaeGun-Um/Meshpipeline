@@ -493,7 +493,19 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
       }
 
       // 2층부터 외부 복도. 1층은 인도가 그 역할을 한다.
-      if (fl >= 1) walkway(b, f, y, rng, mats);
+      if (fl >= 1) {
+        walkway(b, f, y, rng, mats);
+        // ── 복도가 차지한 자리를 간판 대장에 신고한다 (사용자 지적) ──────
+        // "난간과 간판과 세로간판, 그리고 창문같은게 겹쳐져 있는 경우도 있음"
+        //
+        // 복도 바닥판과 난간은 파사드에서 y-0.2 ~ y+1.2 를 통째로 쓴다.
+        // 그런데 지금까지 대장에 없었으므로 간판이 그 자리를 골랐고, 결과가
+        // **난간을 관통하는 배너**였다. 그리는 쪽과 자리를 정하는 쪽이
+        // 서로를 모르면 반드시 이렇게 된다 (지면에서 겪은 것과 같다).
+        // 실제로 튀어나온 것만 잡는다 — 바닥판(0.16)과 난간(1.05).
+        // 넉넉히 잡으면 층 사이 빈 띠가 사라져 간판이 갈 데가 없어진다.
+        signs.push({ block: true, rect: r, side, y: y - 0.15, h: 1.3, w: f.w });
+      }
     }
 
     // 1층 위 천막 — 인도를 덮는다
@@ -521,32 +533,38 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
     //
     // 그리고 긴 면에는 **전광판 띠**(16:1)를 섞는다. 늘어난 배너로 때우던
     // 자리를, 원래 길게 태어난 유형이 맡는다.
-    let stack = top - 1.2;
+    // ── 간판은 **층에 맞춰** 건다 ─────────────────────────────────────────
+    //
+    // 전에는 꼭대기부터 임의 간격으로 내려오며 걸었다. 그러면 층과 무관한
+    // 높이에 걸리고, 그 높이에는 외부 복도와 난간이 지나간다 — 사용자가
+    // 지적한 "난간과 간판이 겹쳐 있는" 상태다.
+    //
+    // 복도를 대장에 신고하고 나니 절반이 자리를 못 찾아 버려졌다(1,127→528).
+    // 자리를 더 비우는 것이 답이 아니다. **애초에 빈 자리에 걸어야 한다.**
+    //
+    // 한 층의 파사드는 이렇게 나뉜다.
+    //   y ~ y+1.05   복도 바닥판과 난간   (예약)
+    //   y+1.35 ~ y+2.9  비어 있다          <- 여기가 간판 자리다
+    // 실제 잡거빌딩도 간판이 층 사이 띠에 줄 맞춰 걸린다.
     const rows = Math.max(2, Math.round(4 * detail));
     // 한 줄에 몇 장 걸리나 — 면이 길수록 많이. 8m 에 한 장꼴
     const perRow = Math.max(1, Math.min(5, Math.round(f.w / 9)));
     for (let k = 0; k < rows; k++) {
-      const bh = rng.range(1.2, 2.2);
-      if (stack - bh < SHOP_FLOOR * 0.8) break;
-      if (rng.chance(0.22)) { stack -= bh + 0.3; continue; }
-      // 이 줄은 전광판 띠인가. 긴 면에서만, 그리고 한 건물에 한두 줄만
+      // 위층부터 내려온다. 1층은 점포 정면이 이미 꽉 차 있어 건너뛴다
+      const fl = floors - 1 - k;
+      const bh = rng.range(1.2, 1.5);
       const ticker = f.w > 22 && rng.chance(0.3);
+      const skip = rng.chance(0.22);
+      const scheme = rng.int(0, 5);
+      if (fl < 1 || skip) continue;
+      const by = fl * SHOP_FLOOR + 1.5; // 난간 위, 다음 층 바닥 아래
       if (ticker) {
-        signs.push({
-          kind: 'strip', rect: r, side,
-          y: stack - bh / 2, w: 0, h: bh * 0.62,
-          scheme: rng.int(0, 5),
-        });
+        signs.push({ kind: 'strip', rect: r, side, y: by, w: 0, h: bh * 0.62, scheme });
       } else {
         for (let m = 0; m < perRow; m++) {
-          signs.push({
-            kind: 'banner', rect: r, side,
-            y: stack - bh / 2, w: 0, h: bh,
-            scheme: rng.int(0, 5),
-          });
+          signs.push({ kind: 'banner', rect: r, side, y: by, w: 0, h: bh, scheme });
         }
       }
-      stack -= bh + rng.range(0.25, 0.7);
     }
 
     // 1-b) 천 배너 — 어두운 것 하나. 네온만 있으면 네온이 안 읽힌다
@@ -580,6 +598,11 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
         kind: 'blade', rect: sub, side,
         y: SHOP_FLOOR * rng.range(1.0, 1.6),
         w: bh / 4.6, h: bh,
+        // ── 복도 바깥에 매단다 (사용자 지적) ────────────────────────────
+        // 세로 간판은 2층 위로 뻗는데 그 높이에는 외부 복도가 1.5m 나와
+        // 있다. 벽에 붙여 매달면 복도와 난간을 관통한다. 실제 잡거빌딩도
+        // 세로 간판은 복도보다 더 앞에 매단다 — 그래야 아래에서 보인다.
+        standoff: floors >= 2 ? WALK_W + 0.8 : 0.15,
         scheme: rng.int(0, 5),
       });
     }

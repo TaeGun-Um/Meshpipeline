@@ -92,15 +92,36 @@ function layoutSigns(reqs) {
     const fw = az ? r.z1 - r.z0 : r.x1 - r.x0;
     const placed = [];
 
+    // ── 간판만 아는 대장은 반쪽이다 (사용자 지적) ────────────────────────
+    //
+    // "번화가 건물 타입의 경우 난간과 간판과 세로간판, 그리고 창문같은게
+    //  겹쳐져 있는 경우도 있음"
+    //
+    // 맞았다. 이 대장은 **간판끼리만** 겹침을 봤다. 외부 복도와 난간, 층
+    // 슬래브는 파사드에서 자리를 차지하는데 대장에 없으니 서로를 모른다.
+    // 지면에서 겪은 것과 똑같은 문제다 — siteplan 이 생기기 전 인도가 그랬다.
+    //
+    // 그래서 **자리만 차지하고 그려지지는 않는 항목**을 같은 대장에 넣는다
+    // (`block: true`). 생산자가 "여기는 이미 내 난간이 지나간다" 고 신고하면
+    // 간판이 그 자리를 피한다.
+    //
+    // 예약은 **맨 먼저** 처리한다. 크기 순으로 섞으면 큰 간판이 난간 자리를
+    // 먼저 차지해 버린다 — 예약은 협상 대상이 아니다.
+    const drawn = [];
+    for (const q of list) {
+      if (!q.block) { drawn.push(q); continue; }
+      placed.push({ u: 0, w: Math.max(q.w, fw), h: q.h, cy: q.y + q.h / 2, blk: true });
+    }
+
     // **자리를 잡기 전에 비율부터 맞춘다.** 늘어난 크기로 자리를 잡으면
     // 그 자리에 늘어난 판이 놓일 뿐이다.
-    for (const q of list) { const f = fitAspect(q, fw); q.w = f.w; q.h = f.h; }
+    for (const q of drawn) { const f = fitAspect(q, fw); q.w = f.w; q.h = f.h; }
 
     // 큰 것부터 자리를 잡는다. 작은 것이 먼저 좋은 자리를 차지하면
     // 큰 것이 갈 데가 없어져 통째로 버려진다.
-    list.sort((p, q2) => q2.w * q2.h - p.w * p.h);
+    drawn.sort((p, q2) => q2.w * q2.h - p.w * p.h);
 
-    for (const q of list) {
+    for (const q of drawn) {
       const w = Math.min(q.w, fw * 0.94);
       const half = (fw - w) / 2;
       // 후보 자리 — 요청한 u 가 있으면 거기부터, 없으면 가운데부터 좌우로
@@ -112,9 +133,17 @@ function layoutSigns(reqs) {
       let ok = null;
       for (const c of cands) {
         const u = Math.max(-half, Math.min(half, c));
-        const hit = placed.some((p) =>
-          Math.abs(p.u - u) < (p.w + w) / 2 + 0.35 &&
-          Math.abs(p.cy - (q.y + q.h / 2)) < (p.h + q.h) / 2 + 0.35);
+        // 여유는 상대에 따라 다르다.
+        //   간판끼리   0.35m — 두 장이 붙어 보이면 둘 다 안 읽힌다
+        //   예약 상대  0.05m — 난간은 벽에 붙어 있고 간판은 0.36m 나와 있어
+        //              스치듯 지나가도 관통이 아니다. 여기에 같은 여유를
+        //              쓰면 층 사이 빈 띠가 통째로 사라진다 (실제로 간판이
+        //              1,127장에서 498장으로 줄었다).
+        const hit = placed.some((p) => {
+          const gap = p.blk ? 0.05 : 0.35;
+          return Math.abs(p.u - u) < (p.w + w) / 2 + gap &&
+            Math.abs(p.cy - (q.y + q.h / 2)) < (p.h + q.h) / 2 + gap;
+        });
         if (!hit) { ok = u; break; }
       }
       // 자리가 없으면 **버린다.** 겹쳐 놓느니 없는 것이 낫다 —
@@ -175,8 +204,13 @@ function bladeSign(b, req, mats) {
   const f = frameOf(req);
   const mat = mats.signMats.blade[req.scheme];
   const out = req.w; // 벽에서 튀어나오는 길이 = 간판 폭
-  const cx = f.x + f.ox * (out / 2 + 0.15);
-  const cz = f.z + f.oz * (out / 2 + 0.15);
+  // ── 벽에서 얼마나 떨어져 매다는가 ──────────────────────────────────────
+  // 기본은 벽에 붙인다. 그런데 적층 상가는 층마다 외부 복도가 1.5m 나와
+  // 있어서, 벽에 붙인 세로 간판이 **복도와 난간을 관통한다** (사용자 지적).
+  // 그런 건물은 생산자가 복도 폭만큼 밀어서 요청한다.
+  const off = req.standoff ?? 0.15;
+  const cx = f.x + f.ox * (out / 2 + off);
+  const cz = f.z + f.oz * (out / 2 + off);
   const cy = req.y + req.h / 2;
 
   // 양면 — 벽에 수직이므로 앞면 법선이 벽 방향에서 90도 돌아간다
@@ -190,13 +224,14 @@ function bladeSign(b, req, mats) {
   // 심재 (두께)
   b.box(f.ox ? out : 0.12, req.h, f.oz ? out : 0.12, [cx, cy, cz], mats.frameMat);
 
-  // 벽 브래킷 둘
+  // 벽 브래킷 둘 — 벽에서 간판까지 실제로 이어져야 한다.
+  // 떨어뜨려 매단 간판을 짧은 브래킷으로 두면 **간판이 허공에 뜬다.**
   for (const t of [0.2, 0.8]) {
     b.box(
-      f.ox ? 0.3 : 0.06,
+      f.ox ? off : 0.06,
       0.06,
-      f.oz ? 0.3 : 0.06,
-      [f.x + f.ox * 0.15, req.y + req.h * t, f.z + f.oz * 0.15],
+      f.oz ? off : 0.06,
+      [f.x + f.ox * (off / 2), req.y + req.h * t, f.z + f.oz * (off / 2)],
       mats.metalMat
     );
   }
