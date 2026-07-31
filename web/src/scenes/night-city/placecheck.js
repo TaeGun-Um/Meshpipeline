@@ -32,6 +32,7 @@ import {
   lowBox,
 } from '../../core/placement.js';
 import { roads, roadAt } from './layout.js';
+import { allWalks } from './parcel.js';
 
 // ── 차도 ───────────────────────────────────────────────────────────────────
 //
@@ -183,6 +184,36 @@ export function checkPlacement(scene) {
       '차량이 연석 밖',
       `주차 ${outCars.length}대가 차도를 벗어나 인도·건물로 들어갔다 (최대 ${outCars[0].over}m)`,
       outCars.slice(0, 12)
+    );
+  }
+
+  // ── 2.5) 건물이 보행로를 침범했나 ──────────────────────────────────────
+  //
+  // 보행로는 대지 안을 관통하는 사람 길이다 (parcel.js). blockLots 가 필지에서
+  // 먼저 빼내므로 건물이 올 수 없어야 하는데, 차양·돌출 간판·군집 기단처럼
+  // **필지 밖으로 나가는 것**들이 있어 실제로 침범할 수 있다.
+  //
+  // 길이 막히면 그 길은 없는 것과 같다. 도로 침범과 같은 급으로 잡는다.
+  const onWalks = [];
+  for (const w of allWalks()) {
+    const r = w.rect;
+    for (const bd of buildings) {
+      const lb = lowBox(bd) || bd;
+      const ox = Math.min(lb.x1, r.x1) - Math.max(lb.x0, r.x0);
+      const oz = Math.min(lb.z1, r.z1) - Math.max(lb.z0, r.z0);
+      if (ox <= 1.0 || oz <= 1.0) continue;
+      // 띠의 짧은 축으로 얼마나 먹었나 — 그게 통행 폭을 줄인 양이다
+      const eat = w.axis === 'x' ? ox : oz;
+      if (eat < 1.5) continue;
+      onWalks.push({ label: bd.label, 먹은폭: +eat.toFixed(1), 길폭: +(w.axis === 'x' ? r.x1 - r.x0 : r.z1 - r.z0).toFixed(1) });
+    }
+  }
+  if (onWalks.length) {
+    onWalks.sort((a2, b2) => b2.먹은폭 - a2.먹은폭);
+    add(
+      '건물이 보행로를 먹음',
+      `건물 ${onWalks.length}채가 보행로를 1.5m 넘게 침범했다 (최대 ${onWalks[0].먹은폭}m)`,
+      onWalks.slice(0, 12)
     );
   }
 

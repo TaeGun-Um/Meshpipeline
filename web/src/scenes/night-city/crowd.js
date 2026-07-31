@@ -39,7 +39,7 @@ import {
   blockIndexAt,
 } from './layout.js';
 import { districtAt, byZone } from './district.js';
-import { roadOpen, roadOpenZ } from './parcel.js';
+import { roadOpen, roadOpenZ, allWalks } from './parcel.js';
 
 // 인도 위 어디까지 사람이 서는가. 연석에서 0.6m, 건물에서 0.5m 는 비운다.
 const WALK_IN = 0.6;
@@ -51,6 +51,9 @@ const WALK_IN = 0.6;
 // byZone 이 구역을 하나라도 빠뜨리면 터진다 (district.byZone 머리말).
 // 전에는 슬럼과 부둣가가 빠진 채 `?? 0.2` 로 넘어갔고, 그래서 컨테이너
 // 야드가 밤에 기업 사옥 앞(0.14)보다 붐볐다.
+// 보행로는 인도보다 붐빈다. 지나가는 것이 목적인 공간이기 때문이다.
+const WALK_GAIN = 2.4;
+
 const DENSITY = byZone('사람 밀도', {
   상업: 0.62,  // 어깨가 부딪히는 밀도
   기업: 0.14,  // 퇴근 시간이 지났다. 경비와 늦게 나온 직원뿐
@@ -143,6 +146,36 @@ export function createCrowd(scene, rng, mats) {
   // 기준은 격자선이 아니라 **연석**(도로 띠의 lo·hi)이다. 도로 폭이 구간마다
   // 다르고 구간 경계에서는 비대칭이라, 격자선에서 재면 좁은 구간의 사람이
   // 차도 한가운데 선다.
+  // ── 보행로 — 여기가 유동인구의 본진이다 ────────────────────────────────
+  //
+  // 인도는 건물 앞을 스치는 띠지만 보행로는 **지나가는 것이 목적**인 공간이다.
+  // 사용자 지적 그대로 "유동인구가 관통할 수 있는 곳" 이라, 밀도가 도시에서
+  // 가장 높아야 하고 방향이 길을 따라야 한다.
+  for (const g of allWalks()) {
+    const D = g.district;
+    const dens = (DENSITY[D.name] ?? 0.2) * WALK_GAIN;
+    const r = g.rect;
+    const alongZ = g.axis === 'x'; // 세로 띠 = Z 를 따라 걷는다
+    const len = alongZ ? r.z1 - r.z0 : r.x1 - r.x0;
+    const wid = alongZ ? r.x1 - r.x0 : r.z1 - r.z0;
+    const c0 = alongZ ? (r.x0 + r.x1) / 2 : (r.z0 + r.z1) / 2;
+    for (let t = 2; t < len - 2; t += rng.range(0.9, 2.4)) {
+      // 폭 안에서 흩어뜨리되 가운데를 비운다 — 사람은 양쪽으로 갈라져 걷는다
+      const side = rng.chance(0.5) ? -1 : 1;
+      const off = c0 + side * rng.range(wid * 0.12, wid * 0.44);
+      const x = alongZ ? off : r.x0 + t;
+      const z = alongZ ? r.z0 + t : off;
+      if (!rng.chance(dens * detailAt(x, z))) continue;
+      spots.push({
+        x, z,
+        h: rng.range(1.55, 1.9),
+        build: rng.int(0, 2),
+        // 길을 따라 선다. 지나가는 사람이므로 방향이 통로와 나란하다
+        yaw: (alongZ ? 0 : Math.PI / 2) + (rng.chance(0.5) ? 0 : Math.PI) + rng.range(-0.25, 0.25),
+      });
+    }
+  }
+
   roads().forEach((r, bi) => {
     for (let t = -CITY_HALF + 6; t < CITY_HALF - 6; t += rng.range(1.1, 3.4)) {
       for (const [curb, s] of [[r.lo, -1], [r.hi, 1]]) {

@@ -333,6 +333,9 @@ function blockList() {
     const program = reserved.has(`${p.ix},${p.iz}`) ? 'landmark' : blockProgram(p.ix, p.iz);
     return {
       ix: p.ix, iz: p.iz, program, rect: p.rect, cells: p.cells.length,
+      // 보행로는 **대지가 정한다.** blockLots 가 여기서 받아 필지에서 빼낸다 —
+      // 두 곳에서 따로 계산하면 길 위에 건물이 선다.
+      walks: p.walks || [],
       cx: (p.rect.x0 + p.rect.x1) / 2,
       cz: (p.rect.z0 + p.rect.z1) / 2,
     };

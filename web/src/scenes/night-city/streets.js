@@ -9,7 +9,7 @@ import { scaleUV } from '../../core/meshkit.js';
 import { dressSidewalks } from './sidewalk.js';
 import { claim, TIER } from './siteplan.js';
 import { districtAt } from './district.js';
-import { parcels, roadOpen, roadOpenZ } from './parcel.js';
+import { parcels, roadOpen, roadOpenZ, allWalks } from './parcel.js';
 import { upPlane, downPlane } from '../../core/boxfaces.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
@@ -50,6 +50,42 @@ function roadMesh(mat) {
 
 // 공사장 블록은 판을 깔지 않는다. 굴착 구덩이가 지면 아래에 있는데 그 위에
 // 불투명한 판을 덮으면 구덩이가 통째로 안 보인다 (실제로 그렇게 됐다).
+// ── 보행로 포장 ────────────────────────────────────────────────────────────
+//
+// 대지 판 위에 한 겹 덮는다. **차도와 마감이 달라야** 차가 안 다니는 곳으로
+// 읽힌다 — 차선도 연석도 없고, 대신 가운데를 따라 등이 늘어선다.
+function walkPaving(b, rng, mats, pools) {
+  for (const g of allWalks()) {
+    const r = g.rect;
+    const cx = (r.x0 + r.x1) / 2;
+    const cz = (r.z0 + r.z1) / 2;
+    const w = r.x1 - r.x0;
+    const d = r.z1 - r.z0;
+    b.add(upPlane(w, d, [cx, CURB_HEIGHT + 0.03, cz], [Math.max(2, w / 6), Math.max(2, d / 6)]),
+      mats.plazaMat);
+
+    // 가운데 띠 — 포장이 두 가지여야 '길' 로 읽힌다. 한 색이면 그냥 광장이다
+    const alongZ = g.axis === 'x';
+    b.add(upPlane(alongZ ? w * 0.28 : w, alongZ ? d : d * 0.28,
+      [cx, CURB_HEIGHT + 0.04, cz], [2, 2]), mats.plazaStepMat);
+
+    // 등 — 통로를 따라. 이 길이 밤에 보이는 이유가 이것이다
+    const len = alongZ ? d : w;
+    const n = Math.max(2, Math.round(len / 16));
+    for (let i = 0; i < n; i++) {
+      const t = -len / 2 + (len / n) * (i + 0.5);
+      const lx = alongZ ? cx : cx + t;
+      const lz = alongZ ? cz + t : cz;
+      b.cylinder(0.1, 0.13, 4.6, [lx, CURB_HEIGHT + 2.3, lz], mats.metalMat, 8);
+      b.sphere(0.2, [lx, CURB_HEIGHT + 4.6, lz], neon(0xd8e8ff));
+      pools.push({
+        kind: 'floor', x: lx, y: CURB_HEIGHT + 0.06, z: lz,
+        rx: 6.5, rz: 6.5, tint: rgb01(0xd8e8ff, 0.42),
+      });
+    }
+  }
+}
+
 function blockPlates(b, mats, programs) {
   // 대지 단위로 깐다. 병합한 대지는 판이 하나로 이어져야 그 안에 도로가
   // 없다는 것이 읽힌다 — 칸마다 깔면 사이에 틈이 남는다.
@@ -281,7 +317,11 @@ export function createStreets(scene, rng, mats, blocks) {
   const programs = new Map(blocks.map((b) => [`${b.ix},${b.iz}`, b.program]));
   const plates = new MeshBuilder('Sidewalks', { castShadow: false });
   blockPlates(plates, mats, programs);
+  // 보행로 — 대지 판 위에 덮는다. 판보다 **나중**이어야 위에 얹힌다.
+  const pools = [];
+  walkPaving(plates, rng, mats, pools);
   group.add(plates.build());
+
 
   // 차선 페인트는 그림자를 받지 않는다. 노면에서 4mm 뜬 얇은 판이라 그림자를
   // 받게 하면 노면과 밝기가 어긋나 차선만 따로 어두워진다 (실제로 그렇게 됐다).
@@ -294,7 +334,6 @@ export function createStreets(scene, rng, mats, blocks) {
   dressSidewalks(paint, rng, mats);
   group.add(paint.build());
 
-  const pools = [];
   const fixtures = new MeshBuilder('StreetFixtures', { receiveShadow: false });
   streetLamps(fixtures, mats, pools);
   trafficLights(fixtures, mats, rng);

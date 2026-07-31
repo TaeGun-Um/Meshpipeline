@@ -32,6 +32,7 @@ import {
   coreDistance,
   detailAt,
   PANEL_TILE,
+  WALK_CLEAR,
 } from './layout.js';
 import { SHOP_TINTS } from './materials.js';
 import { rgb01 } from '../../shared/neon.js';
@@ -91,12 +92,33 @@ function streetFaces(r, blk, walk = SIDEWALK_W) {
   //
   // 같은 값을 두 곳에서 다른 출처로 계산하면 반드시 이런 일이 난다.
   const m = walk + 1.6;
-  return {
+  const f = {
     px: r.x1 > R.x1 - m,
     nx: r.x0 < R.x0 + m,
     pz: r.z1 > R.z1 - m,
     nz: r.z0 < R.z0 + m,
   };
+
+  // ── 보행로에 면한 것도 '길에 면한' 것이다 ──────────────────────────────
+  //
+  // 이걸 빼먹으면 병합한 대지 안쪽 건물이 **보행로를 마주 보고도 뒷면**이
+  // 되어 점포도 간판도 안 붙는다. 그러면 길을 뚫어 놓고 그 길에 아무것도
+  // 없는 상태가 된다 — 지금 '길에 면한 면' 이 0.35 로 떨어진 이유의 절반이다.
+  // 허용치는 **완충과 같은 출처**에서 온다. 여기 숫자를 따로 쓰면
+  // blockLots 가 건물을 물리는 순간 판정이 전부 거짓이 된다.
+  const W = WALK_CLEAR + 1.6;
+  for (const g of blk.walks || []) {
+    const w = g.rect;
+    if (g.axis === 'x') {
+      // 세로 띠 — 좌우 면이 마주 본다
+      if (Math.abs(r.x1 - w.x0) < W) f.px = true;
+      if (Math.abs(r.x0 - w.x1) < W) f.nx = true;
+    } else {
+      if (Math.abs(r.z1 - w.z0) < W) f.pz = true;
+      if (Math.abs(r.z0 - w.z1) < W) f.nz = true;
+    }
+  }
+  return f;
 }
 
 // 저층 상가. 도로에서 보이는 유일한 부분이라 여기 밀도가 도시의 인상을 만든다.

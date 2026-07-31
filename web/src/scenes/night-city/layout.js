@@ -33,6 +33,15 @@ export const BLOCK_SIZE = 66;
 // 두면 한쪽만 꺼지는 사고가 난다 — 실제로 그렇게 됐다.
 export const ALLEYS_ON = false;
 
+// 보행로 양옆 완충. 건물은 이만큼 물러나 선다.
+//
+// **밖으로 내보낸다.** towers.streetFaces 가 "이 면이 보행로를 마주 보나" 를
+// 판정할 때 같은 값을 봐야 하기 때문이다. 처음에 여기 3.0 을 두고 판정
+// 허용치는 2.0 으로 따로 뒀더니, 건물이 3m 물러난 순간 **모든 면이 '길에 안
+// 면함' 이 되어** 길에 면한 면이 0.54 -> 0.36 으로, 간판이 1,142 -> 683 개로
+// 죽었다. 인도 폭에서 이미 똑같이 당했던 실수다 (streetFaces 머리말).
+export const WALK_CLEAR = 3.0;
+
 const NOMINAL_STREET = 22;
 export const PITCH = BLOCK_SIZE + NOMINAL_STREET; // 88 — 기본 피치
 
@@ -447,6 +456,35 @@ export function inAlley(x, z, margin = 2.4) {
 //
 // 남은 조각이 MIN 보다 얇으면 버린다 — 폭 4m 짜리 필지에 건물을 세우면
 // 판자처럼 보이고, 그 판자가 골목 벽이 되면 두께가 없어 보인다.
+// 사각형에서 띠 여럿을 빼낸다. 남은 조각들을 돌려준다.
+//
+// 띠가 십자로 만나면 조각이 넷이 된다 — 그 교차점이 광장이 되고, 사람은
+// 늘 그런 자리에 모인다.
+export function subtractStrips(root, strips) {
+  const MIN = 12; // 이보다 얇은 조각은 건물이 못 선다. 길에 흡수시킨다
+  let parts = [root];
+  for (const st of strips) {
+    const next = [];
+    for (const r of parts) {
+      // 겹치지 않으면 그대로
+      if (st.x1 <= r.x0 || st.x0 >= r.x1 || st.z1 <= r.z0 || st.z0 >= r.z1) {
+        next.push(r);
+        continue;
+      }
+      const alongZ = st.x1 - st.x0 < st.z1 - st.z0; // 세로로 긴 띠 = X 를 가른다
+      if (alongZ) {
+        if (st.x0 - r.x0 >= MIN) next.push({ ...r, x1: st.x0 });
+        if (r.x1 - st.x1 >= MIN) next.push({ ...r, x0: st.x1 });
+      } else {
+        if (st.z0 - r.z0 >= MIN) next.push({ ...r, z1: st.z0 });
+        if (r.z1 - st.z1 >= MIN) next.push({ ...r, z0: st.z1 });
+      }
+    }
+    parts = next;
+  }
+  return parts;
+}
+
 export function subtractAlley(root, a) {
   const MIN = 9;
   const out = [];
@@ -515,13 +553,33 @@ export function blockLots(rng, blk, D = null) {
   };
 
   const grain = D?.grain;
-  if (!a) return { lots: subdivideRect(rng, buildable, grain), alleys: [] };
 
-  const parts = subtractAlley(buildable, a);
-  // 골목이 너무 잘게 잘라 남은 조각이 없으면 골목을 포기한다
-  if (!parts.length) return { lots: subdivideRect(rng, buildable, grain), alleys: [] };
+  // ── 보행로를 먼저 빼낸다 ────────────────────────────────────────────────
+  //
+  // **순서가 중요하다.** 필지를 나눈 뒤 사이를 벌리면 그건 길이 아니라
+  // 빈틈이다 (골목에서 이미 겪었다). 띠를 먼저 파내고 남은 조각을 각각
+  // 쪼개야 길 양옆에 건물 **정면**이 선다.
+  //
+  // 대지가 준다 — parcel.js 가 병합할 때 어느 띠를 사람에게 남길지 정했다.
+  // 여기서 다시 계산하면 두 곳이 어긋난다.
+  // 완충을 두고 파낸다. 차양·돌출 간판·벽감은 **필지 밖으로 나가는** 것들이라
+  // 길 폭 그대로 파내면 그것들이 길을 먹는다 — 실제로 34채가 최대 2.5m 먹었고
+  // 새로 넣은 배치 검사가 잡았다.
+  //
+  // status.md 규칙 3: "여유는 항상 기준보다 명확히 커야 한다".
+  const walks = (blk.walks || []).map((g) => ({
+    x0: g.rect.x0 - WALK_CLEAR, x1: g.rect.x1 + WALK_CLEAR,
+    z0: g.rect.z0 - WALK_CLEAR, z1: g.rect.z1 + WALK_CLEAR,
+  }));
+  const slabs = walks.length ? subtractStrips(buildable, walks) : [buildable];
+  if (!a) return { lots: slabs.flatMap((q) => subdivideRect(rng, q, grain)), alleys: [] };
 
-  return { lots: parts.flatMap((p) => subdivideRect(rng, p, grain)), alleys: [a] };
+  // 골목이 켜져 있으면 그것도 같이 파낸다 (지금은 꺼져 있다)
+  const parts = slabs.flatMap((q) => subtractAlley(q, a));
+  if (!parts.length) {
+    return { lots: slabs.flatMap((q) => subdivideRect(rng, q, grain)), alleys: [] };
+  }
+  return { lots: parts.flatMap((q) => subdivideRect(rng, q, grain)), alleys: [a] };
 }
 
 // ── grain 은 깊이가 아니라 목표 크기다 ─────────────────────────────────────
