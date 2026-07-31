@@ -255,6 +255,21 @@ export function inRoad(v) {
   return roadAt(v) !== null;
 }
 
+// 한 축 위의 구간 [a, b] 가 차도와 겹치나.
+//
+// `roadAt` 은 **점 하나**만 본다. 물건은 폭이 있으므로 중심이 인도 위여도
+// 몸통이 차도로 나갈 수 있다 — 실제로 홀로그램 표식이 중심은 멀쩡한데
+// 0.47m 나가 있었고, 점 검사는 그걸 통과시켰다.
+// 폭이 있는 것을 놓을 때는 이쪽을 쓴다.
+export function spanInRoad(a, bb) {
+  const lo = Math.min(a, bb);
+  const hi = Math.max(a, bb);
+  for (const r of roads()) {
+    if (hi > r.lo && lo < r.hi) return true;
+  }
+  return false;
+}
+
 // 교차로 안인지 — 두 축이 모두 도로 띠 안.
 export function onIntersection(x, z) {
   return inRoad(x) && inRoad(z);

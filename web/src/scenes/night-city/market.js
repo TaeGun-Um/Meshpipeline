@@ -36,6 +36,7 @@ import {
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon, neonSoft } from '../../shared/masters.js';
 import { PANEL_TILE, CURB_HEIGHT, buildableSlabs } from './layout.js';
+import { hash2 } from '../../core/textures.js';
 
 // 유형이 실제로 다 나오는지 세어 둔다. 종류를 늘려 놓고 확률이 낮아
 // 한 번도 안 나오는 것은 만들지 않은 것과 같다 — 기업 양식에서 실제로
@@ -54,6 +55,12 @@ export function marketSpots() {
 export function resetMarketTally() {
   TALLY = {};
   SPOTS = [];
+}
+// 적층 상가(bazaar.js)도 같은 장부에 올린다. 번화가의 대부분이 그것인데
+// 장부에 없으면 "번화가 건물이 전부 낮다" 같은 질문에 답할 수가 없다 —
+// 실제로 #50 을 재려고 할 때 다섯 유형만 재고 정작 주류를 못 쟀다.
+export function marketTallyAdd(k, r, top) {
+  tally(k, r, top);
 }
 const tally = (k, r, top) => {
   TALLY[k] = (TALLY[k] || 0) + 1;
@@ -108,7 +115,10 @@ function arcade(b, r, rng, mats, signs, pools) {
   const alongX = s.w >= s.d;
   const len = alongX ? s.w : s.d;
   const wid = alongX ? s.d : s.w;
-  const H = 7.4;
+  // 지붕 높이. 상수로 두었더니 12채가 **전부 8.0m** 였다 — 아케이드가
+  // 늘어선 곳에서 지붕선이 자로 그은 듯 일직선이 됐다. 실제 아케이드는
+  // 구간마다 증축 시기가 달라 높이가 들쭉날쭉하다.
+  const H = 6.4 + hash2(Math.round(r.x0), Math.round(r.z0)) * 4.2;
 
   // 바닥 — 인도와 다른 마감. 여기부터 시장이라는 표시
   b.add(upPlane(s.w, s.d, [c.x, Y + 0.03, c.z], [4, 4]), mats.tileWallMat);
@@ -219,7 +229,10 @@ function vitrine(b, r, rng, mats, signs, pools) {
   const c = rectCenter(box);
   if (Math.min(s.w, s.d) < 9) return null;
 
-  const floors = rng.int(2, 3);
+  // 2~4층. 좌표 해시로 한 층을 더 얹는다 — `rng.int(2,3)` 만 쓰면 15채 중
+  // 중앙값이 계속 11.5m 에 몰려 "명품관은 다 똑같이 생겼다" 가 된다.
+  // 난수를 더 뽑지 않는 이유는 늘 같다 (status.md 2.1 규칙 6).
+  const floors = rng.int(2, 3) + (hash2(Math.round(r.x0), Math.round(r.z0) + 313) > 0.55 ? 1 : 0);
   const FH = 5.2; // 층고가 높다. 높은 천장이 그 자체로 과시다
   const H = floors * FH;
 
@@ -463,9 +476,43 @@ function blackMarket(b, r, rng, mats, signs, pools) {
   b.sphere(0.16, [lx, Y + 3.0, lz], neon(NEON.amber));
   pools.push({ kind: 'floor', x: lx, y: Y + 0.05, z: lz, rx: 5.0, rz: 5.0, tint: rgb01(NEON.amber, 0.4) });
 
+  // ── 위에 남은 골조 (사용자 지적) ─────────────────────────────────────────
+  //
+  // "암시장(얘도 어딨는지도 모르겠고)"
+  //
+  // 지하상가와 같은 문제다. 제일 높은 곳이 4.6m 라 옆 건물에 완전히 묻혔다.
+  //
+  // 다만 해법은 반대여야 한다 — 암거래는 **간판을 안 다는 것**이 정체이므로
+  // 탑을 세우면 그 순간 암거래가 아니다. 대신 **짓다 만 골조**를 올린다.
+  // 3기에 공사가 멈춘 자리에 천막이 들어간 것이라는 설정과도 맞고
+  // (slum.js 머리말과 같은 내력), 뼈대만 선 실루엣은 밤하늘에 검게 뜨므로
+  // "저기 뭔가 있는데 불이 안 켜져 있다" 가 된다. 그게 정확히 이 유형이다.
+  const hz = hash2(Math.round(r.x0), Math.round(r.z0) + 517);
+  let apex = Y + 4.6;
+  if (hz > 0.3) {
+    const fl = 2 + Math.floor(hz * 4); // 2~5층
+    const FH = 3.6;
+    const cols = Math.max(2, Math.round(s.w / 8));
+    const rows2 = Math.max(2, Math.round(s.d / 8));
+    apex = Y + 4.6 + fl * FH;
+    for (let i = 0; i <= cols; i++) {
+      for (let j = 0; j <= rows2; j++) {
+        const px = r.x0 + ((r.x1 - r.x0) * i) / cols;
+        const pz = r.z0 + ((r.z1 - r.z0) * j) / rows2;
+        b.box(0.45, fl * FH, 0.45, [px, Y + 4.6 + (fl * FH) / 2, pz], mats.frameConcMat);
+      }
+    }
+    for (let k = 1; k <= fl; k++) {
+      // 위층일수록 덜 지어졌다 — 공사가 위에서 멈췄다
+      const done = k < fl ? 1 : 0.4 + hz * 0.4;
+      b.box(s.w * done, 0.3, s.d * done,
+        [c.x - (s.w * (1 - done)) / 2, Y + 4.6 + k * FH, c.z], mats.frameConcMat);
+    }
+  }
+
   // 간판은 안 단다. 광고하는 곳이 아니다.
-  tally('암거래', r, Y + 4.6);
-  return { top: Y + 4.6 };
+  tally('암거래', r, apex);
+  return { top: apex };
 }
 
 // ── 5) 지하상가 진입구 ─────────────────────────────────────────────────────
@@ -571,8 +618,41 @@ function underpass(b, r, rng, mats, signs, pools) {
     b.sphere(0.16, [px, Y + 4.0, pz], neon(NEON.cool));
     pools.push({ kind: 'floor', x: px, y: Y + 0.05, z: pz, rx: 4.2, rz: 4.2, tint: rgb01(NEON.cool, 0.3) });
   }
-  tally('지하상가', r, Y + 3.9);
-  return { top: Y + 3.9 };
+  // ── 간판탑 (사용자 지적) ─────────────────────────────────────────────────
+  //
+  // "지하상가(얘는 어딨는지도 모르겠고)"
+  //
+  // 당연하다. 이 유형의 제일 높은 곳이 **3.9m** 였다. 주위 적층 상가가
+  // 10~20m 니까 두 블록만 떨어져도 안 보인다. 개수를 세면 20채인데
+  // 화면에서는 0채인 것과 같다.
+  //
+  // 실제 지하상가 입구에는 **탑**이 선다. 지하가 안 보이니까 지상에
+  // 표시를 세우는 것이고, 그 탑에 층별 안내가 붙는다. 형태가 기능에서
+  // 바로 나오는 경우다.
+  const MAST = 11 + hash2(Math.round(r.x0), Math.round(r.z0) + 71) * 11; // 11~22m
+  const mx = alongX ? c.x + ML * 0.5 + 1.6 : c.x;
+  const mz = alongX ? c.z : c.z + ML * 0.5 + 1.6;
+  b.box(1.3, MAST, 1.3, [mx, Y + MAST / 2, mz], mats.frameMat);
+  // 층별 안내판 — 아래에서 위로. 이것이 "지하가 여러 층" 을 말한다
+  let my = Y + 2.4;
+  let mk = 0;
+  while (my + 1.5 < Y + MAST - 0.6) {
+    const hh = hash2(Math.round(r.x0) + mk * 23, Math.round(r.z0) + mk * 7);
+    const HUES = [NEON.cyan, NEON.amber, NEON.magenta, NEON.green];
+    for (const side of [-1, 1]) {
+      b.box(alongX ? 0.12 : 2.4, 1.2, alongX ? 2.4 : 0.12,
+        [mx + (alongX ? side * 0.72 : 0), my + 0.6, mz + (alongX ? 0 : side * 0.72)],
+        hh < 0.84 ? neonSoft(HUES[Math.floor(hh * 613) % HUES.length]) : mats.shutterMat);
+    }
+    my += 1.65;
+    mk++;
+  }
+  // 꼭대기 등 — 멀리서 보이는 것은 결국 이것 하나다
+  b.sphere(0.4, [mx, Y + MAST + 0.5, mz], neon(NEON.amber));
+  pools.push({ kind: 'floor', x: mx, y: Y + 0.05, z: mz, rx: 5.0, rz: 5.0, tint: rgb01(NEON.amber, 0.4) });
+
+  tally('지하상가', r, Y + MAST + 0.9);
+  return { top: Y + MAST + 0.9 };
 }
 
 // ── 어느 번화가인가 (사용자 지시) ──────────────────────────────────────────

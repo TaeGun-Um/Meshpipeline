@@ -45,6 +45,7 @@ import { PANEL_TILE } from './layout.js';
 import { entranceBay } from './shopfront.js';
 import { claim, TIER } from './siteplan.js';
 import { hash2 } from '../../core/textures.js';
+import { marketTallyAdd } from './market.js';
 
 // 상가 한 층. 층고가 낮다 — 사무실(3.6m)이 아니라 가게라 3.1m 면 충분하고,
 // 낮아야 같은 높이에 층이 더 들어가 "쌓였다" 는 인상이 난다.
@@ -222,15 +223,205 @@ function rooftopShacks(b, r, top, rng, mats) {
   b.add(facePlane(shrink(r, 0.2), top, 0.9, 'nx', null, 0), mats.pipeMat);
 }
 
+// ── 상부 파사드 ────────────────────────────────────────────────────────────
+//
+// 적층 상가의 **위층**. 아래 3~6층과는 다르게 그린다.
+//
+// ── 왜 다른가 ──────────────────────────────────────────────────────────────
+// 눈높이에서 보이는 1~4층은 벽감·차양·좌판까지 보이지만, 그 위는 거리에서
+// 올려다보는 것이라 **띠와 불빛으로만 읽힌다.** 12층 전부에 벽감을 파면
+// 안 보이는 곳에 비용을 쓰는 것이고, 실제 잡거빌딩도 위로 갈수록
+// 창과 간판만 남는다.
+//
+// ── 난수를 안 쓴다 ─────────────────────────────────────────────────────────
+// 층을 더하면 그만큼 `rng` 를 더 뽑게 되고, 그러면 **뒤에 오는 도시 전체가
+// 다시 뽑힌다** (docs/status.md 2.1 규칙 6). 그래서 위층은 좌표 해시로만
+// 그린다 — 같은 자리는 늘 같은 창이 켜지고, 아래층 난수 소비는 그대로다.
+// 덕분에 이 변경은 **상업 구역만** 바꾼다. 기업·공업·부둣가 뷰는 픽셀 동일.
+// ── 왜 창 격자로 그리면 안 되는가 ──────────────────────────────────────────
+// 처음엔 층마다 균일한 칸을 늘어놓았다. 높이는 생겼는데 **주거 슬래브와
+// 똑같이 보였다** — 규칙적인 창 격자는 아파트의 문법이다. 잡거빌딩은
+// 층마다 다른 가게가 세들어 있어서 파사드가 층마다 어긋나야 하고, 창보다
+// **가로 간판 띠**가 면을 더 많이 덮는다.
+//
+// 그래서 층을 두 가지로 섞는다.
+//   띠  가로로 길게 한 장. 그 층을 통째로 쓰는 가게의 간판이다
+//   칸  좁은 칸 여럿. 여러 가게가 나눠 쓰는 층이다
+// 그리고 칸 폭을 층마다 바꾼다. 같은 폭으로 맞추면 다시 격자가 된다.
+function upperFacade(b, rect, y0, n, mats, seed) {
+  for (const side of SIDES) {
+    const f = frameOf(rect, side);
+    if (f.w < 4) continue;
+    for (let fl = 0; fl < n; fl++) {
+      const y = y0 + fl * SHOP_FLOOR;
+      const hf = hash2(Math.round(rect.x0) * 31 + fl * 11 + seed, Math.round(rect.z0) * 17 + fl);
+      // 층 슬래브 — 이 선이 없으면 벽 한 장이다
+      const [lx, lz] = f.at(0, 0.1);
+      const [lw, ld] = f.size(f.w, 0.18);
+      b.box(lw, 0.22, ld, [lx, y + 0.11, lz], mats.frameMat);
+
+      // 위로 갈수록 빈다. 꼭대기는 거의 어둡다 — 그 기울기가 높이를 만든다
+      const onRate = 0.68 - (fl / Math.max(1, n)) * 0.38;
+
+      if (hf < 0.34) {
+        // ── 가로 간판 띠 ────────────────────────────────────────────────
+        // 면을 거의 다 덮고 앞으로 조금 나온다. 이 한 장이 "가게가 통째로
+        // 들어 있다" 를 말한다.
+        const bw = f.w * (0.74 + hf * 0.6);
+        const [bx, bz] = f.at((hf - 0.17) * (f.w - bw) * 0.8, 0.26);
+        const [bdx, bdz] = f.size(bw, 0.34);
+        const on = hf < onRate * 0.62;
+        b.add(
+          autoBox(bdx, SHOP_FLOOR * 0.58, bdz, [bx, y + SHOP_FLOOR * 0.55, bz], 0.03),
+          on
+            ? mats.shopfrontBrightMats[Math.floor(hf * 997) % mats.shopfrontBrightMats.length]
+            : mats.shutterMat
+        );
+        // 띠를 두르는 테 — 붙인 물건으로 읽히게
+        const [fdx, fdz] = f.size(bw + 0.3, 0.12);
+        b.box(fdx, 0.16, fdz, [bx, y + SHOP_FLOOR * 0.85, bz], mats.metalMat);
+        b.box(fdx, 0.16, fdz, [bx, y + SHOP_FLOOR * 0.25, bz], mats.metalMat);
+        continue;
+      }
+
+      // ── 칸 여럿 ────────────────────────────────────────────────────────
+      // 칸 폭을 층마다 바꾼다 (2.4~4.6m). 이것이 격자를 깬다.
+      const cw0 = 2.4 + hf * 2.2;
+      const cells = Math.max(2, Math.round(f.w / cw0));
+      const cw = f.w / cells;
+      for (let i = 0; i < cells; i++) {
+        const u = -f.w / 2 + cw * (i + 0.5);
+        const h = hash2(Math.round(rect.x0) * 71 + i * 7 + fl * 3, Math.round(rect.z0) * 13 + seed);
+        const [cx2, cz2] = f.at(u, 0.07);
+        const [cw2, cd2] = f.size(cw * 0.82, 0.1);
+        if (h < onRate) {
+          b.add(
+            autoBox(cw2, SHOP_FLOOR * 0.52, cd2, [cx2, y + SHOP_FLOOR * 0.52, cz2], 0.02),
+            h < onRate * 0.45
+              ? mats.shopfrontBrightMats[Math.floor(h * 997) % mats.shopfrontBrightMats.length]
+              : mats.shopfrontMats[Math.floor(h * 691) % mats.shopfrontMats.length]
+          );
+        } else {
+          b.box(cw2, SHOP_FLOOR * 0.52, cd2, [cx2, y + SHOP_FLOOR * 0.52, cz2], mats.shutterMat);
+        }
+      }
+    }
+  }
+}
+
+// 세로 간판 기둥 — 잡거빌딩의 정체다.
+// 가게가 위로 쌓이면 **간판도 위로 쌓이고**, 그것이 한 줄로 이어져 기둥이 된다.
+// 이 실루엣 하나로 "높은 상가" 가 "높은 사무실" 과 갈린다.
+function signColumn(b, rect, side, y0, top, mats, seed) {
+  const f = frameOf(rect, side);
+  if (f.w < 6) return;
+  // 폭이 있어야 멀리서 보인다. 2.4m 짜리는 40m 위에서 실 한 오라기였다.
+  const W = Math.min(3.4, f.w * 0.3);
+  const OUT = 1.15; // 벽에서 얼마나 나오나. 나와야 옆에서도 보인다
+  const u = (hash2(Math.round(rect.x0) + seed, Math.round(rect.z0)) - 0.5) * (f.w - W - 1.2);
+
+  // 뒷판 — 간판이 붙는 검은 판. 이게 있어야 칸칸이 끊긴 것으로 읽힌다
+  const [kx, kz] = f.at(u, OUT * 0.42);
+  const [kw, kd] = f.size(W + 0.24, OUT * 0.84);
+  b.box(kw, top - y0, kd, [kx, (y0 + top) / 2, kz], mats.frameMat);
+
+  let y = y0;
+  let k = 0;
+  const HUES = [NEON.magenta, NEON.cyan, NEON.amber, NEON.violet, NEON.pink];
+  while (y + 1.6 < top) {
+    const h = 1.6 + hash2(Math.round(rect.x0) + k * 17 + seed, Math.round(rect.z0) + k * 5) * 1.5;
+    if (y + h > top) break;
+    const hh = hash2(Math.round(rect.z0) + k * 31 + seed, Math.round(rect.x0));
+    // 간판 판 — 뒷판보다 조금 더 앞에. 양면이라 어느 쪽에서 걸어와도 보인다
+    for (const d of [OUT + 0.06, -0.02]) {
+      const [px, pz] = f.at(u, d);
+      const [pw, pd] = f.size(W, 0.1);
+      b.box(pw, h * 0.86, pd, [px, y + h / 2, pz],
+        hh < 0.82 ? neonSoft(HUES[Math.floor(hh * 613) % HUES.length]) : mats.shutterMat);
+    }
+    y += h + 0.3;
+    k++;
+  }
+  // 기둥을 벽에 매다는 브래킷 — 서너 군데
+  for (let i = 0; i <= 3; i++) {
+    const by = y0 + ((top - y0) * i) / 3;
+    const [bx, bz] = f.at(u, OUT * 0.5);
+    const [bw, bd] = f.size(0.14, OUT);
+    b.box(bw, 0.14, bd, [bx, by, bz], mats.metalMat);
+  }
+}
+
 // ── 한 동 ──────────────────────────────────────────────────────────────────
 
 export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []) {
-  // 3~6층. 낮은 것이 요점이다 — 계획된 상업지구가 아니라 증축이라 높이 못 올린다.
+  // 3~6층. 이 아래층이 눈높이에서 보이는 부분이다.
   const floors = rng.int(3, 6);
   const top = floors * SHOP_FLOOR;
 
   // 덩치. 세트백 없이 대지를 꽉 채운다. 물러설 여유가 없었다.
   b.add(rectBox(r, 0, top, PANEL_TILE), mats.tileWallMat);
+
+  // ── 위로 무엇이 더 올라가는가 (사용자 지적) ──────────────────────────────
+  //
+  // "번화가 건물이 전부 낮고 똑같다 / 왜 번화가 건물도 높을 수 있음"
+  //
+  // 맞았다. 실측하니 번화가에서 제일 높은 것이 22m 였다. 그런데 이 도시의
+  // 3기 설정은 "사람이 감당 못 하게 늘어 상가가 위로 쌓였다" 이다.
+  // 위로 쌓였다면서 전부 6층에서 멈춰 있으면 내력과 형태가 어긋난다.
+  //
+  // 레퍼런스(신주쿠·재팬타운)의 번화가는 **낮은 것과 높은 것이 섞여** 있다.
+  // 잡거빌딩은 좁은 땅에 12층까지 올라가고, 그 좁고 높은 실루엣에 간판이
+  // 위까지 붙는다. 그게 사무실 타워와 갈리는 지점이다.
+  //
+  // 그래서 매싱을 셋으로 가른다. **좌표 해시로 정한다** — 난수를 쓰면 층이
+  // 늘어난 만큼 난수를 더 뽑아 도시 전체가 다시 뽑힌다 (2.1 규칙 6).
+  //
+  //   통짜    낮고 넓다. 지금까지의 모습. 기준
+  //   세트백  아래는 꽉 차고 위는 물러선다. 증축이 눈에 보인다
+  //   잡거타워 좁은 땅에 높이 선다. 번화가의 수직 요소
+  const sz = rectSize(r);
+  const narrow = Math.min(sz.w, sz.d);
+  const hz = hash2(Math.round(r.x0), Math.round(r.z0));
+  const hz2 = hash2(Math.round(r.z0), Math.round(r.x0) + 977);
+
+  let form = 'slab';
+  // 타워는 **좁은 땅에만** 선다. 넓은 땅에 세우면 그냥 사무실 빌딩이다.
+  if (narrow <= 26 && hz > 0.66) form = 'tower';
+  else if (hz > 0.34) form = 'setback';
+
+  let crown = { rect: r, top }; // 옥상 잡동사니가 앉을 자리
+  const seed = Math.round(r.x0 + r.z0) & 1023;
+
+  if (form === 'setback') {
+    // 한 겹 물러선 상부. 2~5층 더.
+    const back = 2.2 + hz2 * 3.4;
+    const up = shrink(r, back);
+    const n = 2 + Math.floor(hz2 * 4);
+    const uTop = top + n * SHOP_FLOOR;
+    b.add(rectBox(up, top, n * SHOP_FLOOR, PANEL_TILE), mats.tileWallMat);
+    upperFacade(b, up, top + 0.2, n, mats, seed);
+    // 물러선 만큼 생긴 옥상 — 아래 지붕에 난간을 두른다
+    b.add(facePlane(shrink(r, 0.2), top, 0.8, 'pz', null, 0), mats.pipeMat);
+    b.add(facePlane(shrink(r, 0.2), top, 0.8, 'nx', null, 0), mats.pipeMat);
+    crown = { rect: up, top: uTop };
+  } else if (form === 'tower') {
+    // 기단 위에 좁은 축. 폭은 짧은 변의 62~76% — 좁아야 잡거빌딩이다.
+    const inset = narrow * (0.12 + hz2 * 0.07);
+    const shaft = shrink(r, inset);
+    const n = 6 + Math.floor(hz2 * 8); // 6~13층 더 → 총 28~59m
+    const uTop = top + n * SHOP_FLOOR;
+    b.add(rectBox(shaft, top, n * SHOP_FLOOR, PANEL_TILE), mats.tileWallMat);
+    upperFacade(b, shaft, top + 0.2, n, mats, seed);
+    // 세로 간판 기둥 — 길에 면한 면에만. 이게 잡거빌딩의 정체다
+    for (const side of SIDES) {
+      if (!faces[side]) continue;
+      signColumn(b, shaft, side, top + 1.0, uTop - 1.0, mats, seed + SIDES.indexOf(side) * 41);
+    }
+    // 기단 옥상 난간
+    b.add(facePlane(shrink(r, 0.2), top, 0.8, 'pz', null, 0), mats.pipeMat);
+    b.add(facePlane(shrink(r, 0.2), top, 0.8, 'nz', null, 0), mats.pipeMat);
+    crown = { rect: shaft, top: uTop };
+  }
 
   const litBase = D.shopLit ?? 0.9;
   // 1층에서 닫힌 칸 비율. 위층은 여기에 층당 0.11 씩 더한다.
@@ -321,10 +512,12 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
     }
 
     // 3) 옥상 대형 광고 — 벽보다 크다. 이게 스케일의 폭력을 만든다.
+    // **실제 꼭대기**에 올린다. `top`(기단 지붕)에 올리면 타워 몸통 중턱에
+    // 광고판이 박힌다.
     if (rng.chance(0.4 * detail)) {
       signs.push({
-        kind: 'mega', rect: r, side,
-        y: top + rng.range(1, 4),
+        kind: 'mega', rect: crown.rect, side,
+        y: crown.top + rng.range(1, 4),
         w: f.w * rng.range(0.7, 1.0),
         h: rng.range(6, 12),
         scheme: rng.int(0, 5),
@@ -332,6 +525,10 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
     }
   }
 
-  rooftopShacks(b, r, top, rng, mats);
-  return { top, floors };
+  // 옥상 잡동사니는 **실제 꼭대기**에 앉는다. 대지 사각형에 앉히면 타워
+  // 옆 허공에 판잣집이 뜬다 — 기업 크라운에서 이미 한 번 낸 실수다.
+  rooftopShacks(b, crown.rect, crown.top, rng, mats);
+  marketTallyAdd(form === 'tower' ? '잡거타워' : form === 'setback' ? '세트백상가' : '적층상가',
+    r, crown.top);
+  return { top: crown.top, floors };
 }

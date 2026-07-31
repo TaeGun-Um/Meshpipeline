@@ -41,7 +41,7 @@ import {
   blockIndexAt,
 } from './layout.js';
 import { districtAt, byZone } from './district.js';
-import { roadAt } from './layout.js';
+import { roadAt, spanInRoad } from './layout.js';
 
 // 구역별 홀로그램 밀도. 0 이면 그 구역엔 하나도 없다.
 // byZone 이 강제한다 (district.byZone 머리말). 0 이 **의도한 0** 인지
@@ -263,7 +263,13 @@ export function createHolo(scene, rng, mats, anchors) {
         // 차도 위에 뜨면 물러난다. 인도 폭으로 계산하면 대지 병합 뒤로는
         // 필지 가장자리와 도로 사이 거리가 일정하지 않아 어긋난다 —
         // **도로가 어디인지는 roads() 가 안다.**
-        if (roadAt(mx) || roadAt(mz)) continue;
+        //
+        // 그런데 점 하나로 물으면 부족하다. 표식은 한 변 최대 1.1m 짜리
+        // 마름모라 반쪽이 0.78m 뻗는다 — 중심이 인도 위여도 몸통이 차도로
+        // 나간다. 실제로 그렇게 0.47m 나갔고 점 검사는 통과시켰다.
+        // **폭이 있는 것은 폭으로 묻는다** (layout.spanInRoad).
+        const MR = 0.85; // 표식 반폭 상한 (s 1.1 을 45도 돌린 것) + 여유
+        if (spanInRoad(mx - MR, mx + MR) || spanInRoad(mz - MR, mz + MR)) continue;
         marker(b, mx, CURB_HEIGHT + rng.range(4.5, 7.5), mz, rng);
         markers++;
       }
