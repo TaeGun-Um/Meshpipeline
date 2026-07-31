@@ -293,22 +293,25 @@ function overhead(b, a, rng, mats, halfW = ALLEY_WIDTH / 2) {
       b.add(tubeBetween(at(u0), at(u1), 0.025, 4), mats.cableMat);
     }
 
-    // 빨래 — 사람이 사는 흔적. 몇 줄에만 넌다
+    // ── 빨래를 뺐다 (사용자 지시) ────────────────────────────────────────
+    // "골목 생기는곳마다 저 공중에 부자연스럽게 떠있는 네모 형광이랑
+    //  빨래건조대좀 없에봐"
+    //
+    // 의도는 "사람이 사는 흔적" 이었는데 화면에서는 **공중에 뜬 색 사각형**
+    // 이었다. 이유는 매다는 줄이 반지름 2.5cm 라 몇 미터만 떨어져도 안
+    // 보이기 때문이다 — 걸린 것만 남고 거는 것이 사라진 것이다.
+    //
+    // 슬럼 골조와 주거 발코니에는 빨래가 그대로 있다. 거기는 **난간에
+    // 붙어 있어서** 무엇에 걸렸는지가 보인다. 같은 소품이라도 매달 곳이
+    // 안 보이면 놓지 않는다.
+    //
+    // 난수는 그대로 소비한다 — 건너뛰면 뒤의 모든 생성이 밀린다.
     if (rng.chance(0.42)) {
       const m = rng.int(2, 5);
       for (let k = 0; k < m; k++) {
-        const u = -halfW * 0.7 + (1.4 * halfW * (k + 0.5)) / m;
-        const w = rng.range(0.35, 0.7);
-        const h = rng.range(0.5, 1.1);
-        const sag2 = (1 - (u / halfW) ** 2) * sag;
-        const cl = new THREE.PlaneGeometry(w, h);
-        if (a.alongX) cl.rotateY(Math.PI / 2);
-        cl.translate(
-          a.alongX ? px : px + u,
-          y - sag2 - h / 2 - 0.03,
-          a.alongX ? pz + u : pz
-        );
-        b.add(cl, mats.laundryMats[rng.int(0, mats.laundryMats.length - 1)]);
+        rng.range(0.35, 0.7);
+        rng.range(0.5, 1.1);
+        rng.int(0, mats.laundryMats.length - 1);
       }
     }
   }

@@ -72,7 +72,23 @@ export const LANDMARK_BLOCKS = [
   { ix: 7, iz: 1, kind: 'hq' },    // 기업 구역 안쪽
   { ix: 10, iz: 3, kind: 'twin' }, // 같은 구역 반대쪽 끝 (약 300m 떨어뜨린다)
   { ix: 5, iz: 4, kind: 'depot' }, // 안쪽 번화가 — 기업과 맞닿은 모서리
-  { ix: 2, iz: 6, kind: 'gate' },  // 안쪽 번화가 — 기업에서 가장 먼 쪽
+  // ── 시장 대문을 옮겼다 (사용자 지시) ────────────────────────────────────
+  // "시장 문 위치는 너가 도시 구역 상태 살펴보고 재배치해봐"
+  //
+  // (2,6) 은 안쪽 번화가 **한복판**이었다. 문 둘이 상업 블록과 상업 블록
+  // 사이를 마주 보고 서 있었으니, "여기부터 시장" 을 선언할 상대가 없었다.
+  // 문은 크기로 랜드마크가 되는 것이 아니라 **경계에 서서** 랜드마크가 된다.
+  //
+  // 지도를 보면 안쪽 번화가(ix 1~5 · iz 4~7)의 이웃은 이렇다.
+  //   iz 0~3       주거   <- 사람이 여기서 온다
+  //   iz 8~10      공업       일하러 가는 쪽이지 시장 보러 오는 쪽이 아니다
+  //   ix 6~7       주거       북쪽. 다만 그쪽은 기업 백화점이 맡는다
+  //   ix 0         부둣가     사람이 안 지나간다
+  //
+  // 그래서 **주거와 맞닿은 열(iz 4)** 에 세우고, 관통 축을 Z 로 돌려
+  // 문 하나가 주거(iz 3)를, 다른 하나가 번화가 안쪽(iz 5)을 보게 한다.
+  // 백화점이 iz 4 의 북쪽 끝(ix 5)이므로 대문은 남쪽으로 떨어뜨린다.
+  { ix: 3, iz: 4, kind: 'gate', axis: 'z' },
   { ix: 9, iz: 6, kind: 'neon' },  // 북쪽 번화가 한복판
   { ix: 10, iz: 8, kind: 'hall' }, // 북쪽 번화가 — 슬럼과 맞닿은 쪽
 ];
@@ -431,70 +447,109 @@ function depot(b, cx, cz, mats, pools) {
 // 블록 하나 크기로 키운 것이다. 그리고 그 입구에 **문**을 세운다.
 // 문은 기능이 없다. 오직 "여기부터 다른 곳" 을 선언하려고 있는 구조물이고,
 // 그래서 랜드마크의 정의에 가장 가깝다.
-function marketGate(b, cx, cz, mats, pools) {
+function marketGate(b, cx, cz, mats, pools, lm) {
   const Y = CURB_HEIGHT;
   const R = blockRect(0, 0); // 크기만 쓴다
   const s = rectSize(R);
-  const LEN = s.w * 0.94;   // 관통 방향 (X)
+  const LEN = s.w * 0.94;   // 관통 방향 길이
   const WID = 26;           // 홀 폭
   const H = 17;             // 홀 높이
 
+  // ── 어느 축으로 관통하는가 (사용자 지시로 추가) ──────────────────────────
+  // "시장 문 위치는 너가 도시 구역 상태 살펴보고 재배치해봐"
+  //
+  // 문은 "여기부터 다른 곳" 을 선언하는 구조물이다. 그러려면 **사람이
+  // 들어오는 쪽**을 마주 봐야 하는데, 관통 축을 X 로 고정해 뒀으므로
+  // 블록을 어디로 옮기든 문은 늘 같은 방향을 봤다.
+  //
+  // 축을 배치와 함께 정한다 (LANDMARK_BLOCKS 의 axis).
+  //   a = 관통 방향, c = 가로지르는 방향. 아래는 전부 (a, c) 로 쓴다.
+  // 조각마다 손으로 x/z 를 갈라 쓰면 반드시 어딘가 틀린다 — 원형 구덩이에서
+  // 이미 한 번 축을 반대로 알았다 (yawBox 머리말).
+  const AX = (lm && lm.axis === 'z');
+  const P = (a, c) => (AX ? [cx + c, cz + a] : [cx + a, cz + c]);
+  const S2 = (da, dc) => (AX ? [dc, da] : [da, dc]);
+  const RC = (a0, a1, c0, c1) => {
+    const [p0x, p0z] = P(a0, c0);
+    const [p1x, p1z] = P(a1, c1);
+    return {
+      x0: Math.min(p0x, p1x), x1: Math.max(p0x, p1x),
+      z0: Math.min(p0z, p1z), z1: Math.max(p0z, p1z),
+    };
+  };
+
   // 바닥 — 홀 안은 포장이 다르다
-  b.add(upPlane(LEN, WID, [cx, Y + 0.04, cz], [6, 3]), mats.tileWallMat);
+  {
+    const [gw, gd] = S2(LEN, WID);
+    const [gx, gz] = P(0, 0);
+    b.add(upPlane(gw, gd, [gx, Y + 0.04, gz], [6, 3]), mats.tileWallMat);
+  }
 
   // 양옆 벽 — 안쪽에 점포가 붙는다
   const T = 5.5;
   for (const sg of [-1, 1]) {
-    const wr = {
-      x0: cx - LEN / 2, x1: cx + LEN / 2,
-      z0: cz + sg * (WID / 2), z1: cz + sg * (WID / 2 + T),
-    };
-    if (wr.z0 > wr.z1) { const t = wr.z0; wr.z0 = wr.z1; wr.z1 = t; }
-    b.add(rectBox(wr, Y, H, PANEL_TILE), mats.tileWallMat);
+    b.add(rectBox(RC(-LEN / 2, LEN / 2, sg * (WID / 2), sg * (WID / 2 + T)), Y, H, PANEL_TILE),
+      mats.tileWallMat);
     // 점포 띠 — 안을 향해 발광. 손으로 놓으므로 간격이 정확하다
     const bays = 14;
     for (let i = 0; i < bays; i++) {
-      const px = cx - LEN / 2 + (LEN / bays) * (i + 0.5);
-      const pz = cz + sg * (WID / 2 - 0.12);
+      const pa = -LEN / 2 + (LEN / bays) * (i + 0.5);
+      const pc = sg * (WID / 2 - 0.12);
+      const [px, pz] = P(pa, pc);
+      const [w1, d1] = S2(LEN / bays - 0.7, 0.16);
       b.add(
-        autoBox(LEN / bays - 0.7, 3.1, 0.16, [px, Y + 2.0, pz], 0.02),
+        autoBox(w1, 3.1, d1, [px, Y + 2.0, pz], 0.02),
         i % 5 === 3 ? mats.shutterMat
           : mats.shopfrontBrightMats[i % mats.shopfrontBrightMats.length]
       );
       // 층 간판
-      b.box(LEN / bays - 1.4, 0.9, 0.14, [px, Y + 4.5, pz],
+      const [w2, d2] = S2(LEN / bays - 1.4, 0.14);
+      b.box(w2, 0.9, d2, [px, Y + 4.5, pz],
         neonSoft([NEON.magenta, NEON.cyan, NEON.amber, NEON.pink][i % 4]));
       // 2층 — 홀이 높으니 위에도 가게가 있다
+      const [w3, d3] = S2(LEN / bays - 0.9, 0.14);
       b.add(
-        autoBox(LEN / bays - 0.9, 2.6, 0.14, [px, Y + 8.2, pz], 0.02),
+        autoBox(w3, 2.6, d3, [px, Y + 8.2, pz], 0.02),
         i % 3 === 1 ? mats.shutterMat : mats.shopfrontMats[i % mats.shopfrontMats.length]
       );
     }
     // 2층 복도
-    b.box(LEN, 0.22, 2.2, [cx, Y + 6.6, cz + sg * (WID / 2 - 1.1)], mats.grateMat);
-    for (const hy of [0.55, 1.05]) {
-      b.box(LEN, 0.07, 0.07, [cx, Y + 6.6 + hy, cz + sg * (WID / 2 - 2.2)], mats.pipeMat);
+    {
+      const [cxp, czp] = P(0, sg * (WID / 2 - 1.1));
+      const [w4, d4] = S2(LEN, 2.2);
+      b.box(w4, 0.22, d4, [cxp, Y + 6.6, czp], mats.grateMat);
+      const [rxp, rzp] = P(0, sg * (WID / 2 - 2.2));
+      const [w5, d5] = S2(LEN, 0.07);
+      for (const hy of [0.55, 1.05]) b.box(w5, 0.07, d5, [rxp, Y + 6.6 + hy, rzp], mats.pipeMat);
     }
   }
 
   // 지붕 — 아치를 트러스 셋으로 근사한다. 이 지붕이 아케이드의 주인공이다
   const arches = 13;
   for (let i = 0; i <= arches; i++) {
-    const px = cx - LEN / 2 + (LEN / arches) * i;
-    b.add(tubeBetween([px, Y + H, cz - WID / 2], [px, Y + H + 4.4, cz], 0.22, 6), mats.metalMat);
-    b.add(tubeBetween([px, Y + H + 4.4, cz], [px, Y + H, cz + WID / 2], 0.22, 6), mats.metalMat);
+    const pa = -LEN / 2 + (LEN / arches) * i;
+    const A = P(pa, -WID / 2);
+    const M = P(pa, 0);
+    const B2 = P(pa, WID / 2);
+    b.add(tubeBetween([A[0], Y + H, A[1]], [M[0], Y + H + 4.4, M[1]], 0.22, 6), mats.metalMat);
+    b.add(tubeBetween([M[0], Y + H + 4.4, M[1]], [B2[0], Y + H, B2[1]], 0.22, 6), mats.metalMat);
     // 채광 지붕판
     for (const sg of [-1, 1]) {
-      const g = upPlane(LEN / arches, WID / 2, [px + LEN / arches / 2, Y + H + 2.2, cz + sg * WID / 4], [1, 1]);
-      b.add(g, mats.deckUnderMat);
+      const [gx, gz] = P(pa + LEN / arches / 2, sg * WID / 4);
+      const [gw, gd] = S2(LEN / arches, WID / 2);
+      b.add(upPlane(gw, gd, [gx, Y + H + 2.2, gz], [1, 1]), mats.deckUnderMat);
     }
   }
   // 마룻대
-  b.add(tubeBetween([cx - LEN / 2, Y + H + 4.4, cz], [cx + LEN / 2, Y + H + 4.4, cz], 0.3, 8), mats.metalMat);
+  {
+    const A = P(-LEN / 2, 0);
+    const B2 = P(LEN / 2, 0);
+    b.add(tubeBetween([A[0], Y + H + 4.4, A[1]], [B2[0], Y + H + 4.4, B2[1]], 0.3, 8), mats.metalMat);
+  }
   // 매달린 등롱 — 홀 안이 밖보다 밝아야 한다
   for (let i = 0; i < 22; i++) {
-    const px = cx - LEN / 2 + (LEN / 22) * (i + 0.5);
-    const pz = cz + (i % 3 - 1) * 6.5;
+    const pa = -LEN / 2 + (LEN / 22) * (i + 0.5);
+    const [px, pz] = P(pa, (i % 3 - 1) * 6.5);
     b.add(tubeBetween([px, Y + H + 3.4, pz], [px, Y + 9.2, pz], 0.03, 4), mats.cableMat);
     b.cylinder(0.55, 0.55, 1.1, [px, Y + 8.6, pz], neon(NEON.warm), 10);
     pools.push({ kind: 'floor', x: px, y: Y + 0.06, z: pz, rx: 6.5, rz: 6.5,
@@ -504,30 +559,47 @@ function marketGate(b, cx, cz, mats, pools) {
   // ── 대문 — 양 끝에 하나씩 ────────────────────────────────────────────────
   // 26m. 홀보다 훨씬 높다. 문이 건물보다 커야 문으로 읽힌다.
   for (const sg of [-1, 1]) {
-    const gx = cx + sg * (LEN / 2 + 1.5);
+    const ga = sg * (LEN / 2 + 1.5);
     const GH = 26;
     const GW = WID + 13;
     // 기둥 둘
-    for (const sz of [-1, 1]) {
-      b.box(3.4, GH, 4.6, [gx, Y + GH / 2, cz + sz * GW / 2], mats.frameConcMat);
+    for (const sc of [-1, 1]) {
+      const [px, pz] = P(ga, sc * GW / 2);
+      const [w1, d1] = S2(3.4, 4.6);
+      b.box(w1, GH, d1, [px, Y + GH / 2, pz], mats.frameConcMat);
       // 기둥 발광 띠 — 세로로 길게
-      b.box(0.5, GH - 4, 0.5, [gx + sg * 2.0, Y + GH / 2, cz + sz * (GW / 2 - 2.5)],
-        neon(NEON.amber));
+      const [lx, lz] = P(ga + sg * 2.0, sc * (GW / 2 - 2.5));
+      b.box(0.5, GH - 4, 0.5, [lx, Y + GH / 2, lz], neon(NEON.amber));
     }
     // 상인방 — 두껍다
-    b.box(5.2, 5.4, GW + 4.6, [gx, Y + GH - 2.7, cz], mats.frameConcMat);
+    {
+      const [px, pz] = P(ga, 0);
+      const [w2, d2] = S2(5.2, GW + 4.6);
+      b.box(w2, 5.4, d2, [px, Y + GH - 2.7, pz], mats.frameConcMat);
+    }
     // 현판 — 문 하나에 하나. 이 도시에서 가장 큰 단일 간판
-    b.box(0.5, 4.0, GW - 2, [gx + sg * 2.7, Y + GH - 2.9, cz], neonSoft(NEON.magenta));
+    {
+      const [px, pz] = P(ga + sg * 2.7, 0);
+      const [w3, d3] = S2(0.5, GW - 2);
+      b.box(w3, 4.0, d3, [px, Y + GH - 2.9, pz], neonSoft(NEON.magenta));
+    }
     // 처마 — 앞으로 길게 나온다
-    b.add(autoBox(7.0, 0.7, GW + 8, [gx + sg * 3.0, Y + GH + 0.6, cz], 0.05), mats.rustMat);
-    b.add(downPlane(6.0, GW + 6, [gx + sg * 3.0, Y + GH + 0.2, cz]), mats.deckUnderMat);
+    {
+      const [px, pz] = P(ga + sg * 3.0, 0);
+      const [w4, d4] = S2(7.0, GW + 8);
+      b.add(autoBox(w4, 0.7, d4, [px, Y + GH + 0.6, pz], 0.05), mats.rustMat);
+      const [w5, d5] = S2(6.0, GW + 6);
+      b.add(downPlane(w5, d5, [px, Y + GH + 0.2, pz]), mats.deckUnderMat);
+    }
     // 매달린 등롱 줄 — 문 아래를 지나는 사람에게 닿는 높이
     for (let i = 0; i < 9; i++) {
-      const pz = cz - GW / 2 + (GW / 9) * (i + 0.5);
-      b.add(tubeBetween([gx, Y + GH - 5.4, pz], [gx, Y + 6.2, pz], 0.03, 4), mats.cableMat);
-      b.cylinder(0.62, 0.62, 1.3, [gx, Y + 5.5, pz], neon(NEON.amber), 10);
+      const [px, pz] = P(ga, -GW / 2 + (GW / 9) * (i + 0.5));
+      b.add(tubeBetween([px, Y + GH - 5.4, pz], [px, Y + 6.2, pz], 0.03, 4), mats.cableMat);
+      b.cylinder(0.62, 0.62, 1.3, [px, Y + 5.5, pz], neon(NEON.amber), 10);
     }
-    pools.push({ kind: 'floor', x: gx, y: Y + 0.05, z: cz, rx: 12, rz: GW / 2 + 4,
+    const [gx2, gz2] = P(ga, 0);
+    const [prx, prz] = S2(12, GW / 2 + 4);
+    pools.push({ kind: 'floor', x: gx2, y: Y + 0.05, z: gz2, rx: prx, rz: prz,
       tint: rgb01(NEON.amber, 0.6) });
   }
 
@@ -839,7 +911,7 @@ export function createLandmarks(scene, mats) {
     if (!make) throw new Error(`랜드마크 종류 '${lm.kind}' 의 생성기가 없다`);
     fitsBlock(lm.kind, lm.ix, lm.iz);
     b.mark('building', `landmark:${lm.kind}`, { zone: '랜드마크' });
-    const apex = make(b, cx, cz, mats, pools);
+    const apex = make(b, cx, cz, mats, pools, lm);
     out.push({ kind: lm.kind, x: cx, z: cz, apex });
   }
   b.endMark();
