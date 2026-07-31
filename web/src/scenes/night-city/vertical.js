@@ -27,18 +27,17 @@ import { autoBox, tubeBetween } from '../../core/profile.js';
 import { upPlane } from '../../core/boxfaces.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neonSoft } from '../../shared/masters.js';
-import { hash2 } from '../../core/textures.js';
+
 import { claim, isFree, TIER } from './siteplan.js';
 import { districtAt } from './district.js';
+import { SIDES } from '../../core/boxfaces.js';
 import {
   GRID,
-  BLOCK_SIZE,
-  STREET_WIDTH,
+  PITCH,
   CURB_HEIGHT,
   SIDEWALK_W,
   blockCenter,
   coreDistance,
-  ALLEY_WIDTH,
 } from './layout.js';
 
 // 2층 데크 높이. 1층 점포(SHOP_H=3.4)와 그 위 간판대를 지나야 하므로
@@ -232,68 +231,76 @@ function bridge(b, from, to, y, rng, mats) {
 
 // ── 배치 ───────────────────────────────────────────────────────────────────
 
-export function createVertical(scene, rng, mats, alleys) {
-  const b = new MeshBuilder('Vertical');
+// ── 2층 데크 + 계단 (앵커 기반) ────────────────────────────────────────────
+//
+// ── 왜 다시 만들었나 ───────────────────────────────────────────────────────
+// 처음에는 데크를 블록 가장자리에 **좌표 해시로** 놓았다. 무엇과도 연결되지
+// 않았고, 계단은 그 데크 끝에 붙으니 역시 아무 데도 안 닿았다.
+// 브릿지와 정확히 같은 실수였다 (createBridges 머리말).
+//
+// 이제 **건물 정면에 붙인다.** 데크는 그 건물의 2층 출입로이고, 계단은 그
+// 데크와 인도를 잇는다. 그러면 "올라갈 수 있는 곳" 이 실제로 성립한다.
+//
+// 특히 적층 상가(bazaar)는 층마다 점포와 외부 복도가 있는데 지상에서 올라갈
+// 방법이 없었다. 데크가 그 복도로 이어지는 것이 이 구조의 요점이다.
+export function createDecks(scene, rng, mats, anchors) {
+  const b = new MeshBuilder('Decks');
   const pools = [];
   let decks = 0;
   let stairs = 0;
 
-  // 2) 2층 데크 + 계단 — 블록 가장자리 인도 위.
-  //    좌표 해시로 정한다. 모든 블록에 두르면 도시가 통째로 2층이 되어
-  //    1층이 오히려 지하처럼 보인다.
-  for (let ix = 0; ix < GRID; ix++) {
-    for (let iz = 0; iz < GRID; iz++) {
-      const h = hash2(ix * 197 + 11, iz * 61 + 7);
-      if (h > 0.42) continue; // 42% 블록만
-      // 인도가 데크를 감당하는가. 공업 구역(3.2m)에는 못 놓는다.
-      const walk = districtAt(ix, iz, coreDistance(blockCenter(ix), blockCenter(iz))).sidewalk ?? SIDEWALK_W;
-      if (walk < MIN_WALK) continue;
-      const cx = blockCenter(ix);
-      const cz = blockCenter(iz);
-      const half = BLOCK_SIZE / 2;
-      // 네 변 중 하나 또는 둘
-      const sides = h < 0.18 ? 2 : 1;
-      for (let s = 0; s < sides; s++) {
-        const g = hash2(ix * 31 + s * 7, iz * 89 + 3);
-        const dir = Math.floor(g * 4); // 0..3
-        const alongX = dir < 2;
-        const sign = dir % 2 === 0 ? -1 : 1;
-        // 인도 띠의 한가운데
-        const off = half - SIDEWALK_W / 2;
-        const len = BLOCK_SIZE * rng.range(0.5, 0.86);
-        const dcx = alongX ? cx + rng.range(-6, 6) : cx + sign * off;
-        const dcz = alongX ? cz + sign * off : cz + rng.range(-6, 6);
-        deckRun(b, dcx, dcz, alongX, len, DECK_Y, rng, mats, pools);
-        decks++;
+  for (const a of anchors) {
+    // 2층 데크가 붙으려면 건물이 그만큼 높아야 한다
+    if (a.top < DECK_Y + 3) continue;
+    // 인도가 데크를 감당하는가. 공업 구역(3.2m)에는 못 놓는다.
+    const cx = (a.rect.x0 + a.rect.x1) / 2;
+    const cz = (a.rect.z0 + a.rect.z1) / 2;
+    const ix = Math.max(0, Math.min(GRID - 1, Math.round(cx / PITCH + (GRID - 1) / 2)));
+    const iz = Math.max(0, Math.min(GRID - 1, Math.round(cz / PITCH + (GRID - 1) / 2)));
+    const D = districtAt(ix, iz, coreDistance(blockCenter(ix), blockCenter(iz)));
+    const walk = D.sidewalk ?? SIDEWALK_W;
+    if (walk < MIN_WALK) continue;
 
-        // 계단 — 데크 끝에서 인도로 내려온다. 반드시 붙어야 한다.
-        const endT = (rng.chance(0.5) ? 1 : -1) * (len / 2 - 1.0);
-        const sxTop = alongX ? dcx + endT : dcx;
-        const szTop = alongX ? dcz : dcz + endT;
-        // 데크와 나란한 방향으로 내려간다 (인도 폭 안에 계단이 들어가야 하므로)
-        const runLen = 5.4;
-        const dirSign = endT > 0 ? 1 : -1;
-        const sxBot = alongX ? sxTop + dirSign * runLen : sxTop;
-        const szBot = alongX ? szTop : szTop + dirSign * runLen;
-        // 계단 착지점 — 사람이 내려서는 자리다. 반드시 비어 있어야 한다.
-        // 실제로 자판기가 착지점을 막고 서 있었다.
-        if (isFree(sxBot, szBot, 2.6, TIER.VERTICAL)) {
-          claim(sxBot, szBot, 2.6, TIER.VERTICAL, 'stairLanding');
-          stairFlight(
-            b,
-            [sxBot, CURB_HEIGHT, szBot],
-            [sxTop, DECK_Y, szTop],
-            1.6, rng, mats
-          );
-          stairs++;
-        }
-      }
+    // 상업 구역에 몰아준다 — 적층 상가의 위층으로 올라가는 길이기 때문이다.
+    // 기업 구역은 수직 이동이 건물 안에서 일어나므로 밖에 데크를 안 둔다.
+    const rate = D.name === '상업' ? 0.5 : D.name === '주거' ? 0.18 : D.name === '기업' ? 0 : 0.08;
+    if (!rng.chance(rate)) continue;
+
+    // 길에 면한 면 하나를 고른다. 안 보이는 면에 놓으면 없는 것과 같다.
+    const open = SIDES.filter((sd) => a.faces?.[sd]);
+    if (!open.length) continue;
+    const side = open[rng.int(0, open.length - 1)];
+
+    const alongX = side === 'pz' || side === 'nz';
+    const len = (alongX ? a.rect.x1 - a.rect.x0 : a.rect.z1 - a.rect.z0) * rng.range(0.6, 0.95);
+    if (len < 8) continue;
+
+    // 건물 면에서 바깥으로 DECK_W/2 만큼. 벽에 물려야 붙은 것으로 읽힌다.
+    const out = DECK_W / 2 - 0.2;
+    const dcx = alongX ? cx : (side === 'px' ? a.rect.x1 + out : a.rect.x0 - out);
+    const dcz = alongX ? (side === 'pz' ? a.rect.z1 + out : a.rect.z0 - out) : cz;
+
+    deckRun(b, dcx, dcz, alongX, len, DECK_Y, rng, mats, pools);
+    decks++;
+
+    // 계단 — 데크 끝에서 인도로. 데크와 나란히 내려간다.
+    const endT = (rng.chance(0.5) ? 1 : -1) * (len / 2 - 1.2);
+    const sxTop = alongX ? dcx + endT : dcx;
+    const szTop = alongX ? dcz : dcz + endT;
+    const runLen = 5.4;
+    const dirSign = endT > 0 ? 1 : -1;
+    const sxBot = alongX ? sxTop + dirSign * runLen : sxTop;
+    const szBot = alongX ? szTop : szTop + dirSign * runLen;
+
+    if (isFree(sxBot, szBot, 2.6, TIER.VERTICAL)) {
+      claim(sxBot, szBot, 2.6, TIER.VERTICAL, 'stairLanding');
+      stairFlight(b, [sxBot, CURB_HEIGHT, szBot], [sxTop, DECK_Y, szTop], 1.6, rng, mats);
+      stairs++;
     }
   }
 
   return { group: b.build(scene), pools, decks, stairs };
 }
-
 
 // ── 브릿지 (앵커 기반) ─────────────────────────────────────────────────────
 //

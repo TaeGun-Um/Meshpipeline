@@ -195,7 +195,6 @@ export function sweep(points, radius, { steps = 24, radial = 8, closed = false, 
   return g;
 }
 
-
 // 두 점을 잇는 원통. 케이블·배관·난간처럼 "A에서 B로" 가 자연스러운 것들용.
 //
 // 손으로 회전을 유도하면 축 순서를 틀린다 — 실제로 골목 케이블을 rotateX/Y/Z

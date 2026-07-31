@@ -15,10 +15,11 @@ import { SIDES, shrink, rectBox, facePlane } from '../../core/boxfaces.js';
 import { lathe } from '../../core/profile.js';
 import { NEON } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
-import { PITCH, FLOOR_HEIGHT ,
+import {
+  PITCH,
+  FLOOR_HEIGHT,
   PANEL_TILE,
 } from './layout.js';
-
 
 // 랜드마크가 차지하는 블록. towers.js 는 이 블록을 건너뛴다.
 export const LANDMARK_BLOCKS = [

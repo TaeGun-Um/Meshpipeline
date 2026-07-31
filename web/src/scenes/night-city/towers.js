@@ -18,7 +18,6 @@ import {
   shrink,
   rectBox,
   facePlane,
-  downPlane,
   rectCenter,
   rectSize,
 } from '../../core/boxfaces.js';
@@ -35,7 +34,7 @@ import {
   PANEL_TILE,
 } from './layout.js';
 import { SHOP_TINTS } from './materials.js';
-import { NEON, rgb01 } from '../../shared/neon.js';
+import { rgb01 } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 import { createCrown } from './rooftop.js';
 import { retrofit } from './retrofit.js';
@@ -43,6 +42,7 @@ import { bazaarBlock } from './bazaar.js';
 import { factoryBlock } from './factory.js';
 import { housingSlab } from './housing.js';
 import { corpoTower } from './corpo.js';
+import { slumBlock } from './slum.js';
 import { applySkin, facadeRelief } from './facade.js';
 import { districtAt, pickArchetypeIn } from './district.js';
 import { pickMassing, footprint, cylinderMass } from './massing.js';
@@ -446,6 +446,18 @@ export function createTowers(scene, rng, mats, blocks) {
       // 번화가는 계획된 상업지구가 아니라 **계획이 터진 자리**다 (docs/city.md
       // 3기). 그래서 타워가 아니라 낮고 빽빽한 적층 상가여야 한다.
       // 파라미터로는 이 차이를 못 만든다 — 매싱 자체가 다르다.
+      // 슬럼 — 2기에 시작해 3기에 멈춘 개발지. 격자를 안 따르고 비스듬히
+      // 앉는다. 도시에서 유일하게 90도가 아닌 것이 여기 있다 (slum.js).
+      if (D.name === '슬럼') {
+        rng.int(2, 3); // 난수 소비를 맞춘다
+        const sl = slumBlock(b, r, rng, mats, pools);
+        count++;
+        if (sl.top > tallest) tallest = sl.top;
+        anchors.push({ rect: r, top: sl.top, zone: D.name, faces });
+        districts.add(D.name);
+        continue;
+      }
+
       // 기업 구역 — 2기. 도시에서 유일하게 **다시 설계된 곳**이다.
       // 대지를 꽉 채우지 않고 비운다 — 광장이 부의 표시다 (corpo.js 머리말).
       if (D.name === '기업') {
@@ -454,8 +466,7 @@ export function createTowers(scene, rng, mats, blocks) {
         if (ct) {
           count++;
           if (ct.top > tallest) tallest = ct.top;
-        anchors.push({ rect: r, top: ct.top, zone: D.name });
-          anchors.push({ rect: r, top: ct.top, zone: D.name });
+          anchors.push({ rect: r, top: ct.top, zone: D.name, faces });
           districts.add(D.name);
           continue;
         }
@@ -470,7 +481,7 @@ export function createTowers(scene, rng, mats, blocks) {
         const hs = housingSlab(b, r, rng, mats, faces, detail, pools);
         count++;
         if (hs.top > tallest) tallest = hs.top;
-        anchors.push({ rect: r, top: hs.top, zone: D.name });
+        anchors.push({ rect: r, top: hs.top, zone: D.name, faces });
         districts.add(D.name);
         continue;
       }
@@ -483,7 +494,7 @@ export function createTowers(scene, rng, mats, blocks) {
         const fb = factoryBlock(b, r, rng, mats, faces, detail, pools);
         count++;
         if (fb.top > tallest) tallest = fb.top;
-        anchors.push({ rect: r, top: fb.top, zone: D.name });
+        anchors.push({ rect: r, top: fb.top, zone: D.name, faces });
         districts.add(D.name);
         continue;
       }
@@ -494,7 +505,7 @@ export function createTowers(scene, rng, mats, blocks) {
         const bz = bazaarBlock(b, r, rng, mats, D, faces, detail, signs);
         count++;
         if (bz.top > tallest) tallest = bz.top;
-        anchors.push({ rect: r, top: bz.top, zone: D.name });
+        anchors.push({ rect: r, top: bz.top, zone: D.name, faces });
         districts.add(D.name);
         continue;
       }
@@ -522,10 +533,10 @@ export function createTowers(scene, rng, mats, blocks) {
           megaBoard(signs, rng, shaftRect, podH, height);
         }
         createCrown(b, end.rect, end.top, height, rng, mats, beaconIdx++);
-        anchors.push({ rect: shaftRect, top: height, zone: D.name });
+        anchors.push({ rect: shaftRect, top: height, zone: D.name, faces });
       } else {
         createCrown(b, r, podH, height, rng, mats, beaconIdx++);
-        anchors.push({ rect: r, top: podH, zone: D.name });
+        anchors.push({ rect: r, top: podH, zone: D.name, faces });
       }
       districts.add(D.name);
     }

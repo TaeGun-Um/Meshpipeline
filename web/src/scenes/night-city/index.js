@@ -38,10 +38,11 @@ import { createSky, createLights } from './env.js';
 import { createStreets } from './streets.js';
 import { createTowers } from './towers.js';
 import { createAlleys } from './alley.js';
-import { createVertical, createBridges } from './vertical.js';
+import { createDecks, createBridges } from './vertical.js';
 import { createParking } from './parking.js';
 import { createPort } from './port.js';
 import { createCrowd } from './crowd.js';
+import { createHolo } from './holo.js';
 import { resetPlan, TIER, claim } from './siteplan.js';
 import { allAlleyRects, ALLEY_WIDTH, setAlleyRateHook, coreDistance } from './layout.js';
 import { districtAt } from './district.js';
@@ -105,6 +106,13 @@ class NightCity extends Scene {
     //   진입 동선(골목 입구) -> 수직 동선(계단·기둥) -> 조명 -> 편의 시설
     resetPlan();
 
+    // ── 빌드 순서 = 배치 우선순위 ────────────────────────────────────────
+    // 골목 입구(진입 동선) -> 건물 -> 수직 동선 -> 조명·노면 -> 편의 시설.
+    //
+    // 건물이 **수직 동선보다 먼저** 와야 한다. 데크와 브릿지가 어느 건물에
+    // 얼마나 높이 붙을지를 알아야 허공에 뜨지 않기 때문이다 (앵커 목록).
+    // 그리고 수직 동선이 조명보다 먼저여야 가로등이 계단 착지점을 피한다.
+
     // layout 이 구역별 골목 밀도를 알 수 있게 연결한다. layout 이 district 를
     // 직접 import 하면 순환 참조가 되므로 함수를 주입하는 쪽을 택했다.
     setAlleyRateHook((ix, iz) =>
@@ -125,12 +133,35 @@ class NightCity extends Scene {
       }
     }
 
-    // 2) 수직 동선을 **가로등보다 먼저** 만든다. 계단 착지점과 데크 기둥은
-    //    구조물이라 못 비키므로 자리를 선점해야 한다.
-    const vert = await step('2층 데크 · 계단 · 브릿지', 40, () =>
-      createVertical(scene, rng, mats, allAlleyRects())
+    const towers = await step('타워 · 포디움 · 세트백 · 크라운', 58, () =>
+      createTowers(scene, rng, mats, blocks)
+    );
+    built.buildings = towers.group;
+
+    // 수직 동선 — 건물에 붙는 2층 데크·계단, 그리고 건물 사이 브릿지.
+    // 지면/고가도로/옥상 세 층이 단절돼 있어서 아무리 높게 지어도 벽지가
+    // 높은 2D 맵이었다 (vertical.js 머리말).
+    const vert = await step('2층 데크 · 계단', 60, () =>
+      createDecks(scene, rng, mats, towers.anchors)
     );
     built.vertical = vert.group;
+
+    // 건물 사이 브릿지 — **towers 다음**이어야 한다. 어떤 건물이 어디에
+    // 얼마나 높이 서 있는지를 알아야 양 끝이 실제로 닿는 쌍을 고를 수 있다
+    // (vertical.js createBridges 머리말 참고).
+    const bridges = await step('건물 사이 브릿지', 60, () =>
+      createBridges(scene, rng, mats, towers.anchors)
+    );
+    built.bridges = bridges.group;
+
+    // 홀로그램과 디지털 조경 — 이 도시의 '기술'.
+    // 간판을 1,500개 달아도 사이버펑크로 안 읽힌 이유는 개수가 아니라
+    // **종류**였다. 전부 같은 사각 발광판이고 미래 기술의 흔적이 없었다
+    // (holo.js 머리말).
+    const holoG = await step('홀로그램 · 디지털 조경', 68, () =>
+      createHolo(scene, rng, mats, towers.anchors)
+    );
+    built.holo = holoG.group;
 
     // 3) 그 다음이 조명과 노면이다. 가로등은 위 둘이 차지한 자리를 피한다.
     const streets = await step('노면 · 인도 · 가로등 · 신호등', 46, () =>
@@ -149,19 +180,6 @@ class NightCity extends Scene {
     // 보행자가 보는 것은 '도로' 가 아니라 **차의 벽**이다 (parking.js 머리말).
     const parked = await step('갓길 주차', 50, () => createParking(scene, rng, mats));
     built.parking = parked.group;
-
-    const towers = await step('타워 · 포디움 · 세트백 · 크라운', 58, () =>
-      createTowers(scene, rng, mats, blocks)
-    );
-    built.buildings = towers.group;
-
-    // 건물 사이 브릿지 — **towers 다음**이어야 한다. 어떤 건물이 어디에
-    // 얼마나 높이 서 있는지를 알아야 양 끝이 실제로 닿는 쌍을 고를 수 있다
-    // (vertical.js createBridges 머리말 참고).
-    const bridges = await step('건물 사이 브릿지', 60, () =>
-      createBridges(scene, rng, mats, towers.anchors)
-    );
-    built.bridges = bridges.group;
 
     // 골목 — 블록을 관통하는 좁은 뒷길. 어느 블록에 낼지는 towers 가
     // 필지를 나누면서 함께 정한다 (골목을 먼저 빼야 통로가 된다).
@@ -208,6 +226,7 @@ class NightCity extends Scene {
         ...programs.pools,
         ...life.pools,
         ...alleys.pools,
+        ...holoG.pools,
         ...vert.pools,
       ])
     );
@@ -246,6 +265,7 @@ class NightCity extends Scene {
         `구역 ${towers.districts.join('·')}`,
         `건물 ${towers.count}동`,
         `골목 ${alleys.count}개`,
+        `홀로 광고 ${holoG.panels} · 수목 ${holoG.trees} · 빛기둥 ${holoG.beams} · 표식 ${holoG.markers}`,
         `데크 ${vert.decks} · 계단 ${vert.stairs} · 브릿지 ${bridges.count}`,
         `최고 ${towers.tallest.toFixed(0)}m`,
         `공사장 ${programs.tally.construction} · 광장 ${programs.tally.plaza} · 공터 ${programs.tally.lot}`,

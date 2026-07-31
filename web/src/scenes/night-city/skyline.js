@@ -9,7 +9,7 @@
 //   - 그림자를 만들지도 받지도 않는다 (그림자맵은 상세 격자에 다 써야 한다)
 import * as THREE from 'three';
 import { MeshBuilder } from '../../core/builder.js';
-import { scaleUV } from '../../core/meshkit.js';
+
 import { rectBox } from '../../core/boxfaces.js';
 import { CITY_HALF, FLOOR_HEIGHT } from './layout.js';
 

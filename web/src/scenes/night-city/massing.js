@@ -19,7 +19,6 @@ import * as THREE from 'three';
 import { scaleUV } from '../../core/meshkit.js';
 import { rectCenter, rectSize } from '../../core/boxfaces.js';
 
-
 // 형태를 고른다. 작은 대지에 ㄷ자를 세우면 팔이 너무 얇아지므로 크기로 거른다.
 export function pickMassing(rng, w, d, height) {
   const small = Math.min(w, d);
@@ -84,7 +83,6 @@ export function footprint(r, kind, orient = 0) {
   }
   return mirror(rects, r, (orient & 1) !== 0, (orient & 2) !== 0);
 }
-
 
 // ── 원통 ───────────────────────────────────────────────────────────────────
 //

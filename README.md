@@ -95,6 +95,7 @@ node tools/pipeline.mjs --accept   # 새 스펙을 승인 (아래 참고)
 | [docs/architecture.md](docs/architecture.md) | **아키텍처** — 계층 구조, 의존 방향, 왜 이렇게 나눴는가 |
 | [docs/pipeline.md](docs/pipeline.md) | 파이프라인 6단계, 규약(contract), 검사 항목 |
 | [docs/modules.md](docs/modules.md) | 기능 모듈 — 텍스처·지오메트리·스켈레탈·익스포트·임포트 |
+| [docs/handover.md](docs/handover.md) | **인수인계** — 이어받을 때 가장 먼저 읽는다 |
 | [docs/city.md](docs/city.md) | **도시의 내력** — 왜 이 도시가 이렇게 생겼는가. 모든 형태 결정의 근거 |
 | [docs/status.md](docs/status.md) | **현재 상태** — 안 된 것, 깨진 것, 다음에 할 일 |
 | [docs/districts.md](docs/districts.md) | 구역 설계 명세 (레퍼런스 분석 → 파라미터) |

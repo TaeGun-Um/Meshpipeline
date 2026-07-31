@@ -9,7 +9,9 @@
 //         └─ Beacon      세기 1.0  — 항공장애등 (런타임에 세기를 흔든다)
 //
 //   Additive ─┬─ LightPool   정점 컬러 — 웅덩이마다 색이 달라도 드로우콜 1개
-//             └─ Headlight   단색     — 전조등 빛 (인스턴싱과 섞이지 않는다)
+//             ├─ Headlight   단색     — 전조등 빛 (인스턴싱과 섞이지 않는다)
+//             ├─ Holo        불투명도 0.5 — 홀로그램의 선·테두리
+//             └─ HoloSoft    불투명도 0.16 — 홀로그램의 면 (넓으므로 옅게)
 //
 // ── 왜 세기를 등급으로 나누는가 ────────────────────────────────────────────
 // 기준은 색이 아니라 **면적**이다. 블룸은 밝은 픽셀의 개수에 비례해 번지므로,
@@ -25,6 +27,27 @@ export { TexturedSurface, SolidSurface, Glow, Additive, Unlit };
 export const NeonTube = Glow.derive('NeonTube', { intensity: 1, tint: 0.06 });
 export const SoftGlow = Glow.derive('SoftGlow', { intensity: 0.22, tint: 0.1 });
 export const Beacon = Glow.derive('Beacon', { intensity: 1, tint: 0.05 });
+
+// ── 홀로그램 ───────────────────────────────────────────────────────────────
+//
+// 홀로그램이 간판과 다른 점은 단 하나, **뒤가 비친다**는 것이다.
+// 불투명하면 그냥 발광 간판이고, 그래서 Glow 가 아니라 Additive 에서 파생한다.
+//
+// 세기 등급이 여기서도 면적 기준이다. 큰 면(광고판 본체)에 선과 같은 불투명도를
+// 주면 판이 통째로 흰 덩어리가 되어 뒤가 안 비친다 — 그 순간 홀로그램이 아니다.
+//
+//   Holo      선·테두리·표식. 좁으므로 진하게
+//   HoloSoft  광고판 면·빛기둥·잎. 넓으므로 아주 옅게
+export const Holo = Additive.derive('Holo', { opacity: 0.5 });
+export const HoloSoft = Additive.derive('HoloSoft', { opacity: 0.16 });
+
+// 쓰는 쪽이 색만 넘기면 되게 감싼다 (neon/neonSoft 와 같은 방식).
+export function holo(color) {
+  return Holo.instance({ color }, `Holo_${nameOf(color)}`);
+}
+export function holoSoft(color) {
+  return HoloSoft.instance({ color }, `HoloSoft_${nameOf(color)}`);
+}
 
 // 빛 웅덩이 텍스처는 한 장이면 된다 — 수백 개 웅덩이가 같은 감쇠를 쓴다.
 let radial = null;

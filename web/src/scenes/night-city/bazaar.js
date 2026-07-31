@@ -23,7 +23,7 @@
 //
 // 결과적으로 실루엣이 "탑" 이 아니라 **벽**이다. 거리 양쪽이 빛나는 벽으로
 // 닫히는 것이 번화가의 인상이고, 타워로는 절대 그 인상이 안 나온다.
-import { MeshBuilder } from '../../core/builder.js';
+
 import { autoBox, tubeBetween } from '../../core/profile.js';
 import {
   SIDES,
@@ -39,8 +39,8 @@ import {
   rectCenter,
   rectSize,
 } from '../../core/boxfaces.js';
-import { NEON, rgb01 } from '../../shared/neon.js';
-import { neon, neonSoft } from '../../shared/masters.js';
+import { NEON } from '../../shared/neon.js';
+import { neonSoft } from '../../shared/masters.js';
 import { PANEL_TILE } from './layout.js';
 
 // 상가 한 층. 층고가 낮다 — 사무실(3.6m)이 아니라 가게라 3.1m 면 충분하고,

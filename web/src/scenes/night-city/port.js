@@ -23,7 +23,7 @@ import * as THREE from 'three';
 import { MeshBuilder } from '../../core/builder.js';
 import { autoBox, tubeBetween, lathe } from '../../core/profile.js';
 import { upPlane } from '../../core/boxfaces.js';
-import { NEON, rgb01 } from '../../shared/neon.js';
+
 import { neon, neonSoft } from '../../shared/masters.js';
 import { CITY_HALF, CURB_HEIGHT } from './layout.js';
 

@@ -115,7 +115,6 @@ export function upPlane(w, d, at, tile = null) {
   return g;
 }
 
-
 // 사각형 평면 도형을 밑면으로 하고 높이 h 인 박스. 건물 덩치·띠·슬래브에 쓴다.
 //
 // metricBox 를 직접 부르지 않고 감싸는 이유: 호출부가 중심 좌표와 y0 + h/2 를

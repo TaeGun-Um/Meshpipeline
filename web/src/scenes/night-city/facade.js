@@ -21,13 +21,10 @@
 // 어두운 건물이 40% 는 있어야 밝은 건물이 눈에 들어온다.
 import { SIDES, faceWidth, shrink, rectBox, facePlane } from '../../core/boxfaces.js';
 import { autoBox } from '../../core/profile.js';
-import { FLOOR_HEIGHT ,
+import {
+  FLOOR_HEIGHT,
   PANEL_TILE,
 } from './layout.js';
-
-
-
-
 
 // 유형별 파사드 스킨을 세그먼트에 입힌다.
 //

@@ -56,16 +56,87 @@ export const HIGHWAY_Y = 26;
 // ── 격자 좌표 ──────────────────────────────────────────────────────────────
 
 // 블록 인덱스(0..GRID-1) -> 블록 중심 좌표
+// ── 구간별로 다른 격자 (docs/city.md 1기) ──────────────────────────────────
+//
+// 등간격 격자 하나로 도시를 덮으면 "도로 건물 직각" 이 무한 반복된다.
+// 그게 지금 도시가 사이버펑크로 안 읽히는 근본 이유였다.
+//
+// 내력이 이렇게 말한다: 기업이 바다를 **한 번에 메우지 않았다.** 자금과
+// 필요에 따라 여러 차례 나눠 메웠고, 그때마다 측량 기준과 블록 크기가
+// 달랐다. 초기 매립지는 촘촘하고(화물 마차 시대), 나중 매립지는 성기다
+// (트럭 시대).
+//
+// 그래서 축을 따라 **구간마다 다른 피치**를 준다. 구간이 만나는 자리에서
+// 격자가 어긋나고, 거기에 어정쩡한 자투리 블록이 생긴다 — 그게 요점이다.
+//
+// 좌표 해시로 정한다. 난수를 쓰면 격자를 바꿀 때마다 도시 전체가 밀린다.
+const SPANS = [
+  // [블록 수, 피치]  — 합이 GRID 가 되어야 한다
+  [3, 74],   // 1차 매립 — 촘촘하다. 마차가 다니던 시절
+  [3, 88],   // 2차
+  [2, 104],  // 3차 — 트럭 시대. 성기다
+  [4, 82],   // 4차 — 급하게 메웠다. 다시 좁아진다
+];
+
+// 블록 중심 좌표를 누적으로 미리 계산한다. 매번 더하면 부동소수 오차가 쌓인다.
+const CENTERS = (() => {
+  const pitches = [];
+  for (const [n, p] of SPANS) for (let i = 0; i < n; i++) pitches.push(p);
+  while (pitches.length < GRID) pitches.push(PITCH);
+  pitches.length = GRID;
+
+  const total = pitches.reduce((a, b) => a + b, 0);
+  const out = [];
+  let x = -total / 2;
+  for (let i = 0; i < GRID; i++) {
+    out.push(x + pitches[i] / 2);
+    x += pitches[i];
+  }
+  return { centers: out, pitches, total };
+})();
+
+// 도시 반폭 — 구간 합에서 나온다. GRID*PITCH/2 가 아니다.
+export const CITY_SPAN = CENTERS.total / 2;
+
 export function blockCenter(i) {
-  return (i - (GRID - 1) / 2) * PITCH;
+  return CENTERS.centers[Math.max(0, Math.min(GRID - 1, i))];
 }
 
+// 그 블록의 피치 (도로 폭을 포함한 간격).
+export function blockPitch(i) {
+  return CENTERS.pitches[Math.max(0, Math.min(GRID - 1, i))];
+}
 
+// ── 좌표 -> 블록 번호 ──────────────────────────────────────────────────────
+//
+// 전에는 여섯 모듈이 각자 `Math.round(x / PITCH + (GRID-1)/2)` 를 썼다.
+// 등간격이 아니게 되는 순간 그 식이 전부 틀린다.
+//
+// **같은 값을 두 곳에서 계산하지 말 것** (docs/status.md 2.1 결합 대장).
+// 여기 하나만 두고 전부 이걸 부른다.
+export function blockIndexAt(v) {
+  const c = CENTERS.centers;
+  let best = 0;
+  let bd = Infinity;
+  for (let i = 0; i < c.length; i++) {
+    const d = Math.abs(v - c[i]);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
 
 // 격자선(도로 중심)까지의 거리. 도로 중심에서 0, 블록 중심에서 PITCH/2.
 // JS 의 % 는 음수에 음수를 돌려주므로 한 번 더 더해서 양수로 만든다.
+// 가장 가까운 도로 중심선까지의 거리.
+//
+// 전에는 나머지 연산(%)으로 구했는데 그건 **등간격일 때만** 맞다.
+// 구간마다 피치가 다르므로 실제 선 목록에서 최소 거리를 찾는다.
+let LINES_CACHE = null;
 function gridDist(v) {
-  return Math.abs(((((v + PITCH / 2) % PITCH) + PITCH) % PITCH) - PITCH / 2);
+  if (!LINES_CACHE) LINES_CACHE = gridLines();
+  let best = Infinity;
+  for (const L of LINES_CACHE) best = Math.min(best, Math.abs(v - L));
+  return best;
 }
 
 // 교차로 안인지 — 두 축이 모두 도로 폭 안.
@@ -75,9 +146,10 @@ export function onIntersection(x, z) {
 }
 
 // 격자선 좌표 목록 (도로 중심선). 바깥 경계 도로까지 GRID+1 개.
+// 도로 중심선. 블록과 블록 사이이므로 구간 피치를 따라간다.
 export function gridLines() {
-  const out = [];
-  for (let i = 0; i <= GRID; i++) out.push(blockCenter(0) - PITCH / 2 + i * PITCH);
+  const out = [blockCenter(0) - blockPitch(0) / 2];
+  for (let i = 0; i < GRID; i++) out.push(blockCenter(i) + blockPitch(i) / 2);
   return out;
 }
 
@@ -288,7 +360,6 @@ export function subtractAlley(root, a) {
   }
   return out;
 }
-
 
 // 블록을 타워 몇 개로 쪼갤지, 각 타워의 사각형 범위를 돌려준다.
 //

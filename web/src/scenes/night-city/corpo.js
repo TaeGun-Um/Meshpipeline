@@ -33,7 +33,7 @@ import {
   rectSize,
 } from '../../core/boxfaces.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
-import { neon, neonSoft } from '../../shared/masters.js';
+import { neon } from '../../shared/masters.js';
 import { PANEL_TILE, FLOOR_HEIGHT, CURB_HEIGHT } from './layout.js';
 
 function frameOf(r, side) {

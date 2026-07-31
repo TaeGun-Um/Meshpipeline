@@ -32,8 +32,8 @@ import {
   rectSize,
 } from '../../core/boxfaces.js';
 import { NEON } from '../../shared/neon.js';
-import { neon, neonSoft } from '../../shared/masters.js';
-import { PANEL_TILE, FLOOR_HEIGHT } from './layout.js';
+import { neonSoft } from '../../shared/masters.js';
+import { PANEL_TILE } from './layout.js';
 
 // 주거 층고. 사무실(3.6m)보다 낮다 — 천장고를 아끼는 것이 가장 쉬운 절감이다.
 const HOME_FLOOR = 2.9;

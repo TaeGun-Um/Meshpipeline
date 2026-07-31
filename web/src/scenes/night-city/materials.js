@@ -272,6 +272,18 @@ export function buildMaterials() {
     // 부서진 자리를 파낼 때 쓰는 '없는 것' 재질. 하늘색과 같아서 구멍처럼 보인다.
     skyMat: SolidSurface.instance({ color: 0x0a0e1c, roughness: 1.0 }, 'SkyCut'),
 
+    // ── 슬럼 (slum.js) ───────────────────────────────────────────────────
+    //
+    // 미완성 콘크리트 골조. 마감이 안 된 상태라 **거칠고 얼룩덜룩**해야 한다.
+    // 완성된 건물의 패널(panelMat)보다 밝고 탁하다 — 도장을 안 했기 때문이다.
+    frameConcMat: SolidSurface.instance(
+      { color: 0x585a5e, roughness: 0.96, envMapIntensity: 1.9 }, 'FrameConcrete'
+    ),
+    // 합판 — 사람이 끼워 넣은 것. 나무라서 콘크리트와 색이 확 다르다.
+    plywoodMat: SolidSurface.instance({ color: 0x7a6244, roughness: 0.94, envMapIntensity: 2.2 }, 'Plywood'),
+    // 방수포 — 파랗다. 이 색이 세계 어디서나 임시 거처의 신호다.
+    tarpMat: SolidSurface.instance({ color: 0x2a4a7c, roughness: 0.82, envMapIntensity: 2.4 }, 'Tarp'),
+
     // ── 인파 (crowd.js) ──────────────────────────────────────────────────
     //
     // 밤 거리의 사람은 대부분 **실루엣**이다. 옷 색을 다양하게 만들 이유가

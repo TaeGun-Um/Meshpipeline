@@ -14,7 +14,6 @@ import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 import {
   GRID,
-  PITCH,
   coreDistance,
   PIT_INSET,
   BLOCK_SIZE,
@@ -24,6 +23,7 @@ import {
   blockCenter,
   gridLines,
   onIntersection,
+  blockIndexAt,
 } from './layout.js';
 
 const ASPHALT_TILE = 9.0;
@@ -152,8 +152,8 @@ function roadPaint(b, mat) {
 // (x, z) 가 속한 구역. 가로등은 도로 위에 있어 두 블록 사이인데, 인도 쪽
 // 블록의 성격을 따른다 — 실제로 가로등은 그 블록의 관리 주체가 세운다.
 function districtNear(x, z) {
-  const ix = Math.round(x / PITCH + (GRID - 1) / 2);
-  const iz = Math.round(z / PITCH + (GRID - 1) / 2);
+  const ix = blockIndexAt(x);
+  const iz = blockIndexAt(z);
   const cx = blockCenter(Math.max(0, Math.min(GRID - 1, ix)));
   const cz = blockCenter(Math.max(0, Math.min(GRID - 1, iz)));
   return districtAt(

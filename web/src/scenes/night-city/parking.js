@@ -29,17 +29,15 @@
 // 만들어 둔 값이다 — 새 모듈이 기존 규칙을 공짜로 물려받는다.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { NEON } from '../../shared/neon.js';
-import { neon } from '../../shared/masters.js';
+
 import {
-  GRID,
-  PITCH,
   STREET_WIDTH,
   CITY_HALF,
   blockCenter,
   coreDistance,
   gridLines,
   onIntersection,
+  blockIndexAt,
 } from './layout.js';
 import { districtAt } from './district.js';
 import { claim, TIER } from './siteplan.js';
@@ -112,8 +110,8 @@ export function createParking(scene, rng, mats) {
           if (nearCross < CLEAR_INTERSECTION) continue;
 
           // 구역이 정한 밀도
-          const ix = Math.max(0, Math.min(GRID - 1, Math.round(x / PITCH + (GRID - 1) / 2)));
-          const iz = Math.max(0, Math.min(GRID - 1, Math.round(z / PITCH + (GRID - 1) / 2)));
+          const ix = blockIndexAt(x);
+          const iz = blockIndexAt(z);
           const D = districtAt(ix, iz, coreDistance(blockCenter(ix), blockCenter(iz)));
           if (!rng.chance(DENSITY[D.name] ?? 0.5)) continue;
 

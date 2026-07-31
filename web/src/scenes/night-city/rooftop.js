@@ -11,7 +11,7 @@ import { lathe } from '../../core/profile.js';
 import { SIDES, shrink, rectBox, facePlane } from '../../core/boxfaces.js';
 import { NEON } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
-
+import { PANEL_TILE } from './layout.js';
 
 // ── 옥상 설비 ──────────────────────────────────────────────────────────────
 

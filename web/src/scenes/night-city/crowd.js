@@ -29,8 +29,6 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { NEON } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 import {
-  GRID,
-  PITCH,
   STREET_WIDTH,
   SIDEWALK_W,
   BLOCK_SIZE,
@@ -41,6 +39,7 @@ import {
   gridLines,
   onIntersection,
   detailAt,
+  blockIndexAt,
 } from './layout.js';
 import { districtAt } from './district.js';
 
@@ -120,8 +119,8 @@ function trim() {
 }
 
 function districtNear(x, z) {
-  const ix = Math.max(0, Math.min(GRID - 1, Math.round(x / PITCH + (GRID - 1) / 2)));
-  const iz = Math.max(0, Math.min(GRID - 1, Math.round(z / PITCH + (GRID - 1) / 2)));
+  const ix = blockIndexAt(x);
+  const iz = blockIndexAt(z);
   return districtAt(ix, iz, coreDistance(blockCenter(ix), blockCenter(iz)));
 }
 

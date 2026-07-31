@@ -16,10 +16,17 @@ import { autoBox } from '../../core/profile.js';
 import { downPlane } from '../../core/boxfaces.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon, neonSoft } from '../../shared/masters.js';
-import { STREET_WIDTH, CITY_HALF, CURB_HEIGHT, gridLines, onIntersection } from './layout.js';
+import {
+  STREET_WIDTH,
+  CITY_HALF,
+  CURB_HEIGHT,
+  gridLines,
+  onIntersection,
+  blockIndexAt,
+} from './layout.js';
 import { claim, TIER } from './siteplan.js';
 import { districtAt } from './district.js';
-import { PITCH, GRID, blockCenter, coreDistance, detailAt } from './layout.js';
+import { blockCenter, coreDistance, detailAt } from './layout.js';
 
 const SPACING = 13; // 시설물 간격 (m)
 const EDGE = STREET_WIDTH / 2 + 1.6; // 인도 위, 차도 경계에서 1.6m
@@ -271,8 +278,8 @@ function pickKind(rng, last, weights) {
 
 // (x, z) 가 속한 구역. 인도 위 물건이므로 가장 가까운 블록의 성격을 따른다.
 function districtNear(x, z) {
-  const ix = Math.max(0, Math.min(GRID - 1, Math.round(x / PITCH + (GRID - 1) / 2)));
-  const iz = Math.max(0, Math.min(GRID - 1, Math.round(z / PITCH + (GRID - 1) / 2)));
+  const ix = blockIndexAt(x);
+  const iz = blockIndexAt(z);
   return districtAt(ix, iz, coreDistance(blockCenter(ix), blockCenter(iz)));
 }
 

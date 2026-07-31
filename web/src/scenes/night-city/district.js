@@ -19,6 +19,32 @@ import { hash2 } from '../../core/textures.js';
 import { NEON } from '../../shared/neon.js';
 
 export const DISTRICTS = {
+  // 슬럼 — 짓다 만 기업 개발지에 사람이 들어간 곳 (2기 -> 3기).
+  //
+  // 판자촌이 아니다. **못 지은 것이 아니라 짓다 만 것**이고, 그래서 크고
+  // 골조가 노출돼 있다. 기업 구역의 매끈한 유리탑과 같은 2기의 산물인데
+  // 하나는 완성됐고 하나는 버려졌다 — 그 대비가 이 도시를 설명한다.
+  slum: {
+    name: '슬럼',
+    // 격자를 안 따른다. 이 구역만 건물이 비스듬히 앉는다 (slum.js).
+    skin: 2,
+    lamp: 0xff8a4c,   // 나트륨등이 몇 개 남았다. 대부분 꺼졌다
+    trim: [NEON.amber, NEON.warm],
+    signDensity: 0.35,
+    retrofit: 1.9,    // 가장 지저분하다
+    bladeChance: 0.2,
+    shopLit: 0.4,
+    shopBright: 0,
+    poolGain: 0.6,
+    heightBias: -0.15,
+    archetype: { grid: 0.4, curtain: 0, punched: 1.0, slab: 1.4, exo: 0.3 },
+    // ── 도시 형태 ──────────────────────────────────────────────────────
+    sidewalk: 2.6,    // 가장 좁다. 인도라기보다 건물이 물러난 자리다
+    grain: 0,         // 통짜 한 덩어리 — 기업이 필지를 사 모았기 때문이다
+    alleyRate: 0.8,   // 골목 천지. 계획이 없으므로 틈이 전부 길이다
+    furniture: { vending: 0.5, shelter: 0.2, stall: 1.6, utility: 2.2, planter: 0, bins: 3.0, bollard: 0 },
+  },
+
   // 상업 — 재팬타운. 이 도시에서 가장 밝고 시끄러운 곳.
   // 간판이 벽을 뒤덮고 골목까지 빛이 넘친다. 탐험의 목적지.
   market: {
@@ -135,7 +161,7 @@ export const DISTRICTS = {
   },
 };
 
-const KEYS = ['market', 'corpo', 'residential', 'industrial'];
+const KEYS = ['market', 'corpo', 'residential', 'industrial', 'slum'];
 
 // 2x2 블록을 한 구역으로 묶는다. 도심 코어는 기업 구역이 되기 쉽고,
 // 바깥은 공업·주거가 되기 쉽다 — 실제 도시의 지대(地代) 구조를 흉내낸다.
@@ -146,8 +172,11 @@ export function districtAt(ix, iz, core) {
   // 3x3 블록을 한 덩어리로 본다. 예전에는 2x2 였는데, 격자를 12x12 로 늘리고
   // 나니 구역이 잘게 흩어져서 "여기가 어느 구역인지" 가 안 읽혔다.
   // 구역은 **동네**여야 한다 — 한 블록짜리 구역은 그냥 다른 건물일 뿐이다.
-  const rx = Math.floor(ix / 3);
-  const rz = Math.floor(iz / 3);
+  // ── 구역이 뭉치는 단위 ──────────────────────────────────────────────────
+  // 3 -> 4 블록. 3 으로는 구역이 듬성듬성 흩어져 "여기가 어느 동네인지" 가
+  // 안 읽혔다. 구역은 **동네**여야 한다.
+  const rx = Math.floor(ix / 4);
+  const rz = Math.floor(iz / 4);
   const h = hash2(rx * 131 + 7, rz * 197 + 3);
 
   // ── 어디에 무엇이 오는가 (docs/city.md) ──────────────────────────────────
@@ -168,11 +197,21 @@ export function districtAt(ix, iz, core) {
   // 같은 건물이 됐다 — 노동자 도시라 현실적이긴 해도 걸어 다닐 재미가 없다.
   // 주거를 낮추고 상업·공업을 올려 아래 비율을 목표로 한다.
   //   주거 40% · 상업 22% · 공업 22% · 기업 16%
+  // 슬럼은 **기업 구역 바로 바깥**에 난다. 2기에 기업이 도심 주변 땅을
+  // 사서 개발을 시작한 자리이기 때문이다. 그래서 상업(3기)과 겹치는 고리에
+  // 함께 있고, 둘이 섞여 있는 것이 정상이다.
+  //
+  // 공업은 12% 로 줄였다. 항만 하나에 공장 35블록(24%)은 과했고,
+  // 그 자리가 슬럼이 들어갈 곳이다.
+  const slumRing = Math.exp(-((core - 0.42) ** 2) / 0.03);
   const w = {
     corpo: Math.max(0, near - 0.52) * 7.5,
-    market: ring * 3.4,
-    residential: 1.0 - Math.abs(core - 0.5) * 0.5,
-    industrial: Math.max(0, core - 0.46) * 5.2,
+    market: ring * 3.8,   // 슬럼에 밀려 10% 까지 떨어졌던 것을 되돌린다
+    // 슬럼 1.0 (전 2.6). 24% 는 과했다 — 도시 넷 중 하나가 미완성 골조면
+    // 슬럼가가 아니라 유령도시다. 슬럼은 도시의 **예외**여야 눈에 띈다.
+    slum: slumRing * 1.0,
+    residential: 0.85 - Math.abs(core - 0.5) * 0.45,
+    industrial: Math.max(0, core - 0.62) * 5.0,
   };
 
   let total = 0;
@@ -185,7 +224,6 @@ export function districtAt(ix, iz, core) {
   }
   return DISTRICTS.residential;
 }
-
 
 // 구역이 정한 가중치로 건물 유형을 고른다 (facade.pickArchetype 을 대체).
 export function pickArchetypeIn(rng, district, height, width) {

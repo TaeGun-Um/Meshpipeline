@@ -8,7 +8,11 @@ import * as THREE from 'three';
 import { MeshBuilder } from '../../core/builder.js';
 import { NEON } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
-import { CITY_HALF, HIGHWAY_X, HIGHWAY_Y, PITCH ,
+import {
+  CITY_HALF,
+  HIGHWAY_X,
+  HIGHWAY_Y,
+  PITCH,
   PANEL_TILE,
 } from './layout.js';
 
