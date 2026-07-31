@@ -7,7 +7,7 @@
 //   2) 항공 뷰의 밀도 — 위에서 내려다보면 화면의 절반이 옥상이다. 상자 두세 개만
 //      올려두면 그 절반이 텅 빈다.
 // 둘 다 towers.js 의 관심사가 아니고 코드량도 만만치 않아서 분리했다.
-import { lathe, autoBox } from '../../core/profile.js';
+import { lathe } from '../../core/profile.js';
 import { SIDES, shrink, rectBox, facePlane } from '../../core/boxfaces.js';
 import { NEON } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
@@ -56,14 +56,14 @@ function acBank(b, x, z, top, rng, mats) {
   const along = rng.chance(0.5);
   for (let i = 0; i < n; i++) {
     const off = (i - (n - 1) / 2) * (w + 0.22);
-    b.add(
-      autoBox(
-        along ? w : d,
-        h,
-        along ? d : w,
-        [x + (along ? off : 0), top + h / 2, z + (along ? 0 : off)],
-        0.03
-      ),
+    // 모따기를 쓰지 않는다. 옥상 설비는 20~370m 높이에 있어 가장 가까워도
+    // 수십 미터 밖이고, 모따기 면(폭 3cm)이 화면에서 1픽셀도 안 된다.
+    // 여기에 모따기를 쓰면 하나에 44삼각형, 안 쓰면 12삼각형이다.
+    b.box(
+      along ? w : d,
+      h,
+      along ? d : w,
+      [x + (along ? off : 0), top + h / 2, z + (along ? 0 : off)],
       mats.ductMat
     );
   }

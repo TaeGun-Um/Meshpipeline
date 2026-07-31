@@ -41,39 +41,37 @@ export function createSkyline(scene, rng, mats) {
       const cx = Math.cos(a) * rad;
       const cz = Math.sin(a) * rad;
 
+      // ── 바깥은 바다이거나 폐허다 (docs/city.md 지리) ──────────────────
+      // 이 도시는 삼면이 바다인 곶 위에 있다. 원경 건물을 사방에 두르면
+      // 도시가 거대 도시권의 일부로 보이는데, 설정은 정반대다 —
+      // **세계가 황폐해진 뒤 남은 거의 유일한 도시**다.
+      //
+      //   물 쪽(-X, ±Z)  아무것도 없다. 수평선뿐이다.
+      //   육지 쪽(+X)    폐허. 형태는 있되 **불이 하나도 없다.**
+      //
+      // 도시의 불빛이 유난히 밝아 보이는 이유가 여기서 나온다. 밝기를
+      // 올려서가 아니라 **주변이 완전히 어둡기 때문**이다.
+      const onLand = cx > CITY_HALF * 0.35;
+      if (!onLand) continue;
+
       const w = rng.range(ring.size[0], ring.size[1]);
       const d = rng.range(ring.size[0], ring.size[1]);
       const h = rng.range(ring.h[0], ring.h[1]);
       const rect = { x0: cx - w / 2, x1: cx + w / 2, z0: cz - d / 2, z1: cz + d / 2 };
 
-      b.add(rectBox(rect, 0, h, PANEL_TILE), mats.panelMat);
+      b.add(rectBox(rect, 0, h, PANEL_TILE), mats.ruinMat);
 
-      // 도심을 향한 두 면에만 창문 피부. 카메라는 항상 링 안쪽에 있으므로
-      // 어느 면이 도심을 향하는지는 중심 좌표의 부호로 정해진다.
-      for (const side of [cx > 0 ? 'nx' : 'px', cz > 0 ? 'nz' : 'pz']) {
-        const onX = side === 'nx' || side === 'px';
-        const width = onX ? d : w;
-        const g = new THREE.PlaneGeometry(width, h - 2);
-        scaleUV(g, width / sheetW, (h - 2) / sheetH);
-        if (side === 'px') {
-          g.rotateY(Math.PI / 2);
-          g.translate(cx + w / 2 + 0.05, h / 2, cz);
-        } else if (side === 'nx') {
-          g.rotateY(-Math.PI / 2);
-          g.translate(cx - w / 2 - 0.05, h / 2, cz);
-        } else if (side === 'pz') {
-          g.translate(cx, h / 2, cz + d / 2 + 0.05);
-        } else {
-          g.rotateY(Math.PI);
-          g.translate(cx, h / 2, cz - d / 2 - 0.05);
-        }
-        b.add(g, mats.windowMats[windowIdx]);
+      // 창문 피부를 붙이지 않는다. 폐허라 불이 없다 — 실루엣만 남는다.
+      // 대신 윤곽이 완전히 사라지지 않게 위쪽을 조금 깎아 부서진 티를 낸다.
+      if (rng.chance(0.55)) {
+        const bite = rng.range(0.1, 0.34);
+        const bw = (rect.x1 - rect.x0) * rng.range(0.3, 0.6);
+        const bd = (rect.z1 - rect.z0) * rng.range(0.3, 0.6);
+        b.box(bw, h * bite, bd,
+          [cx + rng.range(-w * 0.2, w * 0.2), h - (h * bite) / 2, cz + rng.range(-d * 0.2, d * 0.2)],
+          mats.skyMat);
       }
 
-      // 초고층에는 항공장애등만
-      if (h > 240) {
-        b.sphere(1.4, [cx, h + 1.4, cz], mats.beacons[i % mats.beacons.length], 6, 5);
-      }
       count++;
     }
   }

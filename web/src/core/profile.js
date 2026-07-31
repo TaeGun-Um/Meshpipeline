@@ -195,3 +195,25 @@ export function sweep(points, radius, { steps = 24, radial = 8, closed = false, 
   return g;
 }
 
+
+// 두 점을 잇는 원통. 케이블·배관·난간처럼 "A에서 B로" 가 자연스러운 것들용.
+//
+// 손으로 회전을 유도하면 축 순서를 틀린다 — 실제로 골목 케이블을 rotateX/Y/Z
+// 조합으로 맞추려다 방향이 뒤집혔다. 쿼터니언으로 (0,1,0) 을 목표 방향에
+// 맞추면 계산이 방향을 보장한다.
+export function tubeBetween(a, b, r = 0.03, radial = 5) {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const dz = b[2] - a[2];
+  const len = Math.hypot(dx, dy, dz);
+  if (len < 1e-6) return new THREE.BufferGeometry();
+
+  const g = new THREE.CylinderGeometry(r, r, len, radial, 1);
+  const q = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(dx / len, dy / len, dz / len)
+  );
+  g.applyQuaternion(q);
+  g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+  return g;
+}

@@ -6,11 +6,16 @@
 import * as THREE from 'three';
 import { MeshBuilder } from '../../core/builder.js';
 import { scaleUV } from '../../core/meshkit.js';
+import { dressSidewalks } from './sidewalk.js';
+import { claim, TIER } from './siteplan.js';
+import { districtAt } from './district.js';
 import { upPlane, downPlane } from '../../core/boxfaces.js';
-import { NEON } from '../../shared/neon.js';
+import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 import {
   GRID,
+  PITCH,
+  coreDistance,
   BLOCK_SIZE,
   STREET_WIDTH,
   CITY_HALF,
@@ -49,9 +54,37 @@ function roadMesh(mat) {
 function blockPlates(b, mats, programs) {
   for (let ix = 0; ix < GRID; ix++) {
     for (let iz = 0; iz < GRID; iz++) {
-      if (programs.get(`${ix},${iz}`) === 'construction') continue;
       const cx = blockCenter(ix);
       const cz = blockCenter(iz);
+      const construction = programs.get(`${ix},${iz}`) === 'construction';
+
+      // ── 공사장도 연석은 있다 (실측으로 고침) ─────────────────────────────
+      // 원래는 공사장 블록의 판을 통째로 건너뛰었다. 구덩이 위에 보도블록이
+      // 덮이는 걸 막으려던 것인데, 그러면 그 블록만 **인도가 아예 없어서**
+      // 도로가 건물 밑동까지 그대로 붙는다. 도시를 돌아다니면 인도가 있다
+      // 없다 하는 것으로 보인다.
+      //
+      // 실제 공사장도 보행로와 연석은 그대로 두고 안쪽만 파낸다.
+      // 그래서 가운데를 비운 **띠 네 개**로 깐다.
+      if (construction) {
+        const inner = BLOCK_SIZE / 2 - 3; // constructionSite 의 구덩이 반경과 같다
+        const band = BLOCK_SIZE / 2 - inner;
+        const mid = inner + band / 2;
+        for (const [dx, dz, w, d] of [
+          [0, -mid, BLOCK_SIZE, band],
+          [0, mid, BLOCK_SIZE, band],
+          [-mid, 0, band, inner * 2],
+          [mid, 0, band, inner * 2],
+        ]) {
+          b.add(
+            upPlane(w, d, [cx + dx, CURB_HEIGHT, cz + dz], [SIDEWALK_TILE, SIDEWALK_TILE]),
+            mats.sidewalkMat
+          );
+          b.box(w, CURB_HEIGHT, d, [cx + dx, CURB_HEIGHT / 2, cz + dz], mats.curbMat);
+        }
+        continue;
+      }
+
       // 윗면 (보도블록) — 보이는 면이라 UV를 미터 단위로 맞춘다
       b.add(
         upPlane(BLOCK_SIZE, BLOCK_SIZE, [cx, CURB_HEIGHT, cz], [SIDEWALK_TILE, SIDEWALK_TILE]),
@@ -115,7 +148,25 @@ function roadPaint(b, mat) {
 // 가로등은 도시의 리듬을 만든다. 발광 머리만 있으면 공중에 뜬 점으로 보이므로
 // 기둥·팔·갓을 다 만든다. 실제 광원은 달지 않는다 — 150개면 어느 엔진도 못 버틴다.
 // 대신 빛 웅덩이 목록에 자리를 남긴다 (shared/lightpool.js).
+// (x, z) 가 속한 구역. 가로등은 도로 위에 있어 두 블록 사이인데, 인도 쪽
+// 블록의 성격을 따른다 — 실제로 가로등은 그 블록의 관리 주체가 세운다.
+function districtNear(x, z) {
+  const ix = Math.round(x / PITCH + (GRID - 1) / 2);
+  const iz = Math.round(z / PITCH + (GRID - 1) / 2);
+  const cx = blockCenter(Math.max(0, Math.min(GRID - 1, ix)));
+  const cz = blockCenter(Math.max(0, Math.min(GRID - 1, iz)));
+  return districtAt(
+    Math.max(0, Math.min(GRID - 1, ix)),
+    Math.max(0, Math.min(GRID - 1, iz)),
+    coreDistance(cx, cz)
+  );
+}
+
 function streetLamp(b, mats, pools, x, z, dirX, dirZ) {
+  // 계획에 자리를 요청한다. 골목 입구나 계단 착지점이 이미 차지했으면 건너뛴다.
+  // 실제로 가로등 기둥이 골목 입구 한가운데 박혀 있었다 (siteplan.js 머리말).
+  if (!claim(x, z, 1.1, TIER.LIGHT, 'lamp')) return;
+  const D = districtNear(x, z);
   const hx = x + dirX * LAMP_ARM;
   const hz = z + dirZ * LAMP_ARM;
   const top = LAMP_H + CURB_HEIGHT;
@@ -128,7 +179,7 @@ function streetLamp(b, mats, pools, x, z, dirX, dirZ) {
     z: hz,
     rx: dirX ? 5.5 : 8.5,
     rz: dirZ ? 5.5 : 8.5,
-    tint: LAMP_TINT,
+    tint: rgb01(D.lamp, 0.5),
   });
 
   b.cylinder(0.13, 0.17, LAMP_H, [x, LAMP_H / 2 + CURB_HEIGHT, z], mats.metalMat);
@@ -145,7 +196,7 @@ function streetLamp(b, mats, pools, x, z, dirX, dirZ) {
   // 발광면 (아래를 향한다)
   b.add(
     downPlane(dirX ? 0.78 : 0.26, dirZ ? 0.78 : 0.26, [hx, top - 0.33, hz]),
-    neon(NEON.cool)
+    neon(D.lamp)
   );
 }
 
@@ -210,6 +261,11 @@ export function createStreets(scene, rng, mats, blocks) {
   // 받게 하면 노면과 밝기가 어긋나 차선만 따로 어두워진다 (실제로 그렇게 됐다).
   const paint = new MeshBuilder('RoadPaint', { castShadow: false, receiveShadow: false });
   roadPaint(paint, mats.paintMat);
+  // 인도 마감 — 연석선·측구·배수구·점자블록·맨홀·물웅덩이.
+  // 인도 폭을 4.6m 확보하고 나니 이번엔 넓고 텅 빈 회색 띠가 됐다 (sidewalk.js).
+  // 차선 페인트와 같은 빌더에 넣는다 — 전부 노면에서 몇 mm 뜬 얇은 판이라
+  // 그림자 설정이 같아야 한다.
+  dressSidewalks(paint, rng, mats);
   group.add(paint.build());
 
   const pools = [];

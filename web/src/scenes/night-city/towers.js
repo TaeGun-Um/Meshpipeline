@@ -19,20 +19,30 @@ import {
   rectBox,
   facePlane,
   downPlane,
+  rectCenter,
+  rectSize,
 } from '../../core/boxfaces.js';
 import { autoBox } from '../../core/profile.js';
 import {
   FLOOR_HEIGHT,
   PODIUM_FLOOR,
   BLOCK_SIZE,
-  subdivideBlock,
+  SIDEWALK_W,
+  blockLots,
   pickHeight,
   coreDistance,
+  detailAt,
+  PANEL_TILE,
 } from './layout.js';
 import { SHOP_TINTS } from './materials.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 import { createCrown } from './rooftop.js';
+import { retrofit } from './retrofit.js';
+import { bazaarBlock } from './bazaar.js';
+import { factoryBlock } from './factory.js';
+import { housingSlab } from './housing.js';
+import { corpoTower } from './corpo.js';
 import { applySkin, facadeRelief } from './facade.js';
 import { districtAt, pickArchetypeIn } from './district.js';
 import { pickMassing, footprint, cylinderMass } from './massing.js';
@@ -42,7 +52,6 @@ import { buildBay, ALCOVE, SHOP_H, showcase } from './shopfront.js';
 // 창 한 칸 가로 폭 (m). 2.1 로 두면 폭 20m 건물에 창이 10개뿐이라 창 하나가
 // 거대해 보인다. 레퍼런스는 같은 폭에 창이 15개 안팎이다.
 const WINDOW_PITCH_X = 1.55;
-const PANEL_TILE = 7.0; // 콘크리트 패널 반복 간격 (m)
 const BAND_EVERY = 4; // 몇 층마다 층 띠를 두를지
 
 // 점포 색온도별 바닥 웅덩이 색. materials.SHOP_TINTS 와 순서가 같다.
@@ -61,7 +70,10 @@ const SHOP_WASH = SHOP_TINTS.map((hex) => rgb01(hex, 0.62));
 // 보이지 않는 면이었다. 이건 LOD 가 아니라 그냥 낭비다 — 지워도 잃는 게 없다.
 function streetFaces(r, blk) {
   const half = BLOCK_SIZE / 2;
-  const m = 4.0; // 블록 경계에서 이 거리 안쪽이면 길에 면한 것으로 본다
+  // 여유는 인도 폭보다 커야 한다. 인도(SIDEWALK_W)를 확보하면서 이 값을 4.0 으로
+  // 두면 어떤 필지도 조건을 못 넘겨 **점포와 간판이 통째로 사라진다.**
+  // 둘이 같은 상수를 봐야 한쪽만 바꿨을 때 조용히 비는 일이 없다.
+  const m = SIDEWALK_W + 1.6; // 블록 경계에서 이 거리 안쪽이면 길에 면한 것으로 본다
   return {
     px: r.x1 > blk.cx + half - m,
     nx: r.x0 < blk.cx - half + m,
@@ -77,7 +89,7 @@ function streetFaces(r, blk) {
 // 어디를 가도 같은 밝기면 갈 곳이 없다.
 //
 // faces 는 길에 면하는 면만 true 다. 나머지 면은 벽으로 메운다.
-function podium(b, r, h, rng, mats, signs, pools, D, faces) {
+function podium(b, r, h, rng, mats, signs, pools, D, faces, detail = 1) {
   // ── 벽감 ────────────────────────────────────────────────────────────────
   // 저층 띠를 ALCOVE 만큼 들여서 만든다. 그러면 가게마다 실제 깊이 1.3m 의
   // 공간이 생기고, 그 안을 유형별로 다르게 채울 수 있다.
@@ -97,7 +109,11 @@ function podium(b, r, h, rng, mats, signs, pools, D, faces) {
   const shopY = 0.06;
   for (const side of SIDES) {
     const fw = faceWidth(r, side);
-    const bays = Math.max(2, Math.round(fw / 6.5));
+    // 칸 폭을 디테일로 넓힌다. 외곽 건물은 점포가 크고 성기다 — 실제로도
+    // 도심에서 멀어질수록 작은 가게가 줄고 큰 매장 하나가 된다.
+    // 1층 점포는 건물에서 가장 비싼 부분이라(벽감·차양·진열·간판) 여기가
+    // 삼각형 예산의 최대 지렛대다.
+    const bays = Math.max(1, Math.round(fw / (6.5 + (1 - detail) * 9)));
     const bayW = fw / bays;
     const o = outward(side);
 
@@ -160,9 +176,19 @@ function podium(b, r, h, rng, mats, signs, pools, D, faces) {
         const by = shopY + rng.range(0.25, 0.6);
         const bh = Math.min(rng.range(1.6, 2.4), top - by);
         if (bh > 1.0) {
+          // 벽감 안쪽 벽에 붙인다.
+          //
+          // 원래 `sub`(필지 바깥면) 을 그대로 넘겼는데, 점포는 ALCOVE(1.3m)
+          // 만큼 안으로 파여 있다. 베이 **가운데**에는 그 자리에 아무것도
+          // 없어서 간판이 허공에 1.3m 떠 있었다 (기둥은 베이 경계에만 있다).
+          // 벽감 깊이만큼 밀어 넣으면 실제 벽에 닿는다.
+          const mount = shrink(sub, 0);
+          const o2 = outward(side);
+          if (o2.ox) { mount.x0 -= o2.ox * ALCOVE; mount.x1 -= o2.ox * ALCOVE; }
+          else { mount.z0 -= o2.oz * ALCOVE; mount.z1 -= o2.oz * ALCOVE; }
           signs.push({
             kind: 'blade',
-            rect: sub,
+            rect: mount,
             side,
             y: by,
             w: bh / 4.2,
@@ -189,31 +215,62 @@ function podium(b, r, h, rng, mats, signs, pools, D, faces) {
     b.add(facePlane(canopy, h - 0.4, 0.16, side, null, 0.02), trim);
   }
 
+  // ── 처마 윗면 ────────────────────────────────────────────────────────────
+  // 윗면에 아무것도 없어서, 위에서 내려다보면 **모서리만 빛나는 검은 판**으로
+  // 보였다. 지상에서만 보인다고 가정하고 만들었는데 프리캠은 위에서도 본다.
+  //
+  // 난간 턱 하나와 설비 몇 개면 충분하다 — 이 높이(10~15m)에서 내려다볼 때
+  // 필요한 건 디테일이 아니라 '평평하지 않다' 는 사실이다.
+  const lip = shrink(canopy, 0.12);
+  for (const side of SIDES) {
+    b.add(facePlane(lip, h - 0.15, 0.45, side, null, 0.0), mats.metalMat);
+  }
+  const cs = rectSize(canopy);
+  const cc = rectCenter(canopy);
+  const units = rng.int(2, 5);
+  for (let i = 0; i < units; i++) {
+    const ux = cc.x + rng.range(-cs.w * 0.36, cs.w * 0.36);
+    const uz = cc.z + rng.range(-cs.d * 0.36, cs.d * 0.36);
+    if (rng.chance(0.6)) {
+      b.add(autoBox(rng.range(1.0, 1.8), 0.7, rng.range(0.8, 1.4), [ux, h + 0.2, uz], 0.04), mats.ductMat);
+    } else {
+      b.cylinder(0.36, 0.36, 0.9, [ux, h + 0.3, uz], mats.rustMat, 8);
+    }
+  }
+
   // ── 간판 ────────────────────────────────────────────────────────────────
   // 상업 구역은 배너를 한 면에 여러 층으로 쌓는다. 2077 의 재팬타운이 그렇게
   // 보이는 이유는 간판이 많아서가 아니라 **겹쳐 쌓여 있어서**다.
-  const rows = Math.max(1, Math.round(D.signDensity));
+  const rows = Math.max(1, Math.round(D.signDensity * detail));
   for (const side of SIDES) {
     if (!faces[side]) continue; // 안 보이는 면에는 간판도 달지 않는다
+    // 쌓인 높이를 **누적**해서 내려온다.
+    //
+    // 원래는 `k * (bh + 0.35)` 로 자리를 잡았는데, 여기서 bh 는 그 회차에
+    // 새로 뽑은 높이다. 즉 아래 칸의 위치를 정할 때 **위 칸의 실제 높이를
+    // 쓰지 않는다.** 위 칸이 크고(1.8) 아래 칸이 작으면(1.1) 간격이 0 이
+    // 되거나 음수가 되어 두 배너가 겹친다.
+    let stack = h - 2.6;
     for (let k = 0; k < rows; k++) {
-      if (rng.chance(0.28)) continue;
       const bh = rng.range(1.1, 1.8);
+      if (rng.chance(0.28)) { stack -= bh + 0.35; continue; }
       signs.push({
         kind: 'banner',
         rect: r,
         side,
-        y: h - 2.6 - k * (bh + 0.35),
+        y: stack - bh / 2,
         w: faceWidth(r, side) * rng.range(0.5, 0.86),
         h: bh,
         scheme: rng.int(0, 5),
       });
+      stack -= bh + 0.35;
     }
   }
 }
 
 // ── 몸통 ───────────────────────────────────────────────────────────────────
 
-function shaft(b, r0, y0, top, rng, mats, kind, skinIdx, signs, massing, orient) {
+function shaft(b, r0, y0, top, rng, mats, kind, skinIdx, signs, massing, orient, faces, density) {
   // 세트백 단계. 높으면 여러 번 줄인다 — 계단형 실루엣의 근원.
   const total = top - y0;
   const steps = total > 120 ? rng.int(2, 3) : total > 55 ? rng.int(1, 2) : 1;
@@ -241,6 +298,10 @@ function shaft(b, r0, y0, top, rng, mats, kind, skinIdx, signs, massing, orient)
         b.add(rectBox(part, y, segH, PANEL_TILE), mats.panelMat);
         applySkin(b, part, y, segH, kind, skinIdx, mats, rng);
         facadeRelief(b, part, y, segH, kind, rng, mats);
+        // 나중에 덧붙은 설비 — 배관·덕트·증축 발코니·케이블.
+        // 창 격자의 규칙성을 깨는 것이 목적이다 (retrofit.js 머리말 참고).
+        // 커튼월은 제외한다 — 매끈한 유리면이 그 유형의 전부다.
+        if (kind !== 'curtain') retrofit(b, part, y, segH, faces, rng, mats, density);
       }
     }
 
@@ -321,6 +382,15 @@ export function createTowers(scene, rng, mats, blocks) {
   const b = new MeshBuilder('Towers');
   const signs = [];
   const pools = [];
+  const alleys = [];
+  // ── 앵커 ─────────────────────────────────────────────────────────────────
+  // 건물마다 { 사각형, 옥상 높이 } 를 기록한다.
+  //
+  // 브릿지·데크가 **허공에서 시작해 허공에서 끝나는** 문제의 원인이 이것이
+  // 없었기 때문이다. siteplan 은 지면 2D 만 관리해서 공중에는 대응물이 없었고,
+  // 그래서 vertical 이 좌표 해시로 뽑은 임의 높이에 다리를 놓았다.
+  // 이제 vertical 은 이 목록에서 **양 끝이 실제로 닿는 쌍**만 고른다.
+  const anchors = [];
   let count = 0;
   let tallest = 0;
   let beaconIdx = 0;
@@ -333,33 +403,108 @@ export function createTowers(scene, rng, mats, blocks) {
     // 타워가 아닌 블록(공사장·광장·빈 대지·랜드마크)은 program.js / landmark.js 담당
     if (blk.program !== 'towers') continue;
     if (reserved.has(`${blk.ix},${blk.iz}`)) continue;
-    for (const rect of subdivideBlock(rng, blk.cx, blk.cz)) {
+    // 구역을 **블록 단위로** 먼저 구한다. 인도 폭·필지 잘기·골목 밀도를
+    // 구역이 정하므로 필지를 나누기 전에 알아야 한다.
+    const blkCore = coreDistance(blk.cx, blk.cz);
+    const BD = districtAt(blk.ix, blk.iz, blkCore);
+    // 외곽 블록은 원래 성기다 (layout.detailAt 주석 참고).
+    // 거리 기반으로 '줄이는' 것이 아니라 도시 구조로 그렇게 만든다.
+    const detail = detailAt(blk.cx, blk.cz);
+
+    const { lots, alleys: blkAlleys } = blockLots(rng, blk, BD);
+    // 구역 이름을 붙여 넘긴다. 골목 벽 높이가 구역별 건물 높이를 따라야 하는데
+    // layout 은 순환 참조 때문에 district 를 직접 못 본다 (alley.js 참고).
+    for (const a of blkAlleys) a.zone = BD.name;
+    alleys.push(...blkAlleys);
+
+    for (const rect of lots) {
       // 필지 사이 간격. 좁아야 한다 — 레퍼런스의 밀도는 건물이 서로 맞닿아
       // 있는 데서 온다. 2.6m 씩 띄우면 블록마다 골목이 생겨 성글어 보인다.
       const r = shrink(rect, rng.range(0.35, 1.4));
       if (r.x1 - r.x0 < 6.5 || r.z1 - r.z0 < 6.5) continue;
 
-      const core = coreDistance(blk.cx, blk.cz);
-      const D = districtAt(blk.ix, blk.iz, core);
+      const core = blkCore;
+      const D = BD;
       // 구역이 높이 성향을 민다 — 기업 구역은 초고층, 상업·공업은 저층 위주.
       // 그래야 스카이라인만 보고도 어느 구역인지 안다.
       const height = pickHeight(rng, Math.max(0, Math.min(1, core - D.heightBias)));
       count++;
       if (height > tallest) tallest = height;
 
-      const podH = Math.min(height * 0.85, PODIUM_FLOOR * rng.int(2, 3));
       const faces = streetFaces(r, blk);
-      podium(b, r, podH, rng, mats, signs, pools, D, faces);
+
+      // ── 상업 구역은 생성기가 다르다 ──────────────────────────────────
+      // 번화가는 계획된 상업지구가 아니라 **계획이 터진 자리**다 (docs/city.md
+      // 3기). 그래서 타워가 아니라 낮고 빽빽한 적층 상가여야 한다.
+      // 파라미터로는 이 차이를 못 만든다 — 매싱 자체가 다르다.
+      // 기업 구역 — 2기. 도시에서 유일하게 **다시 설계된 곳**이다.
+      // 대지를 꽉 채우지 않고 비운다 — 광장이 부의 표시다 (corpo.js 머리말).
+      if (D.name === '기업') {
+        rng.int(2, 3); // 난수 소비를 맞춘다
+        const ct = corpoTower(b, r, rng, mats, height, pools, signs);
+        if (ct) {
+          count++;
+          if (ct.top > tallest) tallest = ct.top;
+        anchors.push({ rect: r, top: ct.top, zone: D.name });
+          anchors.push({ rect: r, top: ct.top, zone: D.name });
+          districts.add(D.name);
+          continue;
+        }
+        // 대지가 너무 작아 광장을 못 내면 공통 타워로 떨어진다
+      }
+
+      // 주거 구역 — 1기. 공장 노동자를 위해 빨리, 똑같이 지은 집.
+      // 완벽하게 규칙적인 발코니 격자 위에 40년치 생활이 덮인 건물이다
+      // (housing.js 머리말). 탑이 아니라 슬래브다.
+      if (D.name === '주거') {
+        rng.int(2, 3); // 난수 소비를 맞춘다
+        const hs = housingSlab(b, r, rng, mats, faces, detail, pools);
+        count++;
+        if (hs.top > tallest) tallest = hs.top;
+        anchors.push({ rect: r, top: hs.top, zone: D.name });
+        districts.add(D.name);
+        continue;
+      }
+
+      // 공업 구역 — 1기. 이 도시가 존재하는 이유이고, 형태 원리가 정반대다.
+      // 사람이 보라고 지은 것이 아니라 기계가 들어가라고 지은 건물이라
+      // 낮고 길고 가로로 뻗는다 (factory.js 머리말).
+      if (D.name === '공업') {
+        rng.int(2, 3); // 난수 소비를 맞춘다
+        const fb = factoryBlock(b, r, rng, mats, faces, detail, pools);
+        count++;
+        if (fb.top > tallest) tallest = fb.top;
+        anchors.push({ rect: r, top: fb.top, zone: D.name });
+        districts.add(D.name);
+        continue;
+      }
+
+      if (D.name === '상업') {
+        // 난수 소비를 맞춘다 — 건너뛰면 뒤의 모든 생성이 밀린다
+        rng.int(2, 3);
+        const bz = bazaarBlock(b, r, rng, mats, D, faces, detail, signs);
+        count++;
+        if (bz.top > tallest) tallest = bz.top;
+        anchors.push({ rect: r, top: bz.top, zone: D.name });
+        districts.add(D.name);
+        continue;
+      }
+
+      const podH = Math.min(height * 0.85, PODIUM_FLOOR * rng.int(2, 3));
+      podium(b, r, podH, rng, mats, signs, pools, D, faces, detail);
 
       if (height > podH + FLOOR_HEIGHT * 2) {
         const shaftRect = shrink(r, rng.range(1.2, 3.0));
         const width = Math.min(shaftRect.x1 - shaftRect.x0, shaftRect.z1 - shaftRect.z0);
         const kind = pickArchetypeIn(rng, D, height, width);
-        const skinIdx = rng.int(0, 3);
+        // 구역이 정한다. 난수는 그대로 소비해서 뒤의 생성이 밀리지 않게 한다.
+        rng.int(0, 3);
+        const skinIdx = D.skin;
         const massing = pickMassing(rng, width, width, height);
         const orient = rng.int(0, 3);
         const end = shaft(
-          b, shaftRect, podH, height, rng, mats, kind, skinIdx, signs, massing, orient
+          b, shaftRect, podH, height, rng, mats, kind, skinIdx, signs, massing, orient,
+          faces, D.retrofit * detail
         );
         // 높고 넓은 면을 가진 타워에만.
         // 커튼월은 제외한다 — 매끈한 유리면이 이 유형의 전부인데 광고판을 붙이면
@@ -368,12 +513,14 @@ export function createTowers(scene, rng, mats, blocks) {
           megaBoard(signs, rng, shaftRect, podH, height);
         }
         createCrown(b, end.rect, end.top, height, rng, mats, beaconIdx++);
+        anchors.push({ rect: shaftRect, top: height, zone: D.name });
       } else {
         createCrown(b, r, podH, height, rng, mats, beaconIdx++);
+        anchors.push({ rect: r, top: podH, zone: D.name });
       }
       districts.add(D.name);
     }
   }
 
-  return { group: b.build(scene), signs, pools, count, tallest, districts: [...districts] };
+  return { group: b.build(scene), signs, pools, alleys, anchors, count, tallest, districts: [...districts] };
 }

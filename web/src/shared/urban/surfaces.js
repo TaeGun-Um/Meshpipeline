@@ -208,6 +208,143 @@ export function surfaceTextures(S) {
       });
     },
 
+    // ── 골목 벽 (때 탄 콘크리트) ──────────────────────────────────────────
+    //
+    // 골목 벽에 도시 공용 패널 텍스처를 썼더니 **너무 깨끗했다.** 뒷골목인데
+    // 정면과 같은 마감으로 보였다. 뒷면을 뒷면으로 만드는 것은 형상보다
+    // 표면이다 — 배관이 지나간 자국, 물 흘러내린 줄, 밑동의 때, 낙서.
+    //
+    // 낙서는 글자를 그리지 않는다. 스프레이 낙서가 낙서로 읽히는 이유는
+    // 내용이 아니라 **불규칙한 색 덩어리가 벽 아래쪽에 몰려 있다**는 것이다.
+    // 저해상도에서 글자를 흉내내면 노이즈로만 보인다.
+    alleyWall(seed = 7600) {
+      const grain = tiledFbm(seed + 1, 44, 4);
+      const stain = tiledFbm(seed + 2, 5, 4);
+      const streak = tiledFbm(seed + 3, 2, 3);
+      const tag = tiledFbm(seed + 4, 9, 3);
+      const rows = 5;
+
+      return bake(512, 1, 1, (u, v, o) => {
+        // v=0 이 위다 (core/textures.js 의 실측 주석 참고).
+        // 아래로 갈수록 더러워지므로 '아래쪽 정도' 를 이름 붙여 쓴다.
+        const down = v;
+        const gn = grain(u, v);
+        const seam = (v * rows) % 1 < 0.035;
+
+        let r = S.panel[0] * (0.86 + gn * 0.24);
+        let g = S.panel[1] * (0.86 + gn * 0.24);
+        let bl = S.panel[2] * (0.86 + gn * 0.24);
+        let rough = 0.86 + gn * 0.1;
+        let h = 0.5 + (gn - 0.5) * 0.3;
+
+        // 패널 줄눈
+        if (seam) {
+          r *= 0.55; g *= 0.55; bl *= 0.55;
+          h -= 0.35;
+        }
+
+        // 물 흘러내린 줄 — 세로로 길게 늘인 노이즈. 위에서 시작해 아래로 번진다.
+        const runs = smoothstep(0.54, 0.9, streak(u * 0.4, v * 0.05)) * smoothstep(0.05, 0.6, down);
+        r *= 1 - runs * 0.4; g *= 1 - runs * 0.38; bl *= 1 - runs * 0.3;
+        rough += runs * 0.06;
+
+        // 밑동의 때 — 바닥에서 올라온 얼룩
+        const soil = smoothstep(0.55, 1.0, down) * (0.35 + stain(u, v) * 0.4);
+        r *= 1 - soil * 0.45; g *= 1 - soil * 0.45; bl *= 1 - soil * 0.42;
+
+        // 낙서 — 아래쪽 1/3 에만. 색 덩어리 둘을 다른 주파수로 겹친다.
+        if (down > 0.62) {
+          const t = tag(u, v);
+          const near = smoothstep(0.62, 0.78, down);
+          if (t > 0.72) {
+            const k = smoothstep(0.72, 0.84, t) * near * 0.85;
+            r = lerp(r, 196, k); g = lerp(g, 42, k); bl = lerp(bl, 120, k);
+          } else if (t < 0.24) {
+            const k = smoothstep(0.24, 0.12, t) * near * 0.7;
+            r = lerp(r, 60, k); g = lerp(g, 200, k); bl = lerp(bl, 170, k);
+          }
+        }
+
+        o.c[0] = clamp(r, 0, 255);
+        o.c[1] = clamp(g, 0, 255);
+        o.c[2] = clamp(bl, 0, 255);
+        o.r = clamp(rough, 0, 1);
+        o.h = clamp(h, 0, 1);
+      });
+    },
+
+    // ── 잡물건 (금속 통·상자·컨테이너) ────────────────────────────────────
+    //
+    // 쓰레기통·팔레트 상자·컨테이너가 **실루엣으로만** 보인다는 지적이 계속
+    // 있었다. 형태는 잡혔는데 표면이 없어서다 — 골목 벽이 같은 문제였고
+    // alleyWall 텍스처로 해결했다. 잡물건도 같다.
+    //
+    // 세 가지가 있어야 금속 통으로 읽힌다.
+    //   1) 세로 리브   원통·각통을 찍어낼 때 생기는 보강 골. 빛을 끊어 준다.
+    //   2) 녹과 긁힘   아래쪽에 몰린다. 바닥에 끌고 다닌 흔적이다.
+    //   3) 스텐실 표식 글자를 그리지 않는다. 저해상도에서 글자는 노이즈일 뿐이고,
+    //                  **밝은 사각 블록 몇 개**만 있어도 도장 표식으로 읽힌다.
+    //
+    // tint 로 색을 받는다 — 쓰레기통(녹색)·상자(갈색)·컨테이너(청색)가
+    // 같은 레시피를 공유하되 색만 다르다. 텍스처 장수를 아끼는 방법이다.
+    metalCrate(seed = 7700, tint = [64, 82, 70]) {
+      const grain = tiledFbm(seed + 1, 40, 3);
+      const rust = tiledFbm(seed + 2, 7, 4);
+      const scuff = tiledFbm(seed + 3, 18, 3);
+      const ribs = 9;
+
+      return bake(256, 1, 1, (u, v, o) => {
+        // v = 0 이 위다 (core/textures.js 실측 주석). 아래쪽이 더 상한다.
+        const down = v;
+        const gn = grain(u, v);
+
+        // 세로 리브 — 이게 없으면 매끈한 색판이다
+        const rib = Math.cos(u * Math.PI * 2 * ribs);
+        const shade = 1 + rib * 0.14;
+
+        let r = tint[0] * shade * (0.86 + gn * 0.26);
+        let g = tint[1] * shade * (0.86 + gn * 0.26);
+        let bl = tint[2] * shade * (0.86 + gn * 0.26);
+        let rough = 0.72 + gn * 0.14;
+
+        // 테두리 보강 — 위아래 끝의 접힌 부분
+        const edge = down < 0.06 || down > 0.94;
+        if (edge) { r *= 1.14; g *= 1.14; bl *= 1.14; }
+
+        // 긁힘 — 아래쪽에 몰린다. 바닥에 끌고 다닌 자국이다.
+        const sc = smoothstep(0.62, 0.92, scuff(u, v)) * smoothstep(0.25, 1.0, down);
+        r = lerp(r, 132, sc * 0.5);
+        g = lerp(g, 128, sc * 0.5);
+        bl = lerp(bl, 124, sc * 0.5);
+        rough -= sc * 0.2;
+
+        // 녹 — 아래쪽 가장자리부터
+        const rs = smoothstep(0.58, 0.9, rust(u, v)) * smoothstep(0.35, 1.0, down);
+        r = lerp(r, 116, rs * 0.72);
+        g = lerp(g, 62, rs * 0.72);
+        bl = lerp(bl, 38, rs * 0.72);
+        rough += rs * 0.2;
+
+        // 스텐실 표식 — 위쪽 1/3 에 밝은 사각 블록 셋.
+        // 글자를 그리지 않는 이유는 shared/glyphs.js 의 원칙과 같다.
+        if (down > 0.14 && down < 0.34) {
+          const cell = Math.floor(u * 7);
+          const fx = u * 7 - cell;
+          const mark = (cell === 1 || cell === 3 || cell === 4) && fx > 0.2 && fx < 0.8;
+          if (mark) {
+            r = lerp(r, 196, 0.62); g = lerp(g, 196, 0.62); bl = lerp(bl, 190, 0.62);
+          }
+        }
+
+        o.c[0] = clamp(r, 0, 255);
+        o.c[1] = clamp(g, 0, 255);
+        o.c[2] = clamp(bl, 0, 255);
+        o.r = clamp(rough, 0, 1);
+        // 리브를 높이에도 실어 노말맵이 골을 만들게 한다
+        o.h = clamp(0.5 + rib * 0.3 - rs * 0.2, 0, 1);
+      });
+    },
+
     // ── 골강판 셔터 (닫힌 점포) ───────────────────────────────────────────
     shutter(seed = 7500) {
       const grain = tiledFbm(seed + 1, 50, 3);

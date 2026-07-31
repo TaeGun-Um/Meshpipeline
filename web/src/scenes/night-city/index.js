@@ -25,10 +25,25 @@
 import { Scene } from '../../core/scene.js';
 import { createLightPools } from '../../shared/lightpool.js';
 import { createRain } from '../../shared/rain.js';
+
+// ── 날씨 ───────────────────────────────────────────────────────────────────
+//
+// 비를 끄면 도시가 눈에 띄게 밝아진다. 빗줄기 자체가 화면의 밝은 픽셀을
+// 가리기도 하지만, 그보다 **젖은 노면**을 전제로 재질을 맞춰 놨기 때문이다 —
+// 거칠기를 낮춰 반사로 밝기를 벌던 표면들이 비가 없으면 그냥 어두워진다.
+// 그래서 비를 끌 때는 노출도 함께 올려야 한다.
+const RAIN = false;
 import { buildMaterials } from './materials.js';
 import { createSky, createLights } from './env.js';
 import { createStreets } from './streets.js';
 import { createTowers } from './towers.js';
+import { createAlleys } from './alley.js';
+import { createVertical, createBridges } from './vertical.js';
+import { createParking } from './parking.js';
+import { createPort } from './port.js';
+import { resetPlan, TIER, claim } from './siteplan.js';
+import { allAlleyRects, ALLEY_WIDTH, setAlleyRateHook, coreDistance } from './layout.js';
+import { districtAt } from './district.js';
 import { createSignage } from './signage.js';
 import { createHighway } from './highway.js';
 import { createSkyline } from './skyline.js';
@@ -49,12 +64,15 @@ class NightCity extends Scene {
       // 큰 교차로에서 고가도로가 지나는 쪽을 본다
       camera: { pos: [26, 7.5, 150], target: [-30, 34, -40] },
       lens: { fov: 64, near: 0.4, far: 6000 },
-      render: { exposure: 1.25, shadows: true },
+      // 노출 1.25 -> 1.42. 골목을 넣고 나서 도시 전체가 조금 어둡게 느껴졌다.
+      // 블룸은 톤매핑 전 HDR 값을 보므로 노출을 올리면 번짐도 같이 세진다 —
+      // 그래서 threshold 를 함께 올려 밝은 것만 번지는 상태를 유지한다.
+      render: { exposure: 1.85, shadows: true },
       post: {
         // 0.5 로 두면 발광면이 전부 흰 덩어리로 뭉치고, 1.0 근처면 하나도 번지지
         // 않는다 (emissive 최대가 1.0이므로). 0.72 가 "발광면만 걸리고 형태는
         // 남는" 지점이다.
-        bloom: { threshold: 0.72, strength: 0.62, radius: 0.8 },
+        bloom: { threshold: 0.92, strength: 0.5, radius: 0.78 },
       },
     });
   }
@@ -76,15 +94,80 @@ class NightCity extends Scene {
 
     const blocks = blockList();
 
-    const streets = await step('노면 · 인도 · 가로등 · 신호등', 42, () =>
+    // ── 지상 배치 계획 ────────────────────────────────────────────────────
+    //
+    // 지상에 물건을 놓는 모듈이 다섯인데 서로의 존재를 모른 채 각자 놓고
+    // 있었다. 가로등이 골목 입구에 박히고, 계단이 점자블록 위로 내려앉고,
+    // 자판기가 계단 착지점을 막았다 (siteplan.js 머리말).
+    //
+    // **놓는 순서 = 우선순위** 다. 아래 순서가 그대로 실제 도시계획의 순서다.
+    //   진입 동선(골목 입구) -> 수직 동선(계단·기둥) -> 조명 -> 편의 시설
+    resetPlan();
+
+    // layout 이 구역별 골목 밀도를 알 수 있게 연결한다. layout 이 district 를
+    // 직접 import 하면 순환 참조가 되므로 함수를 주입하는 쪽을 택했다.
+    setAlleyRateHook((ix, iz) =>
+      districtAt(ix, iz, coreDistance(blockCenter(ix), blockCenter(iz))).alleyRate
+    );
+
+    // 1) 골목 입구를 먼저 비워 둔다. 좌표 해시로 정해지므로 건물을 세우기
+    //    전에 알 수 있다. 통로 입구가 막히면 골목 자체가 죽는다.
+    for (const a of allAlleyRects()) {
+      const r = a.rect;
+      const clear = ALLEY_WIDTH / 2 + 2.2;
+      if (a.alongX) {
+        claim(r.x0, (r.z0 + r.z1) / 2, clear, TIER.ACCESS, 'alleyMouth');
+        claim(r.x1, (r.z0 + r.z1) / 2, clear, TIER.ACCESS, 'alleyMouth');
+      } else {
+        claim((r.x0 + r.x1) / 2, r.z0, clear, TIER.ACCESS, 'alleyMouth');
+        claim((r.x0 + r.x1) / 2, r.z1, clear, TIER.ACCESS, 'alleyMouth');
+      }
+    }
+
+    // 2) 수직 동선을 **가로등보다 먼저** 만든다. 계단 착지점과 데크 기둥은
+    //    구조물이라 못 비키므로 자리를 선점해야 한다.
+    const vert = await step('2층 데크 · 계단 · 브릿지', 40, () =>
+      createVertical(scene, rng, mats, allAlleyRects())
+    );
+    built.vertical = vert.group;
+
+    // 3) 그 다음이 조명과 노면이다. 가로등은 위 둘이 차지한 자리를 피한다.
+    const streets = await step('노면 · 인도 · 가로등 · 신호등', 46, () =>
       createStreets(scene, rng, mats, blocks)
     );
     built.streets = streets.group;
+
+    // 바다·안벽·항만 — 이 도시가 존재하는 이유다. 삼면이 바다인 곶이라
+    // 밖으로 못 넓히고, 그 사실이 3기의 밀도와 4기의 증축을 만들었다
+    // (docs/city.md 지리).
+    const port = await step('바다 · 안벽 · 항만', 52, () => createPort(scene, rng, mats));
+    built.port = port.group;
+
+    // 갓길 주차 — 차도가 검은 판으로 보이는 가장 큰 원인이었다.
+    // 실제 도시에서 도로 양 끝 차선은 거의 항상 세워둔 차로 차 있고,
+    // 보행자가 보는 것은 '도로' 가 아니라 **차의 벽**이다 (parking.js 머리말).
+    const parked = await step('갓길 주차', 50, () => createParking(scene, rng, mats));
+    built.parking = parked.group;
 
     const towers = await step('타워 · 포디움 · 세트백 · 크라운', 58, () =>
       createTowers(scene, rng, mats, blocks)
     );
     built.buildings = towers.group;
+
+    // 건물 사이 브릿지 — **towers 다음**이어야 한다. 어떤 건물이 어디에
+    // 얼마나 높이 서 있는지를 알아야 양 끝이 실제로 닿는 쌍을 고를 수 있다
+    // (vertical.js createBridges 머리말 참고).
+    const bridges = await step('건물 사이 브릿지', 60, () =>
+      createBridges(scene, rng, mats, towers.anchors)
+    );
+    built.bridges = bridges.group;
+
+    // 골목 — 블록을 관통하는 좁은 뒷길. 어느 블록에 낼지는 towers 가
+    // 필지를 나누면서 함께 정한다 (골목을 먼저 빼야 통로가 된다).
+    const alleys = await step('골목 · 뒷골목 설비', 60, () =>
+      createAlleys(scene, rng, mats, towers.alleys)
+    );
+    built.alleys = alleys.group;
 
     // 타워가 아닌 블록 — 공사장·광장·빈 대지.
     // 빈 곳이 있어야 타워가 높아 보인다 (program.js 주석 참고).
@@ -117,6 +200,8 @@ class NightCity extends Scene {
         ...signage.pools,
         ...programs.pools,
         ...life.pools,
+        ...alleys.pools,
+        ...vert.pools,
       ])
     );
     built.lightPools = pools.group;
@@ -132,8 +217,8 @@ class NightCity extends Scene {
     const air = await step('공중 교통', 93, () => createAirTraffic(scene, rng, mats));
     built.air = air.group;
 
-    const rain = await step('비', 95, () => createRain(scene, rng));
-    built.rain = rain.group;
+    const rain = RAIN ? await step('비', 95, () => createRain(scene, rng)) : null;
+    if (rain) built.rain = rain.group;
 
     await step('환경광 굽기 (네온 반사)', 97, () =>
       this.bakeEnvironment(scene, renderer, { source: 'scene', intensity: 0.9, far: 4000 })
@@ -144,18 +229,20 @@ class NightCity extends Scene {
       stats: [
         `구역 ${towers.districts.join('·')}`,
         `건물 ${towers.count}동`,
+        `골목 ${alleys.count}개`,
+        `데크 ${vert.decks} · 계단 ${vert.stairs} · 브릿지 ${bridges.count}`,
         `최고 ${towers.tallest.toFixed(0)}m`,
         `공사장 ${programs.tally.construction} · 광장 ${programs.tally.plaza} · 공터 ${programs.tally.lot}`,
         `가로시설 ${life.count}개`,
         `간판 ${signage.count}개`,
         `빛 웅덩이 ${pools.count}개`,
-        `차량 ${traffic.count}대`,
-        `원경 ${skyline.count}동`,
+        `차량 ${traffic.count}대 · 주차 ${parked.count}대`,
+        `원경 ${skyline.count}동 · 크레인 ${port.cranes}기`,
       ],
       tick(t) {
         traffic.tick(t);
         air.tick(t);
-        rain.tick(t, camera);
+        rain?.tick(t, camera);
         // 항공장애등 — 세 벌을 서로 다른 위상으로. 짧게 켜지고 길게 꺼지는
         // 실제 항공등 리듬을 pow 로 만든다.
         //

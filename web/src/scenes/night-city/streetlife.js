@@ -17,6 +17,9 @@ import { downPlane } from '../../core/boxfaces.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon, neonSoft } from '../../shared/masters.js';
 import { STREET_WIDTH, CITY_HALF, CURB_HEIGHT, gridLines, onIntersection } from './layout.js';
+import { claim, TIER } from './siteplan.js';
+import { districtAt } from './district.js';
+import { PITCH, GRID, blockCenter, coreDistance, detailAt } from './layout.js';
 
 const SPACING = 13; // 시설물 간격 (m)
 const EDGE = STREET_WIDTH / 2 + 1.6; // 인도 위, 차도 경계에서 1.6m
@@ -225,30 +228,52 @@ function bollards({ b, x, z, rot, rng, mats }) {
 
 // ── 배치 ───────────────────────────────────────────────────────────────────
 
+// 시설물 종류. 가중치는 **구역이 정한다** (district.js 의 furniture).
+//
+// 예전에는 여기 고정 가중치를 뒀는데, 그러면 7종이 모든 구역에 균등하게 나와서
+// 구역이 달라도 인도가 똑같았다. 레퍼런스에서 구역을 가르는 것은 무엇이
+// 있느냐보다 **무엇이 없느냐**다 — 기업 구역에 포장마차가 없고, 공업 구역에
+// 화분이 없는 것이 그 구역의 성격이다.
 const KINDS = [
-  { w: 2.4, fn: vendingBank, lit: true },
-  { w: 1.0, fn: shelter, lit: true },
-  { w: 1.0, fn: foodStall, lit: true },
-  { w: 2.6, fn: utilityBox, lit: false },
-  { w: 2.2, fn: planter, lit: false },
-  { w: 2.0, fn: bins, lit: false },
-  { w: 1.4, fn: bollards, lit: false },
+  { key: 'vending', fn: vendingBank, lit: true },
+  { key: 'shelter', fn: shelter, lit: true },
+  { key: 'stall', fn: foodStall, lit: true },
+  { key: 'utility', fn: utilityBox, lit: false },
+  { key: 'planter', fn: planter, lit: false },
+  { key: 'bins', fn: bins, lit: false },
+  { key: 'bollard', fn: bollards, lit: false },
 ];
-const TOTAL_W = KINDS.reduce((a, k) => a + k.w, 0);
 
-function pickKind(rng, last) {
+// 예전 기본값. 구역이 가중치를 안 주면 이걸 쓴다.
+const FALLBACK = { vending: 2.4, shelter: 1.0, stall: 1.0, utility: 2.6, planter: 2.2, bins: 2.0, bollard: 1.4 };
+
+function pickKind(rng, last, weights) {
+  const w = weights || FALLBACK;
+  let total = 0;
+  for (const k of KINDS) total += w[k.key] ?? 0;
+  // 가중치가 전부 0 인 구역은 없지만, 있어도 죽지 않게 한다
+  if (total <= 0) return null;
+
   // 같은 것이 연달아 나오면 절차적으로 찍은 티가 난다
   for (let tries = 0; tries < 6; tries++) {
-    let acc = rng.next() * TOTAL_W;
+    let acc = rng.next() * total;
     for (const k of KINDS) {
-      acc -= k.w;
+      acc -= w[k.key] ?? 0;
       if (acc <= 0) {
         if (k !== last) return k;
         break;
       }
     }
   }
-  return KINDS[0];
+  // 여섯 번 시도해도 같은 것만 나오면 (가중치가 한쪽에 몰린 구역) 그냥 그것을 쓴다
+  return KINDS.find((k) => (w[k.key] ?? 0) > 0) || null;
+}
+
+// (x, z) 가 속한 구역. 인도 위 물건이므로 가장 가까운 블록의 성격을 따른다.
+function districtNear(x, z) {
+  const ix = Math.max(0, Math.min(GRID - 1, Math.round(x / PITCH + (GRID - 1) / 2)));
+  const iz = Math.max(0, Math.min(GRID - 1, Math.round(z / PITCH + (GRID - 1) / 2)));
+  return districtAt(ix, iz, coreDistance(blockCenter(ix), blockCenter(iz)));
 }
 
 export function createStreetLife(scene, rng, mats) {
@@ -263,8 +288,13 @@ export function createStreetLife(scene, rng, mats) {
       // X축 도로 (z = c). 양쪽 인도, 도로 중심을 향한다.
       if (!onIntersection(t, c)) {
         for (const s of [-1, 1]) {
-          if (!rng.chance(0.72)) continue;
-          const k = pickKind(rng, last);
+          // 편의 시설은 가장 낮은 등급이다. 골목 입구·계단·가로등이 이미
+          // 차지한 자리는 피한다. 난수를 뽑기 **전에** 걸러야 스트림이
+          // 어긋나지 않는다.
+          if (!claim(t, c + s * EDGE, 2.2, TIER.AMENITY, 'fixture')) continue;
+          if (!rng.chance(0.72 * detailAt(t, c + s * EDGE))) continue;
+          const k = pickKind(rng, last, districtNear(t, c + s * EDGE).furniture);
+          if (!k) continue;
           last = k;
           // 인도 위 물건은 도로를 향한다: s=+1 이면 -Z 를 본다
           k.fn({ b, x: t, z: c + s * EDGE, rot: s > 0 ? -Math.PI / 2 : Math.PI / 2, rng, mats, pools });
@@ -274,8 +304,10 @@ export function createStreetLife(scene, rng, mats) {
       // Z축 도로 (x = c)
       if (!onIntersection(c, t)) {
         for (const s of [-1, 1]) {
-          if (!rng.chance(0.72)) continue;
-          const k = pickKind(rng, last);
+          if (!claim(c + s * EDGE, t, 2.2, TIER.AMENITY, 'fixture')) continue;
+          if (!rng.chance(0.72 * detailAt(c + s * EDGE, t))) continue;
+          const k = pickKind(rng, last, districtNear(c + s * EDGE, t).furniture);
+          if (!k) continue;
           last = k;
           k.fn({ b, x: c + s * EDGE, z: t, rot: s > 0 ? Math.PI : 0, rng, mats, pools });
           count++;

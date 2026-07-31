@@ -25,14 +25,16 @@ export function createLights(scene) {
 
   // 환경광. 위는 청록(하늘 광해), 아래는 자주(네온이 젖은 노면에 반사) —
   // 위아래 색이 달라야 상자 덩어리에 입체가 생긴다.
-  const hemi = new THREE.HemisphereLight(0x3a5c8f, 0x3a1e42, 0.75);
+    // 노출만 올리면 발광면만 타고 그림자 쪽은 그대로 검다. 도시를 밝히려면
+  // 환경광을 같이 올려야 '전체적으로 밝아진' 것으로 읽힌다.
+  const hemi = new THREE.HemisphereLight(0x4a6ea8, 0x4a2a52, 1.15);
   hemi.name = 'Ambient';
   scene.add(hemi);
 
   // 달빛. 도시에서 유일한 그림자원.
   // 그림자 카메라가 도시 전체를 덮어야 하므로 범위가 크고, 그만큼 해상도당
   // 실효 정밀도가 떨어진다. 4096 을 써도 픽셀당 13cm 수준이다.
-  const moon = new THREE.DirectionalLight(0xa9c2f2, 0.55);
+  const moon = new THREE.DirectionalLight(0xa9c2f2, 0.85);
   moon.name = 'Moon';
   moon.position.set(-260, 400, 200);
   moon.castShadow = true;

@@ -28,12 +28,18 @@ export function facadeTextures(S) {
     // 마젠타 확률 5% 를 줬을 때, 실제로 구운 텍스처를 세어 보니 어떤 시트는
     // 마젠타가 16.7% 였다. 켜진 창이 25개면 확률 5% 가 4개로 뭉치는 일이 흔하고,
     // 그 시트를 쓴 건물 전부가 "마젠타 건물" 이 된다.
-    windowSheet(seed, { cols = 10, rows = 14, litRate = 0.42 } = {}) {
+    // tints 로 색온도 분포를 바꿀 수 있다 — **구역을 가르는 가장 큰 수단**이다.
+    //
+    // 인도 폭·시설물·가로등 색을 구역마다 다르게 해도 도시가 비슷해 보였다.
+    // 화면의 90% 는 건물 외피이고, 그 외피가 밤에 무엇으로 읽히느냐는
+    // **창문 불빛의 색과 밀도**다. 그게 모든 구역에서 같으면 나머지를 아무리
+    // 다르게 해도 같은 도시로 보인다.
+    windowSheet(seed, { cols = 10, rows = 14, litRate = 0.42, tints = null } = {}) {
       const grime = tiledFbm(seed + 11, 4, 4);
       const glass = tiledFbm(seed + 12, 30, 3);
 
-      // 색온도 분포. 색 창은 합쳐 5% 아래다 — shared/neon.js 의 원칙 참고.
-      const TINTS = [
+      // 기본 색온도 분포. 색 창은 합쳐 5% 아래다 — shared/neon.js 의 원칙 참고.
+      const TINTS = tints || [
         { c: rgb255(NEON.warm), w: 50 },
         { c: rgb255(NEON.cool), w: 32 },
         { c: rgb255(NEON.amber), w: 13 },

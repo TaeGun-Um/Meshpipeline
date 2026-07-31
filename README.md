@@ -95,6 +95,9 @@ node tools/pipeline.mjs --accept   # 새 스펙을 승인 (아래 참고)
 | [docs/architecture.md](docs/architecture.md) | **아키텍처** — 계층 구조, 의존 방향, 왜 이렇게 나눴는가 |
 | [docs/pipeline.md](docs/pipeline.md) | 파이프라인 6단계, 규약(contract), 검사 항목 |
 | [docs/modules.md](docs/modules.md) | 기능 모듈 — 텍스처·지오메트리·스켈레탈·익스포트·임포트 |
+| [docs/city.md](docs/city.md) | **도시의 내력** — 왜 이 도시가 이렇게 생겼는가. 모든 형태 결정의 근거 |
+| [docs/status.md](docs/status.md) | **현재 상태** — 안 된 것, 깨진 것, 다음에 할 일 |
+| [docs/districts.md](docs/districts.md) | 구역 설계 명세 (레퍼런스 분석 → 파라미터) |
 | [docs/verification.md](docs/verification.md) | **검증** — 무엇이 버그를 잡았고 무엇이 시간만 썼는가 |
 | [docs/toolchain.md](docs/toolchain.md) | 언어·프레임워크·엔진 버전과 설치 상태 |
 | [docs/references.md](docs/references.md) | 학습 자료와 실측 기록 |
