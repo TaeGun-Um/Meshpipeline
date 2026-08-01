@@ -123,26 +123,71 @@ function arcade(b, r, rng, mats, signs, pools) {
   // 바닥 — 인도와 다른 마감. 여기부터 시장이라는 표시
   b.add(upPlane(s.w, s.d, [c.x, Y + 0.03, c.z], [4, 4]), mats.tileWallMat);
 
-  // 양옆 벽 — 낮고 두껍다. 안쪽에 점포가 붙는다
+  // ── 양옆 벽 — 낮고 두껍다. 안쪽에 점포가 붙는다 ─────────────────────────
+  //
+  // ── 문이 없었다 (사용자 지적) ──────────────────────────────────────────
+  // *"이렇게 지으면 어디로 들어가라는건지"*
+  //
+  // 긴 벽을 `rectBox` **한 덩어리**로 세웠다. 그래서 지붕을 빛나게 고쳐 놓고도
+  // 건물은 사방이 막힌 상자였다. 양 끝이 열려 있긴 한데, 그 끝은 대개 옆
+  // 건물을 마주 보고 있어서 실제로는 들어갈 데가 없다.
+  //
+  // 벽을 **토막으로 나눠 세우고 몇 칸을 비운다.** 비운 칸 위에는 인방만
+  // 남겨 벽이 위에서 이어지게 하고, 발밑에 문지방 빛줄을 깐다. 그러면
+  // 길에서 보아 "저기가 입구" 가 한눈에 읽힌다.
+  //
+  // 어느 칸을 비울지는 **좌표 해시**로 정한다 — 난수로 뽑으면 문 하나 때문에
+  // 도시 전체가 다시 뽑힌다 (docs/status.md 2.1 규칙 6).
   const T = 1.6;
+  const n = Math.max(4, Math.round(len / 5.5));
+  const DOOR_H = 3.4;
   for (const sg of [-1, 1]) {
-    const wr = alongX
-      ? { x0: r.x0, x1: r.x1, z0: c.z + sg * (wid / 2 - T), z1: c.z + sg * (wid / 2) }
-      : { x0: c.x + sg * (wid / 2 - T), x1: c.x + sg * (wid / 2), z0: r.z0, z1: r.z1 };
-    const fix = {
-      x0: Math.min(wr.x0, wr.x1), x1: Math.max(wr.x0, wr.x1),
-      z0: Math.min(wr.z0, wr.z1), z1: Math.max(wr.z0, wr.z1),
-    };
-    b.add(rectBox(fix, 0, Y + H, PANEL_TILE), mats.tileWallMat);
-    // 안쪽 면의 점포 띠 — 통로를 향해 빛난다
-    const n = Math.max(3, Math.round(len / 5.5));
+    // 문 두 칸 — 길이의 1/4 과 3/4 언저리. 해시로 한 칸씩 흔든다
+    const hs = hash2(Math.round(r.x0) + (sg > 0 ? 71 : 0), Math.round(r.z0) + 13);
+    const jitter = Math.floor(hs * 3) - 1;
+    const doors = new Set([
+      Math.max(1, Math.min(n - 2, Math.round(n * 0.25) + jitter)),
+      Math.max(1, Math.min(n - 2, Math.round(n * 0.75) - jitter)),
+    ]);
+
     for (let i = 0; i < n; i++) {
       const t = -len / 2 + (len / n) * (i + 0.5);
-      const px = alongX ? c.x + t : c.x + sg * (wid / 2 - T - 0.1);
-      const pz = alongX ? c.z + sg * (wid / 2 - T - 0.1) : c.z + t;
-      b.box(alongX ? len / n - 0.5 : 0.14, 2.6, alongX ? 0.14 : len / n - 0.5,
-        [px, Y + 1.9, pz],
-        [mats.glowWarm, mats.glowCool, mats.glowMagenta][rng.int(0, 2)]);
+      const segLen = len / n;
+      const cw = alongX ? c.x + t : c.x + sg * (wid / 2 - T / 2);
+      const cz2 = alongX ? c.z + sg * (wid / 2 - T / 2) : c.z + t;
+      const [bw, bd] = alongX ? [segLen, T] : [T, segLen];
+      // **난수를 먼저 뽑는다.** 문 칸에서 `continue` 로 건너뛰면 소비량이
+      // 갈려서 그 뒤 도시 전체가 다시 뽑힌다 (2.1 규칙 6 — 출입구를 넣다가
+      // 픽셀 회귀 16/16 을 낸 적이 있다).
+      const glowMat = [mats.glowWarm, mats.glowCool, mats.glowMagenta][rng.int(0, 2)];
+      const door = doors.has(i);
+
+      if (door) {
+        // 인방만 — 문 위로 벽이 이어진다
+        const lh = Y + H - DOOR_H;
+        b.box(bw, lh, bd, [cw, DOOR_H + lh / 2, cz2], mats.tileWallMat);
+        // 문지방 — 바닥에 그은 줄. 이 한 줄이 안과 밖을 가른다
+        b.box(alongX ? bw - 0.6 : 0.14, 0.06, alongX ? 0.14 : bd - 0.6,
+          [cw, Y + 0.09, cz2], neon(NEON.amber));
+        // 문 안쪽에서 새는 빛 — 밖에서 보이는 것은 결국 이것이다
+        pools.push({
+          kind: 'floor', x: cw + (alongX ? 0 : sg * 3.2), y: Y + 0.05,
+          z: cz2 + (alongX ? sg * 3.2 : 0),
+          rx: alongX ? bw * 0.7 : 4.5, rz: alongX ? 4.5 : bd * 0.7,
+          tint: rgb01(NEON.amber, 0.5),
+        });
+        continue;
+      }
+
+      b.add(rectBox(
+        { x0: cw - bw / 2, x1: cw + bw / 2, z0: cz2 - bd / 2, z1: cz2 + bd / 2 },
+        0, Y + H, PANEL_TILE
+      ), mats.tileWallMat);
+      // 안쪽 면의 점포 띠 — 통로를 향해 빛난다
+      const px = alongX ? cw : c.x + sg * (wid / 2 - T - 0.1);
+      const pz = alongX ? c.z + sg * (wid / 2 - T - 0.1) : cz2;
+      b.box(alongX ? segLen - 0.5 : 0.14, 2.6, alongX ? 0.14 : segLen - 0.5,
+        [px, Y + 1.9, pz], glowMat);
     }
   }
 
