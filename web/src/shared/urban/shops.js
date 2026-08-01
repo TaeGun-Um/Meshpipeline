@@ -358,5 +358,100 @@ export function shopTextures(S) {
         { emissive: true }
       );
     },
+
+    // ── 시장 좌판 (아케이드 전용, 사용자 지시로 새로 만듦) ─────────────────
+    //
+    // *"다른 번화가 건물들이랑 윈도우쪽 디자인이 아예 똑같고 (…) 똑같은
+    //  리소스를 돌려쓰고 있는데, 아케이드 건물만의 리소스를 그냥 새로 만들어서 써"*
+    //
+    // 맞다. 아케이드 점포에 `shopfront` 를 그대로 붙였다. 그 텍스처의 문법은
+    // **간판 띠 + 모자이크 유리**다 — 잡거상가의 것이고, 그래서 아케이드가
+    // 옆 건물과 똑같아 보였다.
+    //
+    // 시장 좌판의 문법은 다르다. 유리가 없다. 대신
+    //
+    //   차양 줄무늬   위 22%. 천을 늘어뜨린 것이라 **세로 줄**이다
+    //   품목 픽토     가운데. 무엇을 파는지 하나만 크게
+    //   값 널판       그 아래 손글씨 줄 두 개
+    //   좌판 물건     아래 30%. 상자·자루·병이 **실루엣**으로 늘어선다
+    //
+    // 유리도 격자도 없으므로 멀리서도 "저건 가게가 아니라 좌판" 으로 갈린다.
+    marketStall(seed, tintHex) {
+      const warm = rgb255(tintHex);
+      const grain = tiledFbm(seed + 11, 26, 3);
+      const CANOPY = 0.22; // 위에서부터 차양이 차지하는 비율
+      const GOODS = 0.32;  // 아래에서부터 물건
+
+      return bake([256, 256], 1, 1, (u, v, o) => {
+        const gn = grain(u, v);
+        const up = 1 - v;
+
+        // 널판 바탕 — 나무다. 이 유형에는 콘크리트가 없다
+        o.c[0] = 88 + gn * 26;
+        o.c[1] = 68 + gn * 22;
+        o.c[2] = 52 + gn * 18;
+        o.r = 0.9; o.h = 0.45;
+        o.e[0] = 0; o.e[1] = 0; o.e[2] = 0;
+
+        // ── 차양 — 세로 줄무늬 천 ────────────────────────────────────────
+        if (up > 1 - CANOPY) {
+          const band = Math.floor(u * 9) % 2 === 0;
+          const t = (up - (1 - CANOPY)) / CANOPY;
+          // 아래로 갈수록 그늘진다 (천이 늘어져 있다)
+          const sh = 0.55 + t * 0.45;
+          if (band) {
+            o.c[0] = warm[0] * 0.95 * sh; o.c[1] = warm[1] * 0.8 * sh; o.c[2] = warm[2] * 0.5 * sh;
+          } else {
+            o.c[0] = 232 * sh; o.c[1] = 226 * sh; o.c[2] = 208 * sh;
+          }
+          o.r = 0.95; o.h = 0.7;
+          return;
+        }
+
+        // ── 좌판 물건 — 실루엣. 밝은 배경에 어두운 덩어리 ───────────────
+        if (up < GOODS) {
+          // 안쪽에서 새는 빛. 물건이 그 앞에 선다
+          o.c[0] = warm[0] * 0.5; o.c[1] = warm[1] * 0.45; o.c[2] = warm[2] * 0.36;
+          o.e[0] = warm[0] * 0.5; o.e[1] = warm[1] * 0.44; o.e[2] = warm[2] * 0.3;
+          o.r = 0.8; o.h = 0.3;
+
+          const N = 7;
+          const gi = Math.floor(u * N);
+          const gu = u * N - gi;
+          const hh = 0.30 + hash2(seed + gi * 37, 3) * 0.62; // 물건 높이가 제각각
+          const wsh = 0.16 + hash2(seed + gi * 91, 7) * 0.22;
+          if (up < GOODS * hh && gu > wsh && gu < 1 - wsh) {
+            const dark = 0.16 + hash2(seed + gi * 53, 11) * 0.14;
+            o.c[0] = 40 * dark * 4; o.c[1] = 34 * dark * 4; o.c[2] = 30 * dark * 4;
+            o.e[0] = 0; o.e[1] = 0; o.e[2] = 0;
+            o.r = 0.92; o.h = 0.6;
+          }
+          return;
+        }
+
+        // ── 품목 픽토 — 가운데 하나만 크게 ──────────────────────────────
+        const pu = (u - 0.24) / 0.52;
+        const pv = (up - GOODS - 0.10) / (1 - CANOPY - GOODS - 0.18);
+        const ink = pictAt(seed % PICT_COUNT, pu, pv, 0.16);
+        if (ink) {
+          const k = ink === 2 ? 1.0 : 0.55;
+          o.c[0] = warm[0] * k; o.c[1] = warm[1] * k; o.c[2] = warm[2] * k;
+          o.e[0] = warm[0] * k; o.e[1] = warm[1] * k; o.e[2] = warm[2] * k;
+          o.r = 0.5; o.h = 0.55;
+          return;
+        }
+
+        // ── 값 널판 — 손글씨 두 줄 ──────────────────────────────────────
+        const ly = (up - GOODS - 0.01) / 0.09;
+        if (ly > 0 && ly < 1 && u > 0.12 && u < 0.88) {
+          const row = ly < 0.5 ? 0 : 1;
+          if (latinAt(seed + row * 313, (u - 0.12) / 0.76, (ly * 2) % 1, 11)) {
+            o.c[0] = 236; o.c[1] = 232; o.c[2] = 214;
+            o.e[0] = 150; o.e[1] = 146; o.e[2] = 130;
+            o.r = 0.6; o.h = 0.5;
+          }
+        }
+      }, { emissive: true });
+    },
   };
 }

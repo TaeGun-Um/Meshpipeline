@@ -160,6 +160,19 @@ export function buildMaterials() {
     )
   );
 
+  // ── 시장 좌판 — **아케이드 전용** (사용자 지시) ──────────────────────────
+  // "아케이드 건물만의 리소스를 그냥 새로 만들어서 써"
+  //
+  // 위 `shopfront` 는 간판 띠 + 모자이크 유리다. 그것을 아케이드에 쓰니
+  // 옆 잡거상가와 똑같아 보였다. 좌판은 유리가 없다 — 차양 천, 품목 픽토,
+  // 값 널판, 물건 실루엣 넷으로 만든다 (shops.marketStall 머리말).
+  const stallMats = SHOP_TINTS.map((tint, i) =>
+    TexturedSurface.instance(
+      { set: T.marketStall(4400 + i * 31, tint), normalScale: 0.7, roughness: 0.85, emissiveIntensity: 0.9 },
+      `MarketStall_${i}`
+    )
+  );
+
   // ── 잡거빌딩 세입자 창 (사용자 지적) ──────────────────────────────────────
   // 잡거타워 위층에 점포 텍스처(shopfront)를 그대로 썼다. 그 텍스처는 칸마다
   // **간판 띠 + 모자이크**라, 8층 창문에 붙이면 층마다 간판이 넉 장씩 달린다.
@@ -196,6 +209,7 @@ export function buildMaterials() {
     signMats,
     shopfrontMats,
     shopfrontBrightMats,
+    stallMats,
     tenantWinMats,
     interiorMats,
 

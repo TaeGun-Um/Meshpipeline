@@ -104,14 +104,41 @@ function stall(b, x, z, w, d, rng, mats, lit) {
       b.box(0.08, H, 0.08, [x + sx * (w / 2 - 0.15), Y + H / 2, z + sz * (d / 2 - 0.15)], mats.metalMat);
     }
   }
-  // 물건 — 상자와 봉지. 크기를 섞어야 '쌓았다' 로 읽힌다
-  for (let i = 0; i < rng.int(3, 7); i++) {
-    const bw = rng.range(0.2, 0.5);
-    b.add(
-      autoBox(bw, rng.range(0.15, 0.4), bw * rng.range(0.7, 1.3),
-        [x + rng.range(-w * 0.36, w * 0.36), Y + H + 0.2, z + rng.range(-d * 0.32, d * 0.32)], 0.02),
-      rng.chance(0.5) ? mats.crateMat : mats.crateAltMat
-    );
+  // ── 물건 (사용자 지적으로 다시 만듦) ───────────────────────────────────
+  // *"내부에서도 또 책상 위에 똑같은 리소스를 돌려쓰고 있는데"*
+  //
+  // 상자 두 종(crateMat·crateAltMat)만 크기를 바꿔 쌓고 있었다. 도시의
+  // 컨테이너 야드·공사장이 쓰는 바로 그 재질이라, 좌판 위에 화물이 놓인
+  // 꼴이었다.
+  //
+  // 팔 물건은 **모양이 갈려야** 무엇인지 읽힌다. 넷을 섞는다.
+  //   더미   낮고 넓은 것 — 채소·곡물
+  //   병     가는 원기둥 여럿 — 술·약
+  //   자루   위가 좁은 회전체 — 곡식·가루
+  //   두루마리 눕힌 원기둥 — 천·부품
+  // 재질도 좌판 텍스처(stallMats)에서 가져와 이 유형 안에서만 돈다.
+  const goods = mats.stallMats[rng.int(0, mats.stallMats.length - 1)];
+  for (let i = 0; i < rng.int(3, 6); i++) {
+    const gx = x + rng.range(-w * 0.34, w * 0.34);
+    const gz = z + rng.range(-d * 0.30, d * 0.30);
+    const kind = rng.int(0, 3);
+    if (kind === 0) {
+      const bw = rng.range(0.26, 0.5);
+      b.add(autoBox(bw, rng.range(0.12, 0.22), bw * rng.range(0.8, 1.2),
+        [gx, Y + H + 0.1, gz], 0.02), goods);
+    } else if (kind === 1) {
+      for (let k = 0; k < 3; k++) {
+        b.cylinder(0.05, 0.06, rng.range(0.22, 0.34),
+          [gx + (k - 1) * 0.13, Y + H + 0.16, gz], goods, 6);
+      }
+    } else if (kind === 2) {
+      b.add(lathe([[0.19, 0], [0.21, 0.12], [0.13, 0.3], [0.07, 0.38]], 8, [gx, Y + H + 0.05, gz]),
+        mats.bagMat);
+    } else {
+      // 눕힌 두루마리 — `cylinder` 는 세로로만 서므로 튜브로 만든다
+      const L = rng.range(0.2, 0.34);
+      b.add(tubeBetween([gx - L, Y + H + 0.14, gz], [gx + L, Y + H + 0.14, gz], 0.11, 8), goods);
+    }
   }
   // ── 무엇을 파는 좌판인가 (사용자 지적) ─────────────────────────────────
   // *"뭘 전시한건지 구분이 안되서, 뭐가 뭔지 잘 모르겠음"*
@@ -202,7 +229,9 @@ function arcade(b, r, rng, mats, signs, pools) {
       // 쓰고 있었는데 (시장 대문의 점포 띠가 그것이다) 여기만 안 썼다.
       //
       // 난수 호출 **횟수는 그대로 하나다.** 범위만 넓힌다 (2.1 규칙 6).
-      const shopSet = mats.shopfrontBrightMats;
+      // 아케이드 **전용** 좌판 텍스처. 도시의 다른 상가와 공유하지 않는다
+      // (materials.stallMats · shops.marketStall 머리말)
+      const shopSet = mats.stallMats;
       const glowMat = shopSet[rng.int(0, shopSet.length - 1)];
       const door = doors.has(i);
 
@@ -298,24 +327,68 @@ function arcade(b, r, rng, mats, signs, pools) {
   // 채광창은 **아래가 밝을 때 위에서 빛난다.** 그것이 이 지붕의 전부다.
   // 뼈대(불투명)와 채광판(발광)을 번갈아 놓으면, 위에서는 빛나는 줄무늬가
   // 되고 옆에서는 처마 밑으로 새는 빛이 된다.
-  const bays = Math.max(4, Math.round(len / 4.0));
+  // ── 배럴 볼트 (사용자 지시로 양식을 새로 만듦) ──────────────────────────
+  //
+  // *"아예 새로운 건축 양식을 만들어봐 재활용하지만 말고"*
+  //
+  // 평평한 슬랫 지붕은 위에서 보면 **줄무늬 뚜껑**이고, 도시에 그런 것이
+  // 이미 많다 (공장 톱니지붕·부두 창고). 그래서 아케이드가 열 채 서 있어도
+  // 전부 같은 무늬 판으로 보였다.
+  //
+  // 아케이드의 원형은 19세기 유리 아치 상가다. **원통 볼트**로 바꾼다 —
+  // 이 도시에서 곡면 지붕은 여기뿐이라 항공에서 한눈에 갈린다.
+  //
+  //   갈비뼈  아치를 따라 도는 굵은 리브. 볼트의 골격
+  //   채광판  리브 사이. 아래가 밝으니 위에서 빛난다
+  //   마룻대  꼭대기를 관통하는 한 줄
+  //
+  // 아치는 다각형으로 근사한다 (SEG 조각). 조각마다 기울여 놓으면 곡면이
+  // 되고, 도시의 모든 것이 직각인 곳에서 그 하나가 크게 읽힌다.
+  const RISE = wid * 0.30;          // 볼트가 솟는 높이
+  const SEG = 7;                    // 아치 한쪽을 몇 조각으로
+  const bays = Math.max(4, Math.round(len / 4.6));
   const glow = neonSoft([NEON.warm, NEON.amber][Math.round(hash2(r.x0, r.z0))]);
+  const arch = (t) => Math.sin(t * Math.PI) * RISE; // t 0..1 → 높이
+
   for (let i = 0; i < bays; i++) {
-    const t = -len / 2 + (len / bays) * (i + 0.5);
-    const px = alongX ? c.x + t : c.x;
-    const pz = alongX ? c.z : c.z + t;
+    const bt = -len / 2 + (len / bays) * (i + 0.5);
     const rib = i % 2 === 0;
-    // 뼈대는 도톰하고 채광판은 얇다. 두께 차이가 골함석 같은 결을 만든다
-    b.add(
-      autoBox(alongX ? len / bays - 0.2 : wid, rib ? 0.34 : 0.16,
-        alongX ? wid : len / bays - 0.2,
-        [px, Y + H + (rib ? 0 : 0.06), pz], 0.04),
-      rib ? mats.metalMat : glow
-    );
+    const bw2 = len / bays - (rib ? 0.2 : 0.5);
+    for (let k = 0; k < SEG; k++) {
+      const t0 = k / SEG;
+      const t1 = (k + 1) / SEG;
+      const cA = (wid) * (t0 - 0.5);
+      const cB = (wid) * (t1 - 0.5);
+      const yA = arch(t0);
+      const yB = arch(t1);
+      const midC = (cA + cB) / 2;
+      const midY = (yA + yB) / 2;
+      const segW = Math.hypot(cB - cA, yB - yA);
+      const tilt = Math.atan2(yB - yA, cB - cA);
+      // 조각 하나 — 아치 접선 방향으로 기울인다
+      const g = autoBox(
+        alongX ? bw2 : segW, rib ? 0.34 : 0.16, alongX ? segW : bw2,
+        [0, 0, 0], 0.03
+      );
+      g.rotateX(alongX ? -tilt : 0);
+      g.rotateZ(alongX ? 0 : tilt);
+      g.translate(
+        alongX ? c.x + bt : c.x + midC,
+        Y + H + midY + (rib ? 0 : 0.05),
+        alongX ? c.z + midC : c.z + bt
+      );
+      b.add(g, rib ? mats.metalMat : glow);
+    }
   }
-  // 지붕 밑면 — 안이 밝아야 '들어갈 곳' 이 된다
-  b.add(downPlane(alongX ? len * 0.96 : wid * 0.9, alongX ? wid * 0.9 : len * 0.96,
-    [c.x, Y + H - 0.2, c.z]), mats.deckUnderMat);
+  // 마룻대 — 꼭대기를 관통한다. 볼트의 등뼈가 보여야 곡면이 읽힌다
+  {
+    const A = alongX ? [c.x - len / 2, Y + H + RISE, c.z] : [c.x, Y + H + RISE, c.z - len / 2];
+    const B2 = alongX ? [c.x + len / 2, Y + H + RISE, c.z] : [c.x, Y + H + RISE, c.z + len / 2];
+    b.add(tubeBetween(A, B2, 0.34, 8), mats.metalMat);
+  }
+  // 지붕 밑면은 **깔지 않는다.** 볼트가 곧 천장이라 평평한 판을 덮으면
+  // 안에서 곡면이 안 보이고, 밖에서는 채광판이 가려진다. 아치 아래는
+  // 매달린 등이 밝힌다.
 
   // ── 양 끝의 문틀 ────────────────────────────────────────────────────────
   //
@@ -353,14 +426,47 @@ function arcade(b, r, rng, mats, signs, pools) {
     pools.push({ kind: 'floor', x: lx, y: Y + 0.05, z: lz, rx: 4.6, rz: 4.6, tint: rgb01(NEON.warm, 0.55) });
   }
 
-  // 좌판 두 줄 — 통로 양옆
-  const rows = Math.max(3, Math.round(len / 3.4));
-  for (let i = 0; i < rows; i++) {
-    const t = -len / 2 + (len / rows) * (i + 0.5);
-    for (const sg of [-1, 1]) {
-      const sx = alongX ? c.x + t : c.x + sg * (wid * 0.24);
-      const sz = alongX ? c.z + sg * (wid * 0.24) : c.z + t;
-      stall(b, sx, sz, alongX ? 2.2 : 1.3, alongX ? 1.3 : 2.2, rng, mats, true);
+  // ── 내부 — 등뼈와 교차 통로 (사용자 지적으로 다시 만듦) ─────────────────
+  //
+  // *"내부는 뭘 나타내고 싶은건지 모르겠음. 그냥 일자로 대충 나열한게 전부"*
+  //
+  // 맞다. 좌판을 축을 따라 두 줄로 늘어놓기만 했다. 그러면 **복도 하나에
+  // 물건이 놓인 것**이지 시장이 아니다. 시장의 구조는 이렇다.
+  //
+  //   등뼈    가운데에 등을 맞댄 두 줄. 이 덩어리가 시장의 중심이다
+  //   양 통로 등뼈와 점포 사이. 사람이 도는 곳
+  //   교차로  등뼈를 몇 토막으로 끊는 짧은 길. **이게 없으면 미로가 아니라 복도다**
+  //
+  // 좌판은 등뼈에만 놓는다. 벽 쪽은 이미 점포 전면(marketStall)이 맡는다 —
+  // 양쪽에 다 놓으면 통로가 사라진다.
+  const SPINE = wid * 0.30;                       // 등뼈 폭
+  const groups = Math.max(2, Math.round(len / 16)); // 교차로로 끊긴 토막 수
+  const CROSS = 3.2;                              // 교차 통로 폭
+  const segLen2 = (len - CROSS * (groups - 1)) / groups;
+  for (let gI = 0; gI < groups; gI++) {
+    const g0 = -len / 2 + (segLen2 + CROSS) * gI;
+    const cells = Math.max(2, Math.round(segLen2 / 3.2));
+    for (let i = 0; i < cells; i++) {
+      const t = g0 + (segLen2 / cells) * (i + 0.5);
+      // 등을 맞댄 두 줄 — 가운데를 향해 등, 통로를 향해 앞
+      for (const sg of [-1, 1]) {
+        const sx = alongX ? c.x + t : c.x + sg * (SPINE / 2);
+        const sz = alongX ? c.z + sg * (SPINE / 2) : c.z + t;
+        stall(b, sx, sz,
+          alongX ? segLen2 / cells - 0.5 : SPINE / 2 - 0.3,
+          alongX ? SPINE / 2 - 0.3 : segLen2 / cells - 0.5,
+          rng, mats, true);
+      }
+    }
+    // 토막 끝의 등 기둥 — 교차로가 어디인지 알려 준다
+    if (gI < groups - 1) {
+      const t = g0 + segLen2 + CROSS / 2;
+      const lx = alongX ? c.x + t : c.x;
+      const lz = alongX ? c.z : c.z + t;
+      b.cylinder(0.12, 0.16, 3.6, [lx, Y + 1.8, lz], mats.metalMat, 6);
+      b.sphere(0.26, [lx, Y + 3.7, lz], neon(NEON.amber));
+      pools.push({ kind: 'floor', x: lx, y: Y + 0.05, z: lz, rx: 5.2, rz: 5.2,
+        tint: rgb01(NEON.amber, 0.45) });
     }
   }
 
@@ -952,7 +1058,7 @@ function weights(side, near) {
     // 하는 일이 없다. 0 으로 둔다.
     return {
       bazaar: 1.0,
-      arcade: 0.42,
+      arcade: 0.16,
       vitrine: 0.10 + close * 0.55, // 기업에 붙을수록 명품관
       nightlife: 0,
       black: 0,
@@ -975,7 +1081,7 @@ function weights(side, near) {
     underpass: 0.26,
     black: 0,
     vitrine: 0.04 + close * 0.22,
-    arcade: 0.12,
+    arcade: 0.05,
   };
 }
 
