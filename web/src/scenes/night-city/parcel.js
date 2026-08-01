@@ -33,6 +33,7 @@ import { hash2 } from '../../core/textures.js';
 import { LANDMARK_BLOCKS, PROMENADE } from './landmark.js';
 import { inPrecinct, plazaCells, plazaHits, clipToPlaza, armWalkRects } from './plaza.js';
 
+import { onSceneReset } from '../../core/scenestate.js';
 // 랜드마크가 선 칸은 병합하지 않는다. 손으로 지은 것이 있는 자리라
 // 남의 대지에 묶이면 그 블록을 통째로 잡아먹는다.
 //
@@ -304,12 +305,6 @@ export function roadOpenZ(band, t) {
   return a !== b;
 }
 
-// 이 대지의 보행로 띠들. blockLots 가 필지에서 빼내고, streets 가 포장하고,
-// crowd 가 사람을 몰아넣는다.
-export function walksOf(ix, iz) {
-  return parcelAt(ix, iz).walks || [];
-}
-
 // 모든 보행로 사각형. 도로·인파·검사가 전역으로 훑을 때 쓴다.
 let WALK_CACHE = null;
 export function allWalks() {
@@ -319,15 +314,6 @@ export function allWalks() {
     for (const g of p.walks || []) WALK_CACHE.push({ ...g, district: p.district });
   }
   return WALK_CACHE;
-}
-
-// 이 지점이 보행로 위인가.
-export function onWalk(x, z) {
-  for (const g of allWalks()) {
-    const r = g.rect;
-    if (x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1) return g;
-  }
-  return null;
 }
 
 // 진단용 — 병합이 얼마나 됐나.
@@ -345,3 +331,7 @@ export function parcelTally() {
     '1칸비율': +(single / list.length).toFixed(2),
   };
 }
+
+// 게으른 캐시라 지금까지 아무도 안 비웠고, 씬이 하나뿐이라 굴러갔다.
+// 격자·구역 정의가 바뀌거나 씬이 늘면 조용히 옛 값을 돌려준다.
+onSceneReset('대지·보행로 캐시', () => { CACHE = null; WALK_CACHE = null; });

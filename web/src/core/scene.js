@@ -16,6 +16,7 @@
 //   build() 오케스트레이션과 결과 형식 보증
 import * as THREE from 'three';
 import { bakeTextureRepeat } from './meshkit.js';
+import { resetSceneState } from './scenestate.js';
 
 const META_DEFAULTS = {
   player: true,
@@ -54,6 +55,13 @@ export class Scene {
   }
 
   async build(ctx) {
+    // ── 빌드 한 번의 수명을 갖는 상태를 먼저 비운다 ─────────────────────────
+    //
+    // 씬이 아니라 **부모가** 부른다. 씬마다 "무엇을 비워야 하나" 를 기억하게
+    // 하면 새 씬이 반드시 빠뜨리고, 그 결과가 예외가 아니라 이전 씬 잔재가
+    // 섞이는 **조용한 오류**다 (core/scenestate.js 머리말).
+    resetSceneState();
+
     const world = await this.createWorld(ctx);
     if (!world || !world.built) {
       throw new Error(`씬 '${this.meta.id}': createWorld() 가 { built } 를 돌려주지 않았다`);

@@ -22,9 +22,9 @@
 // 조각을 각각 필지로 쪼갠다. 그래야 골목 양옆이 벽으로 막힌 통로가 된다.
 import * as THREE from 'three';
 import { MeshBuilder } from '../../core/builder.js';
-import { autoBox, lathe, tubeBetween } from '../../core/profile.js';
+import { autoBox, tubeBetween } from '../../core/profile.js';
 import { upPlane, downPlane, rectCenter, rectSize } from '../../core/boxfaces.js';
-import { metricBox } from '../../core/meshkit.js';
+import {  } from '../../core/meshkit.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon, neonSoft } from '../../shared/masters.js';
 import { CURB_HEIGHT, ALLEY_WIDTH } from './layout.js';

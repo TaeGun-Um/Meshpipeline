@@ -32,6 +32,7 @@
 // 옮겨 점으로 본다. 아래 scanInstanced 의 keepPoints.
 import * as THREE from 'three';
 
+import { onSceneReset } from './scenestate.js';
 // ── 기록 ───────────────────────────────────────────────────────────────────
 //
 // 씬 빌드마다 초기화한다. siteplan.js 의 claims 와 같은 방식 — 배치에 관한
@@ -43,10 +44,8 @@ export function resetLedger() {
   items = [];
   open = null;
 }
-
-export function ledgerItems() {
-  return items;
-}
+// 빌드마다 자동으로 비운다. 씬이 기억할 일이 아니다 (core/scenestate.js)
+onSceneReset('배치 원장', resetLedger);
 
 export function ledgerOf(kind) {
   return items.filter((it) => it.kind === kind);
@@ -132,11 +131,6 @@ export function endItem() {
   // 남기면 "0,0 에 점 하나" 가 기록돼 검사가 엉뚱한 것을 잡는다.
   if (open && open.x1 > open.x0) items.push(open);
   open = null;
-}
-
-// 지오메트리를 거치지 않는 기록 (인스턴스 메시, 손으로 아는 범위).
-export function addItem(kind, label, box, meta = null) {
-  items.push({ kind, label, meta, ...box });
 }
 
 // ── 인스턴스 메시 훑기 ─────────────────────────────────────────────────────

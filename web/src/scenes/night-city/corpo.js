@@ -19,6 +19,7 @@
 // 필요하다. 조형된 화단, 수반, 열 맞춘 조명, 보안 볼라드. 전부 사람이 손을
 // 대고 있다는 표시이고, 그게 이 구역의 성격이다.
 import * as THREE from 'three';
+import { pickScheme } from './signage.js';
 import { autoBox, lathe, tubeBetween } from '../../core/profile.js';
 import {
   faceFrame,
@@ -618,7 +619,7 @@ function megaBanner(signs, rng, rect, y0, bodyTop, side) {
     y: bodyTop - 8 - h,
     w: Math.min(s.w, s.d) * rng.range(0.3, 0.46),
     h,
-    scheme: rng.int(0, 5),
+    scheme: pickScheme(rng),
   });
 }
 

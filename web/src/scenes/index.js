@@ -38,6 +38,26 @@ export const SAVED = [
 
 export const SCENES = Object.fromEntries(SAVED.map((e) => [e.scene.meta.id, e.scene]));
 
+// ── 뷰포트 목록 ────────────────────────────────────────────────────────────
+//
+// 우측 상단 햄버거가 읽는 목록이다 (src/scenemenu.js). 번호는 **만든 순서**이고
+// `SAVED` 의 순서가 곧 번호다 — 따로 필드를 두면 배열과 어긋난다.
+//
+// 전환은 `?scene=<id>` 로 **페이지를 다시 연다.** 인페이지 교체가 아니다.
+// 그 이유는 요구사항이 "이전 씬 메모리를 지우고 처음 켤 때처럼 빌드" 이고,
+// 그게 정확히 새로고침의 동작이기 때문이다. 지금 인페이지로 바꾸면 전환마다
+// 텍스처 213MB 와 지오메트리가 GPU 에 남는다 — 씬 해제 계약(`Scene.dispose`,
+// 재질 캐시 씬 스코프화)이 아직 없다. 필요해지면 그때 세운다.
+export function sceneList() {
+  return SAVED.map((e, i) => ({
+    no: i + 1,
+    id: e.scene.meta.id,
+    name: e.scene.meta.name,
+    made: e.made,
+    note: e.note,
+  }));
+}
+
 // 활성 씬 — 새로 만든 것이 기본이다.
 const ACTIVE = SAVED[SAVED.length - 1].scene.meta.id;
 

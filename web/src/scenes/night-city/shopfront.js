@@ -15,6 +15,7 @@
 // 기둥을 세운다. 그러면 가게마다 실제 깊이 1.3m 의 공간이 생기고, 그 안을 유형별로
 // 다르게 채울 수 있다. 그림자가 지는 것만으로도 평면과는 완전히 달라 보인다.
 import * as THREE from 'three';
+import { pickScheme } from './signage.js';
 import { outward, faceAnchor, faceWidth, facePlane, downPlane } from '../../core/boxfaces.js';
 import { autoBox } from '../../core/profile.js';
 import { NEON } from '../../shared/neon.js';
@@ -282,7 +283,7 @@ export function buildBay(b, sub, side, y, rng, mats, D, signs) {
       y: y + SHOP_H * rng.range(0.72, 0.92),
       w: f.w * rng.range(0.55, 0.92),
       h: rng.range(0.7, 1.2),
-      scheme: rng.int(0, 5),
+      scheme: pickScheme(rng),
     });
   }
 }

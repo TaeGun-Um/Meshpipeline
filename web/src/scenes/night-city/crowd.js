@@ -36,9 +36,8 @@ import {
   CURB_HEIGHT,
   onIntersection,
   detailAt,
-  blockIndexAt,
 } from './layout.js';
-import { districtAt, byZone } from './district.js';
+import { districtNear, byZone } from './district.js';
 import { roadOpen, roadOpenZ, allWalks } from './parcel.js';
 
 // 인도 위 어디까지 사람이 서는가. 연석에서 0.6m, 건물에서 0.5m 는 비운다.
@@ -124,11 +123,6 @@ function trim() {
   return mergeGeometries([g1, g2, g3]);
 }
 
-function districtNear(x, z) {
-  const ix = blockIndexAt(x);
-  const iz = blockIndexAt(z);
-  return districtAt(ix, iz);
-}
 
 export function createCrowd(scene, rng, mats) {
   const group = new THREE.Group();

@@ -13,6 +13,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { sceneResetList } from './core/scenestate.js';
+import { mountSceneMenu } from './scenemenu.js';
 
 const SCENE = activeScene();
 const SEED = SCENE.meta.seed;
@@ -43,6 +45,10 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = SCENE.meta.render.exposure;
 document.body.appendChild(renderer.domElement);
+
+// 씬 전환 메뉴. **빌드 전에** 단다 — 25초짜리 빌드 도중에도 다른 씬으로
+// 갈아탈 수 있어야 한다 (src/scenemenu.js).
+mountSceneMenu(SCENE.meta.id);
 
 const lens = SCENE.meta.lens;
 const camera = new THREE.PerspectiveCamera(lens.fov, innerWidth / innerHeight, lens.near, lens.far);
@@ -378,6 +384,11 @@ window.__audit = () => auditScene({ scene, renderer, stats: window.__stats });
 // (core/placement.js · scenes/night-city/placecheck.js).
 // __audit() 은 몇 건인지만 알려주므로 자리를 찾을 때는 이쪽을 본다.
 window.__place = () => window.__stats?.placement ?? null;
+
+// 빌드마다 비워지는 상태 목록 (core/scenestate.js).
+// 새 모듈에 캐시나 장부를 만들고 **등록을 잊었는지** 여기서 확인한다 —
+// 잊으면 예외가 아니라 이전 씬 잔재가 조용히 섞인다.
+window.__resets = () => sceneResetList();
 
 window.__lock = async (prefix = '') => {
   const views = await fetch('/shots/views.json').then((r) => r.json());

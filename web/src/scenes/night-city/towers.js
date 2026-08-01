@@ -9,31 +9,9 @@
 // 간판은 직접 만들지 않고 요청 목록만 남긴다 (signage.js 가 한 번에 만든다).
 // 배색 조합당 텍스처 한 장을 공유해야 하기 때문이다.
 import { MeshBuilder } from '../../core/builder.js';
-import {
-  SIDES,
-  outward,
-  faceWidth,
-  faceAnchor,
-  bayRect,
-  shrink,
-  rectBox,
-  facePlane,
-  rectCenter,
-  rectSize,
-} from '../../core/boxfaces.js';
+import { SIDES, outward, faceWidth, faceAnchor, bayRect, shrink, rectBox, facePlane, rectCenter, rectSize } from '../../core/boxfaces.js';
 import { autoBox } from '../../core/profile.js';
-import {
-  FLOOR_HEIGHT,
-  PODIUM_FLOOR,
-  blockRect,
-  SIDEWALK_W,
-  blockLots,
-  pickHeight,
-  coreDistance,
-  detailAt,
-  PANEL_TILE,
-  WALK_CLEAR,
-} from './layout.js';
+import { FLOOR_HEIGHT, PODIUM_FLOOR, blockRect, SIDEWALK_W, blockLots, pickHeight, coreDistance, detailAt, PANEL_TILE, WALK_CLEAR } from './layout.js';
 import { SHOP_TINTS } from './materials.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
@@ -49,8 +27,8 @@ import { districtAt, pickArchetypeIn } from './district.js';
 import { claim, TIER } from './siteplan.js';
 import { pickMassing, footprint, cylinderMass } from './massing.js';
 import { wharfBlock } from './wharf.js';
-import { marketPlan, marketBlock, resetMarketTally } from './market.js';
-import { hash2 } from '../../core/textures.js';
+import { marketPlan, marketBlock, } from './market.js';
+import {  } from '../../core/textures.js';
 import { LANDMARK_BLOCKS } from './landmark.js';
 import { buildBay, ALCOVE, SHOP_H, showcase, entranceBay } from './shopfront.js';
 
@@ -484,8 +462,6 @@ export function createTowers(scene, rng, mats, blocks) {
   let tallest = 0;
   let beaconIdx = 0;
   let lotIdx = 0;
-  // 번화가 유형 집계를 비운다. 씬을 다시 지으면 누적되면 안 된다.
-  resetMarketTally();
   // streetFaces 건강 지표 — 이 함수가 간판 1,602->9 사고를 냈다.
   // 면한 면의 **비율**을 세면 붕괴가 절대 개수보다 먼저 드러난다.
   let faceOpen = 0;

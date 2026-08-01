@@ -25,6 +25,7 @@
 // 닫히는 것이 번화가의 인상이고, 타워로는 절대 그 인상이 안 나온다.
 
 import { autoBox, tubeBetween } from '../../core/profile.js';
+import { pickScheme } from './signage.js';
 import {
   SIDES,
   outward,
@@ -320,14 +321,27 @@ function upperFacade(b, rect, y0, n, mats, seed) {
         // 3분의 1이었고, 나머지도 점포 텍스처라 결국 전 층이 간판이었다.
         const bw = f.w * (0.74 + hf * 0.6);
         const [bx, bz] = f.at((hf - 0.13) * (f.w - bw) * 0.8, 0.26);
-        const [bdx, bdz] = f.size(bw, 0.34);
         const on = hf < onRate * 0.62;
-        b.add(
-          autoBox(bdx, SHOP_FLOOR * 0.58, bdz, [bx, y + SHOP_FLOOR * 0.55, bz], 0.03),
-          on
-            ? mats.shopfrontBrightMats[Math.floor(hf * 997) % mats.shopfrontBrightMats.length]
-            : mats.shutterMat
-        );
+        const bh = SHOP_FLOOR * 0.58;
+        // ── 여기도 늘어나고 있었다 (코드리뷰에서 나온 것) ────────────────
+        //
+        // 한 장으로 덮었다. `bw` 는 면 폭의 0.74~1.34 배라 실측 중앙 28m —
+        // 높이 1.8m 짜리 판에 2:1 텍스처를 붙이니 **가로로 7.9배**(90분위
+        // 9.9배) 늘어났다. 창(windowBand)과 얼굴(portraitTextures)에서 고친
+        // 바로 그 오류가 같은 파일에 하나 더 남아 있었다.
+        //
+        // 셔터는 무늬가 세로줄이라 늘어나도 티가 안 나지만, 판을 나누는 쪽이
+        // 규칙이 하나여서 낫다.
+        const nb = Math.max(1, Math.round(bw / (bh * WIN_ASPECT)));
+        const sbw = bw / nb;
+        const bmat = on
+          ? mats.shopfrontBrightMats[Math.floor(hf * 997) % mats.shopfrontBrightMats.length]
+          : mats.shutterMat;
+        for (let i = 0; i < nb; i++) {
+          const [sx, sz] = f.at((hf - 0.13) * (f.w - bw) * 0.8 - bw / 2 + sbw * (i + 0.5), 0.26);
+          const [sdx, sdz] = f.size(sbw, 0.34);
+          b.add(autoBox(sdx, bh, sdz, [sx, y + SHOP_FLOOR * 0.55, sz], 0.03), bmat);
+        }
         // 띠를 두르는 테 — 붙인 물건으로 읽히게
         const [fdx, fdz] = f.size(bw + 0.3, 0.12);
         b.box(fdx, 0.16, fdz, [bx, y + SHOP_FLOOR * 0.85, bz], mats.metalMat);
@@ -668,7 +682,7 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
       const bh = rng.range(1.2, 1.5);
       const ticker = f.w > 22 && rng.chance(0.3);
       const skip = rng.chance(0.22);
-      const scheme = rng.int(0, 5);
+      const scheme = pickScheme(rng);
       if (fl < 1 || skip) continue;
       // ── 간판은 난간에 맨다 (사용자 지적으로 옮김) ──────────────────────
       //
@@ -697,7 +711,7 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
         kind: 'cloth', rect: r, side,
         y: SHOP_FLOOR * rng.range(1.1, 1.5),
         w: rng.range(0.9, 1.4), h: 0,
-        scheme: rng.int(0, 5),
+        scheme: pickScheme(rng),
       });
     }
 
@@ -707,7 +721,7 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
         kind: 'box', rect: r, side,
         y: SHOP_FLOOR * rng.range(0.95, 1.25),
         w: 0, h: rng.range(1.5, 2.3),
-        scheme: rng.int(0, 5),
+        scheme: pickScheme(rng),
       });
     }
 
@@ -729,7 +743,7 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
         standoff: floors >= 2 ? WALK_W + 0.8 : 0.15,
         // 팔은 난간 바깥면에 문다. 벽에서 뽑으면 복도와 가로 간판을 가로지른다
         armFrom: floors >= 2 ? RAIL_D : 0,
-        scheme: rng.int(0, 5),
+        scheme: pickScheme(rng),
       });
     }
 
@@ -742,7 +756,7 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
         y: crown.top + rng.range(1, 4),
         w: f.w * rng.range(0.7, 1.0),
         h: rng.range(6, 12),
-        scheme: rng.int(0, 5),
+        scheme: pickScheme(rng),
       });
     }
   }

@@ -136,65 +136,6 @@ export function lathe(profile, segments = 16, at = null) {
   return g;
 }
 
-// ── 경로 스윕 ──────────────────────────────────────────────────────────────
-//
-// 점 목록을 매끄러운 곡선으로 잇고 그 위로 원형 단면을 밀어낸다.
-// 반지름을 함수로 주면 굵기가 변하는 배관·케이블·손잡이를 만들 수 있다
-// (three 의 TubeGeometry 는 반지름이 상수라 이 경우를 못 만든다).
-//
-//   points:  [[x,y,z], ...]
-//   radius:  숫자 또는 (t) => 숫자   t 는 0..1
-export function sweep(points, radius, { steps = 24, radial = 8, closed = false, at = null } = {}) {
-  const curve = new THREE.CatmullRomCurve3(
-    points.map((p) => new THREE.Vector3(p[0], p[1], p[2])),
-    closed
-  );
-  const rf = typeof radius === 'function' ? radius : () => radius;
-
-  const frames = curve.computeFrenetFrames(steps, closed);
-  const pos = [];
-  const nor = [];
-  const uv = [];
-  const idx = [];
-  const P = new THREE.Vector3();
-
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    curve.getPointAt(Math.min(1, t), P);
-    const N = frames.normals[Math.min(i, steps - 1)];
-    const B = frames.binormals[Math.min(i, steps - 1)];
-    const r = rf(t);
-    for (let j = 0; j <= radial; j++) {
-      const a = (j / radial) * Math.PI * 2;
-      const cx = Math.cos(a);
-      const sy = Math.sin(a);
-      const nx = cx * N.x + sy * B.x;
-      const ny = cx * N.y + sy * B.y;
-      const nz = cx * N.z + sy * B.z;
-      pos.push(P.x + nx * r, P.y + ny * r, P.z + nz * r);
-      nor.push(nx, ny, nz);
-      uv.push(j / radial, t);
-    }
-  }
-
-  const ring = radial + 1;
-  for (let i = 0; i < steps; i++) {
-    for (let j = 0; j < radial; j++) {
-      const A = i * ring + j;
-      const B2 = A + ring;
-      idx.push(A, B2, A + 1, A + 1, B2, B2 + 1);
-    }
-  }
-
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setIndex(idx);
-  if (at) g.translate(at[0], at[1], at[2]);
-  return g;
-}
-
 // 두 점을 잇는 원통. 케이블·배관·난간처럼 "A에서 B로" 가 자연스러운 것들용.
 //
 // 손으로 회전을 유도하면 축 순서를 틀린다 — 실제로 골목 케이블을 rotateX/Y/Z

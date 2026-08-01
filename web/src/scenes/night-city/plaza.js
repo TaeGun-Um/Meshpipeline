@@ -50,6 +50,7 @@
 import { BLOCK_SIZE, GRID, blockCenter, blockRect, roads } from './layout.js';
 import { LANDMARK_BLOCKS, GATE_SPAN } from './landmark.js';
 
+import { onSceneReset } from '../../core/scenestate.js';
 // 광장 절반 폭. **이 파일에서 유일한 자유 숫자다.**
 const HALF_W = 62;
 
@@ -351,3 +352,7 @@ export function plazaTally() {
     닿은칸: plazaCells().map(([ix, iz, f]) => `${ix},${iz}(${(f * 100).toFixed(0)}%)`).join(' '),
   };
 }
+
+// 게으른 캐시라 지금까지 아무도 안 비웠고, 씬이 하나뿐이라 굴러갔다.
+// 격자·구역 정의가 바뀌거나 씬이 늘면 조용히 옛 값을 돌려준다.
+onSceneReset('광장 셀 캐시', () => { CELLS = null; });

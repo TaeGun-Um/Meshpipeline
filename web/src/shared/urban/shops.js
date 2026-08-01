@@ -10,7 +10,7 @@
 import { bake, hash2 } from '../../core/textures.js';
 import { tiledFbm, clamp } from '../../core/noise.js';
 import { NEON, rgb255 } from '../neon.js';
-import { pictAt, glyphAt, latinAt, PICT_COUNT } from '../glyphs.js';
+import { pictAt, latinAt, PICT_COUNT } from '../glyphs.js';
 
 export function shopTextures(S) {
   return {

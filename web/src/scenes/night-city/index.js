@@ -43,8 +43,8 @@ import { createParking } from './parking.js';
 import { createPort } from './port.js';
 import { createCrowd } from './crowd.js';
 import { createHolo } from './holo.js';
-import { resetPlan, TIER, claim } from './siteplan.js';
-import { resetLedger } from '../../core/placement.js';
+import { TIER, claim } from './siteplan.js';
+import { } from '../../core/placement.js';
 import { checkPlacement } from './placecheck.js';
 import { allAlleyRects, ALLEY_WIDTH, setAlleyRateHook } from './layout.js';
 import { districtAt } from './district.js';
@@ -108,10 +108,7 @@ class NightCity extends Scene {
     //
     // **놓는 순서 = 우선순위** 다. 아래 순서가 그대로 실제 도시계획의 순서다.
     //   진입 동선(골목 입구) -> 수직 동선(계단·기둥) -> 조명 -> 편의 시설
-    resetPlan();
-    // 배치 '검사' 의 기록도 함께 비운다. siteplan 이 놓기 전에 묻는 쪽이라면
-    // 이쪽은 놓은 뒤에 재는 쪽이다 (core/placement.js).
-    resetLedger();
+    // (상태 비우기는 core/scene.js 의 build() 가 한다 — core/scenestate.js)
 
     // ── 빌드 순서 = 배치 우선순위 ────────────────────────────────────────
     // 골목 입구(진입 동선) -> 건물 -> 수직 동선 -> 조명·노면 -> 편의 시설.

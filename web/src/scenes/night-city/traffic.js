@@ -12,7 +12,7 @@
 //
 // 운동은 shared/movers.js 의 Lane 이 맡는다 (공중 교통과 공유).
 import * as THREE from 'three';
-import { mergeGeometries } from '../../core/meshkit.js';
+import { mergeGeometries, boxGeometry } from '../../core/meshkit.js';
 import { Lane } from '../../shared/movers.js';
 import { NEON } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
@@ -65,19 +65,19 @@ export function createTraffic(scene, rng, mats) {
 
   // 부위별 지오메트리. 차 로컬 좌표: 진행 방향 -Z, 바닥 y=0, 단위 크기.
   // 실제 크기는 인스턴스 행렬의 스케일로 준다.
-  const body = box(1, 1, 1, [0, 0.5, 0]);
-  const cabin = box(0.82, 0.42, 0.44, [0, 1.0, -0.05]); // 없으면 위에서 볼 때 벽돌이다
+  const body = boxGeometry(1, 1, 1, [0, 0.5, 0]);
+  const cabin = boxGeometry(0.82, 0.42, 0.44, [0, 1.0, -0.05]); // 없으면 위에서 볼 때 벽돌이다
   const bodyGeo = mergeGeometries([body, cabin]);
 
   // 전조등·후미등은 좌우 두 개로 나눈다. 긴 막대 하나로 두면 밤에 차가
   // "떠 있는 흰 막대" 로 보인다 (처음에 그랬다).
   const head = mergeGeometries([
-    box(0.2, 0.12, 0.06, [-0.3, 0.42, -0.5]),
-    box(0.2, 0.12, 0.06, [0.3, 0.42, -0.5]),
+    boxGeometry(0.2, 0.12, 0.06, [-0.3, 0.42, -0.5]),
+    boxGeometry(0.2, 0.12, 0.06, [0.3, 0.42, -0.5]),
   ]);
   const tail = mergeGeometries([
-    box(0.22, 0.1, 0.06, [-0.32, 0.46, 0.5]),
-    box(0.22, 0.1, 0.06, [0.32, 0.46, 0.5]),
+    boxGeometry(0.22, 0.1, 0.06, [-0.32, 0.46, 0.5]),
+    boxGeometry(0.22, 0.1, 0.06, [0.32, 0.46, 0.5]),
   ]);
 
   // 전조등이 노면에 만드는 빛. 차 앞으로 길게 눕힌 사각형.
@@ -155,9 +155,4 @@ export function createTraffic(scene, rng, mats) {
   }
 }
 
-function box(w, h, d, at) {
-  const g = new THREE.BoxGeometry(w, h, d);
-  g.translate(at[0], at[1], at[2]);
-  return g;
-}
 

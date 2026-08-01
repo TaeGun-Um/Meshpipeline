@@ -21,11 +21,10 @@ import {
   CITY_HALF,
   CURB_HEIGHT,
   onIntersection,
-  blockIndexAt,
 } from './layout.js';
 import { claim, TIER } from './siteplan.js';
 import { roadOpen, roadOpenZ } from './parcel.js';
-import { districtAt } from './district.js';
+import { districtNear } from './district.js';
 import { detailAt } from './layout.js';
 
 const SPACING = 13; // 시설물 간격 (m)
@@ -293,11 +292,6 @@ function pickKind(rng, last, weights) {
 }
 
 // (x, z) 가 속한 구역. 인도 위 물건이므로 가장 가까운 블록의 성격을 따른다.
-function districtNear(x, z) {
-  const ix = blockIndexAt(x);
-  const iz = blockIndexAt(z);
-  return districtAt(ix, iz);
-}
 
 export function createStreetLife(scene, rng, mats) {
   const b = new MeshBuilder('StreetLife', { receiveShadow: false });

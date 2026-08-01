@@ -34,6 +34,8 @@
 // 사각형 교차 판정이 더 정확하지만, 여기서 필요한 것은 "사람이 지나갈 틈이
 // 있는가" 이지 밀리미터 단위 접촉이 아니다. 원은 회전을 신경 쓸 필요가 없고
 // 판정이 거리 비교 한 번이다. 실제로 인도 위 물건은 대부분 뭉툭하다.
+import { onSceneReset } from '../../core/scenestate.js';
+
 export const TIER = {
   INFRA: 1,
   ACCESS: 2,
@@ -53,6 +55,7 @@ let claims = [];
 export function resetPlan() {
   claims = [];
 }
+onSceneReset('지면 계획', resetPlan);
 
 // (x, z) 를 중심으로 반지름 r 을 차지하겠다고 등록한다.
 // 이미 **더 높은 우선순위**가 겹쳐 있으면 false 를 돌려주고 등록하지 않는다.

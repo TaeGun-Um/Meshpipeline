@@ -7,6 +7,7 @@
 
 import { hash2 } from '../../core/textures.js';
 
+import { onSceneReset } from '../../core/scenestate.js';
 // 블록 한 변. 구간 피치가 달라져도 **판 크기는 일정하다** — 이 도시는
 // 블록을 표준 규격으로 찍어 냈고, 매립 차수마다 달라진 것은 그 사이의 길이다.
 export const BLOCK_SIZE = 66;
@@ -458,15 +459,6 @@ export function allAlleyRects() {
   return ALLEY_CACHE;
 }
 
-// margin 은 입구 양옆의 여유. 물건이 골목 모서리에 딱 붙어 서면
-// 골목으로 들어가는 길이 좁아 보인다.
-export function inAlley(x, z, margin = 2.4) {
-  for (const { rect: r } of allAlleyRects()) {
-    if (x > r.x0 - margin && x < r.x1 + margin && z > r.z0 - margin && z < r.z1 + margin) return true;
-  }
-  return false;
-}
-
 // 사각형에서 띠를 빼고 남은 조각들. 관통이면 둘, 막다른 골목이면 셋이 나온다.
 //
 // 남은 조각이 MIN 보다 얇으면 버린다 — 폭 4m 짜리 필지에 건물을 세우면
@@ -498,32 +490,6 @@ export function subtractStrips(root, strips) {
     parts = next;
   }
   return parts;
-}
-
-export function subtractAlley(root, a) {
-  const MIN = 9;
-  const out = [];
-  const push = (r) => {
-    if (r.x1 - r.x0 >= MIN && r.z1 - r.z0 >= MIN) out.push(r);
-  };
-
-  if (a.alongX) {
-    push({ ...root, z1: a.rect.z0 });
-    push({ ...root, z0: a.rect.z1 });
-    // 막다른 골목의 끝쪽 — 골목이 안 닿는 남은 폭
-    if (a.kind === 'dead') {
-      if (a.rect.x0 > root.x0) push({ x0: root.x0, x1: a.rect.x0, z0: a.rect.z0, z1: a.rect.z1 });
-      if (a.rect.x1 < root.x1) push({ x0: a.rect.x1, x1: root.x1, z0: a.rect.z0, z1: a.rect.z1 });
-    }
-  } else {
-    push({ ...root, x1: a.rect.x0 });
-    push({ ...root, x0: a.rect.x1 });
-    if (a.kind === 'dead') {
-      if (a.rect.z0 > root.z0) push({ x0: a.rect.x0, x1: a.rect.x1, z0: root.z0, z1: a.rect.z0 });
-      if (a.rect.z1 < root.z1) push({ x0: a.rect.x0, x1: a.rect.x1, z0: a.rect.z1, z1: root.z1 });
-    }
-  }
-  return out;
 }
 
 // 블록 하나를 필지들과 골목으로 나눈다.
@@ -715,3 +681,6 @@ function splitToTarget(rng, r, target, alleyRate = 0) {
   return out.length ? { lots: out, gaps } : { lots: [r], gaps: [] };
 }
 
+// 게으른 캐시라 지금까지 아무도 안 비웠고, 씬이 하나뿐이라 굴러갔다.
+// 격자·구역 정의가 바뀌거나 씬이 늘면 조용히 옛 값을 돌려준다.
+onSceneReset('격자 캐시', () => { ROADS_CACHE = null; ALLEY_CACHE = null; RATE_HOOK = null; });

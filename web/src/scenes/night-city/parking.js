@@ -28,6 +28,7 @@
 // 앞의 셋은 siteplan 이 이미 알고 있으므로 그대로 물어본다. 이게 배치 계획을
 // 만들어 둔 값이다 — 새 모듈이 기존 규칙을 공짜로 물려받는다.
 import * as THREE from 'three';
+import { boxGeometry } from '../../core/meshkit.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import {
@@ -84,11 +85,6 @@ const SIZES = [
   { w: 2.1, h: 1.6, d: 5.0 }, // SUV
 ];
 
-function box(w, h, d, at) {
-  const g = new THREE.BoxGeometry(w, h, d);
-  g.translate(at[0], at[1], at[2]);
-  return g;
-}
 
 export function createParking(scene, rng, mats) {
   const group = new THREE.Group();
@@ -96,12 +92,12 @@ export function createParking(scene, rng, mats) {
 
   // traffic.js 와 같은 로컬 좌표계: 진행 방향 -Z, 바닥 y=0, 단위 크기.
   const bodyGeo = mergeGeometries([
-    box(1, 1, 1, [0, 0.5, 0]),
-    box(0.82, 0.42, 0.44, [0, 1.0, -0.05]),
+    boxGeometry(1, 1, 1, [0, 0.5, 0]),
+    boxGeometry(0.82, 0.42, 0.44, [0, 1.0, -0.05]),
   ]);
   const tail = mergeGeometries([
-    box(0.22, 0.1, 0.06, [-0.32, 0.46, 0.5]),
-    box(0.22, 0.1, 0.06, [0.32, 0.46, 0.5]),
+    boxGeometry(0.22, 0.1, 0.06, [-0.32, 0.46, 0.5]),
+    boxGeometry(0.22, 0.1, 0.06, [0.32, 0.46, 0.5]),
   ]);
 
   const spots = [];

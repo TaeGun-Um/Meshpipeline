@@ -36,11 +36,12 @@ import { holo, holoSoft } from '../../shared/masters.js';
 // `GRID`·`blockRect` 는 더 쓰지 않는다. 대지를 도는 것이 옳고, 블록 사각형을
 // 보면 병합된 대지 안쪽 칸에서 건물 속에 물건을 놓게 된다 (createHolo 참고).
 // `roadAt` 도 뺐다 — 폭이 있는 것을 점으로 물으면 안 된다 (spanInRoad).
-import { CURB_HEIGHT, detailAt, blockIndexAt, spanInRoad } from './layout.js';
-import { districtAt, byZone } from './district.js';
+import { CURB_HEIGHT, detailAt, spanInRoad } from './layout.js';
+import { districtAt, districtNear, byZone } from './district.js';
 import { parcels } from './parcel.js';
 import { LANDMARK_BLOCKS } from './landmark.js';
 
+import { onSceneReset } from '../../core/scenestate.js';
 // 구역별 홀로그램 밀도. 0 이면 그 구역엔 하나도 없다.
 // byZone 이 강제한다 (district.byZone 머리말). 0 이 **의도한 0** 인지
 // 표에서 빠져 `?? 0` 이 된 것인지 코드만 보고는 구별할 수 없었다.
@@ -468,12 +469,8 @@ let FIGS = [];
 export function holoSpots() {
   return FIGS.slice();
 }
+onSceneReset('홀로그램 표본', () => { FIGS = []; });
 
-function districtNear(x, z) {
-  const ix = blockIndexAt(x);
-  const iz = blockIndexAt(z);
-  return districtAt(ix, iz);
-}
 
 // ── 조립 ───────────────────────────────────────────────────────────────────
 

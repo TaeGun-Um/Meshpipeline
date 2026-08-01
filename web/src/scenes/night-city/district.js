@@ -17,8 +17,9 @@
 // 묶어서 구역이 덩어리로 형성되게 한다.
 
 import { NEON } from '../../shared/neon.js';
-import { GRID } from './layout.js';
+import { GRID, blockIndexAt } from './layout.js';
 
+import { onSceneReset } from '../../core/scenestate.js';
 export const DISTRICTS = {
   // 슬럼 — 짓다 만 기업 개발지에 사람이 들어간 곳 (2기 -> 3기).
   //
@@ -359,6 +360,18 @@ export function districtAt(ix, iz) {
   return DISTRICTS[ZONE_CACHE[cz * GRID + cx]];
 }
 
+// ── 세계 좌표로 구역을 묻는다 ──────────────────────────────────────────────
+//
+// (코드리뷰에서 나온 것) `crowd.js` · `holo.js` · `streetlife.js` 가 **글자
+// 하나 안 틀리고 같은 함수**를 각자 갖고 있었다. 셋 다 "이 지점이 어느
+// 구역인가" 를 묻는 것이고, 답은 하나여야 한다.
+//
+// 격자에서 좌표로 바뀌는 자리라, 격자 정의가 바뀌면 셋을 다 고쳐야 했다 —
+// 실제로 이 프로젝트에서 격자를 두 번 바꿨고 그때마다 이런 것이 남았다.
+export function districtNear(x, z) {
+  return districtAt(blockIndexAt(x), blockIndexAt(z));
+}
+
 // 구역별 블록 수. 비율을 실측으로 맞출 때 쓴다.
 export function districtTally() {
   if (!ZONE_CACHE) ZONE_CACHE = buildZones();
@@ -382,3 +395,7 @@ export function pickArchetypeIn(rng, district, height, width) {
   }
   return 'grid';
 }
+
+// 게으른 캐시라 지금까지 아무도 안 비웠고, 씬이 하나뿐이라 굴러갔다.
+// 격자·구역 정의가 바뀌거나 씬이 늘면 조용히 옛 값을 돌려준다.
+onSceneReset('구역 캐시', () => { ZONE_CACHE = null; });

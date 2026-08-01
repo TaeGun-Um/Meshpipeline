@@ -23,6 +23,7 @@
 // 특히 **명품관과 암거래**가 요점이다. 둘은 정확히 반대이고, 그 둘이 한
 // 구역 안에 같이 있다는 것이 이 도시의 성격이다 (docs/city.md 3기·4기).
 import { autoBox, tubeBetween, lathe } from '../../core/profile.js';
+import { pickScheme } from './signage.js';
 import {
   faceFrame,
   SIDES,
@@ -39,6 +40,7 @@ import { neon, neonSoft } from '../../shared/masters.js';
 import { PANEL_TILE, CURB_HEIGHT, buildableSlabs } from './layout.js';
 import { hash2 } from '../../core/textures.js';
 
+import { onSceneReset } from '../../core/scenestate.js';
 // 유형이 실제로 다 나오는지 세어 둔다. 종류를 늘려 놓고 확률이 낮아
 // 한 번도 안 나오는 것은 만들지 않은 것과 같다 — 기업 양식에서 실제로
 // 그랬다 (div 임계값 때문에 '유리' 양식이 안 나왔다).
@@ -71,6 +73,7 @@ export function resetMarketTally() {
   SPOTS = [];
   PITS = [];
 }
+onSceneReset('번화가 집계·구덩이', resetMarketTally);
 // 적층 상가(bazaar.js)도 같은 장부에 올린다. 번화가의 대부분이 그것인데
 // 장부에 없으면 "번화가 건물이 전부 낮다" 같은 질문에 답할 수가 없다 —
 // 실제로 #50 을 재려고 할 때 다섯 유형만 재고 정작 주류를 못 쟀다.
@@ -788,7 +791,7 @@ function arcade(b, r, rng, mats, signs, pools) {
   const side = alongX ? (rng.chance(0.5) ? 'px' : 'nx') : (rng.chance(0.5) ? 'pz' : 'nz');
   signs.push({
     kind: 'banner', rect: r, side,
-    y: Y + H - 2.2, w: wid * 0.72, h: 1.9, scheme: rng.int(0, 5),
+    y: Y + H - 2.2, w: wid * 0.72, h: 1.9, scheme: pickScheme(rng),
   });
   // 긴 쪽 바깥 벽 — 여기도 거리를 향한 면이다. 시장 건물의 옆구리에는
   // 늘 간판이 붙어 있고, 이게 없으면 번화가 한복판에 민짜 벽이 생긴다.
@@ -798,7 +801,7 @@ function arcade(b, r, rng, mats, signs, pools) {
       signs.push({
         kind: 'banner', rect: r, side: long,
         y: Y + 2.4 + i * 1.9, w: len * rng.range(0.42, 0.7), h: 1.5,
-        scheme: rng.int(0, 5),
+        scheme: pickScheme(rng),
       });
     }
   }
@@ -950,7 +953,7 @@ function nightlife(b, r, rng, mats, signs, pools) {
       y: sy,
       w: rng.range(0.85, 1.35),
       h: sh,
-      scheme: rng.int(0, 5),
+      scheme: pickScheme(rng),
     });
     sy += sh + rng.range(0.5, 2.2); // 간격이 제각각이어야 줄로 안 보인다
   }
@@ -958,7 +961,7 @@ function nightlife(b, r, rng, mats, signs, pools) {
   signs.push({
     kind: 'billboard', rect: r, side: front,
     y: Y + H * 0.55, w: f.w * rng.range(0.4, 0.6), h: rng.range(2.6, 4.2),
-    scheme: rng.int(0, 5),
+    scheme: pickScheme(rng),
   });
   // 옆면에도 건다. **간판이 이 유형의 정체성**이라 정면 하나로는 모자란다 —
   // 창이 없는 벽이므로 간판을 걸 자리는 오히려 넉넉하다.
@@ -972,7 +975,7 @@ function nightlife(b, r, rng, mats, signs, pools) {
       signs.push({
         kind: 'banner', rect: r, side: other,
         y: Y + 3.0 + i * 2.3, w: of2.w * rng.range(0.5, 0.82), h: 1.7,
-        scheme: rng.int(0, 5),
+        scheme: pickScheme(rng),
       });
     }
   }
@@ -1223,13 +1226,13 @@ function underpass(b, r, rng, mats, signs, pools) {
   // 알리는 방법이 그것뿐이라, 실제 지하상가 입구는 늘 간판투성이다.
   signs.push({
     kind: 'banner', rect: pit, side: ent,
-    y: Y + 3.9, w: (alongX ? cd : cw) * 0.8, h: 1.5, scheme: rng.int(0, 5),
+    y: Y + 3.9, w: (alongX ? cd : cw) * 0.8, h: 1.5, scheme: pickScheme(rng),
   });
   for (let i = 0; i < rng.int(2, 4); i++) {
     signs.push({
       kind: 'banner', rect: pit, side: ent,
       y: Y + 1.5 + i * 0.85, w: (alongX ? cd : cw) * rng.range(0.4, 0.7), h: 0.72,
-      scheme: rng.int(0, 5),
+      scheme: pickScheme(rng),
     });
   }
 
