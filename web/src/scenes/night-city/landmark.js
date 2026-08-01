@@ -467,12 +467,26 @@ function depot(b, cx, cz, mats, pools) {
 // 블록 하나 크기로 키운 것이다. 그리고 그 입구에 **문**을 세운다.
 // 문은 기능이 없다. 오직 "여기부터 다른 곳" 을 선언하려고 있는 구조물이고,
 // 그래서 랜드마크의 정의에 가장 가깝다.
+//
+// ── 폭을 밖으로 내보낸다 ──────────────────────────────────────────────────
+// 문 뒤가 광장이고, 광장의 남북 팔은 **이 문이 통째로 들어갈 만큼** 넓어야
+// 한다. 처음에 팔을 32 로 잡았더니 문 옆벽(37)이 2.5m 씩 삐져나와 광장 상가와
+// 겹쳤다 — 배치 검사가 잡았다.
+//
+// 여기 26/5.5 를 광장 쪽에 다시 적으면 문 크기를 바꾸는 순간 또 겹친다.
+// 처음에는 홀 폭 + 벽(37) 이면 되는 줄 알았다. 아니었다 — 양 끝의 문이
+// 홀보다 넓고, 그 위 처마가 문보다 또 넓다. **제일 넓은 것**을 재야 한다.
+// 37 로 잡았더니 처마가 5.65m 씩 광장 상가를 파고들었다.
+export const GATE_WID = 26;                        // 홀 폭
+export const GATE_WALL = 5.5;                      // 양옆 벽 두께
+export const GATE_PORTAL = GATE_WID + 13;          // 문 기둥 사이
+export const GATE_SPAN = GATE_PORTAL + 8;          // 처마 — 문이 실제로 먹는 폭
 function marketGate(b, cx, cz, mats, pools, lm) {
   const Y = CURB_HEIGHT;
   const R = blockRect(0, 0); // 크기만 쓴다
   const s = rectSize(R);
   const LEN = s.w * 0.94;   // 관통 방향 길이
-  const WID = 26;           // 홀 폭
+  const WID = GATE_WID;     // 홀 폭
   const H = 17;             // 홀 높이
 
   // ── 어느 축으로 관통하는가 (사용자 지시로 추가) ──────────────────────────
@@ -506,7 +520,7 @@ function marketGate(b, cx, cz, mats, pools, lm) {
   }
 
   // 양옆 벽 — 안쪽에 점포가 붙는다
-  const T = 5.5;
+  const T = GATE_WALL;
   for (const sg of [-1, 1]) {
     b.add(rectBox(RC(-LEN / 2, LEN / 2, sg * (WID / 2), sg * (WID / 2 + T)), Y, H, PANEL_TILE),
       mats.tileWallMat);
@@ -581,7 +595,7 @@ function marketGate(b, cx, cz, mats, pools, lm) {
   for (const sg of [-1, 1]) {
     const ga = sg * (LEN / 2 + 1.5);
     const GH = 26;
-    const GW = WID + 13;
+    const GW = GATE_PORTAL;
     // 기둥 둘
     for (const sc of [-1, 1]) {
       const [px, pz] = P(ga, sc * GW / 2);

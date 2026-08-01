@@ -12,6 +12,7 @@ import { autoBox, lathe } from '../../core/profile.js';
 import { upPlane, downPlane } from '../../core/boxfaces.js';
 import { BLOCK_SIZE, CURB_HEIGHT, PIT_INSET } from './layout.js';
 import { PROMENADE } from './landmark.js';
+import { grandPlaza } from './grandplaza.js';
 // BLOCK_SIZE 는 여기서 '블록 경계' 가 아니라 '안쪽으로 얼마나 물릴까' 의
 // 기준으로만 쓴다. 경계가 필요해지면 blockRect 로 바꾼다 (대지 병합 때).
 import { NEON, rgb01 } from '../../shared/neon.js';
@@ -330,10 +331,22 @@ function promenade(b, cx, cz, dir, rng, mats, pools) {
 
 // ── 진입점 ─────────────────────────────────────────────────────────────────
 
-export function createPrograms(scene, rng, mats, blocks) {
+// `signs` 를 받는다. 광장의 4분면 상가가 간판을 다는데, 간판은 **한 곳에서
+// 모아 한 번에** 세운다 (signage.createSignage). 여기서 따로 세우면 겹침 판정이
+// 광장 것만 모르게 된다.
+export function createPrograms(scene, rng, mats, blocks, signs = []) {
   const b = new MeshBuilder('BlockPrograms');
   const pools = [];
-  const tally = { construction: 0, plaza: 0, lot: 0, promenade: 0 };
+  const tally = { construction: 0, plaza: 0, lot: 0, promenade: 0, grand: 0 };
+
+  // 광장은 블록 목록을 돌기 **전에** 짓는다. 블록 하나가 아니라 도로와 이웃
+  // 블록까지 걸친 한 덩어리이므로 `blocks` 루프에 넣을 자리가 없다.
+  let buildings = 0;
+  {
+    b.mark('program', 'grandplaza', { program: 'grand' });
+    buildings = grandPlaza(b, rng, mats, signs, pools).buildings;
+    tally.grand++;
+  }
 
   for (const blk of blocks) {
     if (blk.program !== 'towers' && blk.program !== 'landmark') {
@@ -354,5 +367,6 @@ export function createPrograms(scene, rng, mats, blocks) {
     }
   }
 
-  return { group: b.build(scene), pools, tally };
+  // buildings — 광장 상가 동수. 감사의 '건물' 합계에 더해진다.
+  return { group: b.build(scene), pools, tally, buildings };
 }

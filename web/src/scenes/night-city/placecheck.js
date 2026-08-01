@@ -33,6 +33,7 @@ import {
 } from '../../core/placement.js';
 import { roads, roadAt } from './layout.js';
 import { allWalks } from './parcel.js';
+import { plazaHits } from './plaza.js';
 
 // ── 차도 ───────────────────────────────────────────────────────────────────
 //
@@ -62,6 +63,10 @@ import { allWalks } from './parcel.js';
 // (7번 버그 — 홀로그램이 인도를 관통). 그래서 물건이 어느 면에 붙었는지를
 // 받아 **그 축만** 본다. axis 가 없으면(독립해 선 것) 둘 다 본다.
 function roadIntrusion(box, bands, axis) {
+  // 광장 안은 차도가 아니다. `roads()` 는 1차원 띠 목록이라 "이 구간만 닫혔다"
+  // 를 표현할 수 없으므로 (parcel.js 머리말과 같은 사정) 여기서 걸러 준다.
+  // 이게 없으면 광장 화분·가로수·기둥이 전부 '도로 침범' 으로 신고된다.
+  if (plazaHits(box)) return 0;
   let worst = 0;
   for (const { lo, hi } of bands) {
     if (axis !== 'z') {

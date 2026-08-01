@@ -58,6 +58,7 @@ import { createLandmarks, LANDMARK_BLOCKS, PROMENADE } from './landmark.js';
 import { createPrograms } from './program.js';
 import { createStreetLife } from './streetlife.js';
 import { parcels } from './parcel.js';
+import { isPlazaBlock, clipToPlaza, plazaTally } from './plaza.js';
 
 class NightCity extends Scene {
   constructor() {
@@ -199,7 +200,7 @@ class NightCity extends Scene {
     // 타워가 아닌 블록 — 공사장·광장·빈 대지.
     // 빈 곳이 있어야 타워가 높아 보인다 (program.js 주석 참고).
     const programs = await step('공사장 · 광장 · 빈 대지', 63, () =>
-      createPrograms(scene, rng, mats, blocks)
+      createPrograms(scene, rng, mats, blocks, towers.signs)
     );
     built.programs = programs.group;
 
@@ -281,7 +282,9 @@ class NightCity extends Scene {
       // 화면을 안 보고도 회귀가 잡히는 유일한 경로다.
       counts: {
         간판: signage.count,
-        건물: towers.count,
+        // 광장 상가는 towers 밖에서 지어진다. 여기 안 더하면 간판만 늘어난
+        // 꼴이 되어 '건물당 간판' 이 거짓 경보를 낸다 (grandplaza.js 머리말).
+        건물: towers.count + programs.buildings,
         사람: crowd.count,
         가로시설: life.count,
         골목: alleys.count,
@@ -296,7 +299,8 @@ class NightCity extends Scene {
         `홀로 광고 ${holoG.panels} · 수목 ${holoG.trees} · 빛기둥 ${holoG.beams} · 표식 ${holoG.markers}`,
         `데크 ${vert.decks} · 계단 ${vert.stairs} · 브릿지 ${bridges.count}`,
         `최고 ${towers.tallest.toFixed(0)}m`,
-        `공사장 ${programs.tally.construction} · 광장 ${programs.tally.plaza} · 공터 ${programs.tally.lot}`,
+        `공사장 ${programs.tally.construction} · 쌈지광장 ${programs.tally.plaza} · 공터 ${programs.tally.lot}`,
+        `번화가 광장 ${plazaTally().크기}m — 상가 ${programs.buildings}동 · 축 ${plazaTally().축}`,
         `가로시설 ${life.count}개 · 사람 ${crowd.count}명`,
         `간판 ${signage.count}개`,
         `빛 웅덩이 ${pools.count}개`,
@@ -330,6 +334,12 @@ class NightCity extends Scene {
 
 function blockList() {
   const reserved = new Set(LANDMARK_BLOCKS.map((l) => `${l.ix},${l.iz}`));
+  // 광장에 닿은 칸은 두 갈래다.
+  //   판을 통째로 먹힌 칸  → 프로그램이 'grand'. towers 가 통째로 건너뛴다
+  //   앞부분만 물린 칸     → 대지 사각형을 **잘라서** 넘긴다. 그러면 그 대지의
+  //                          필지 분할·건물·간판이 전부 물러선 경계에서 다시
+  //                          계산된다 — 광장 쪽에 새 앞면이 생긴다
+  // 자르는 규칙은 plaza.clipToPlaza 하나가 안다.
   // **칸이 아니라 대지 단위**로 돈다. 병합한 대지는 한 번만 지어야 하고,
   // 필지 분할도 대지 전체를 한 덩어리로 나눠야 안쪽에 도로 없는 속이 생긴다.
   return parcels().map((p) => {
@@ -338,14 +348,17 @@ function blockList() {
     // 난수로 뽑는 프로그램보다 **먼저** 본다 — 손으로 정한 것이 이긴다.
     const program = reserved.has(key) ? 'landmark'
       : PROMENADE.has(key) ? 'promenade'
-        : blockProgram(p.ix, p.iz);
+        : isPlazaBlock(p.ix, p.iz) ? 'grand'
+          : blockProgram(p.ix, p.iz);
+    // 잘려서 남은 것이 없으면 그 대지는 통째로 광장이 먹었다는 뜻이다.
+    const rect = clipToPlaza(p.rect) || p.rect;
     return {
-      ix: p.ix, iz: p.iz, program, rect: p.rect, cells: p.cells.length,
+      ix: p.ix, iz: p.iz, program, rect, cells: p.cells.length,
       // 보행로는 **대지가 정한다.** blockLots 가 여기서 받아 필지에서 빼낸다 —
       // 두 곳에서 따로 계산하면 길 위에 건물이 선다.
       walks: p.walks || [],
-      cx: (p.rect.x0 + p.rect.x1) / 2,
-      cz: (p.rect.z0 + p.rect.z1) / 2,
+      cx: (rect.x0 + rect.x1) / 2,
+      cz: (rect.z0 + rect.z1) / 2,
     };
   });
 }

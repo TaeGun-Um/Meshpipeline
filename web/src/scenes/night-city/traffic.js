@@ -17,6 +17,7 @@ import { Lane } from '../../shared/movers.js';
 import { NEON } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 import { CITY_HALF, gridLines } from './layout.js';
+import { PLAZA } from './plaza.js';
 
 const COUNT = 96;
 const ROAD_Y = 0.02;
@@ -32,6 +33,31 @@ const KINDS = [
   [5.6, 2.1, 2.0], // 밴
   [9.0, 2.5, 2.9], // 트럭
 ];
+
+// ── 광장을 우회시킨다 ─────────────────────────────────────────────────────
+//
+// 차는 도시 반대편까지 한 줄로 순환하므로 "여기서만 멈춘다" 를 표현할 수 없다.
+// 대신 **광장을 지나갈 차선을 아예 안 고른다** — 실제로 길이 막히면 차가
+// 옆길로 도는 것과 같다.
+//
+// 이미 뽑은 난수를 **버리지 않고 옮기기만** 한다. 여기서 `continue` 를 하면
+// 그 뒤의 모든 차가 다른 난수를 받아 교통이 통째로 달라진다 (같은 실수를
+// 간판 차양에서 한 번 했다 — 16/16 뷰가 어긋났다).
+function detour(alongX, cross, lines, lane) {
+  // alongX 면 X 를 달리므로 막히는 것은 Z 좌표, 아니면 그 반대다
+  const lo = alongX ? PLAZA.z0 : PLAZA.x0;
+  const hi = alongX ? PLAZA.z1 : PLAZA.x1;
+  if (cross < lo || cross > hi) return cross;
+  let best = cross;
+  let bd = Infinity;
+  for (const L of lines) {
+    const c = L + lane;
+    if (c >= lo && c <= hi) continue;
+    const dd = Math.abs(c - cross);
+    if (dd < bd) { bd = dd; best = c; }
+  }
+  return best;
+}
 
 export function createTraffic(scene, rng, mats) {
   const group = new THREE.Group();
@@ -83,7 +109,7 @@ export function createTraffic(scene, rng, mats) {
     cars.push({
       lane: new Lane({
         alongX,
-        cross: line + lane,
+        cross: detour(alongX, line + lane, lines, lane),
         alt: ROAD_Y,
         // 차선 부호가 진행 방향 — 마주 오는 차선이 저절로 생긴다
         speed: speed * (lane < 0 ? 1 : -1),
