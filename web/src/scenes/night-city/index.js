@@ -346,10 +346,24 @@ function blockList() {
     const key = `${p.ix},${p.iz}`;
     // 대문 앞 블록은 통째로 보행 통로다 (landmark.PROMENADE).
     // 난수로 뽑는 프로그램보다 **먼저** 본다 — 손으로 정한 것이 이긴다.
+    // ── 타워가 아닌 용도는 **작은 대지에만** (사용자 지적) ─────────────────
+    // *"암시장만 빼라고 했지 북쪽 번화가를 개박살 내라고 얘기했는데"*
+    //
+    // 네온탑을 한 칸 옮겼더니 (9,6) 이 풀려 6칸(148x263m) 대지의 씨앗이 됐고,
+    // `blockProgram(9,6)` 이 'plaza' 를 돌려줬다. 그 결과 **39,000㎡ 가
+    // 통째로 쌈지광장**이 됐다 — 번화가 한복판에 축구장 다섯 개짜리 공터다.
+    //
+    // 원인은 옮긴 랜드마크가 아니라 구조다. `blockProgram` 은 **칸 하나**를
+    // 보고 정하는데 그 답을 **병합한 대지 전체**에 적용하고 있었다. 66x66
+    // 블록 하나에 9분의 1 확률로 공터를 두는 것은 설계지만, 그 확률이 6칸
+    // 대지에 걸리면 사고다. (같은 이유로 3칸짜리 공사장 넷도 66x214m 였다.)
+    //
+    // 병합한 대지는 **단지**다. 단지에는 건물이 선다.
     const program = reserved.has(key) ? 'landmark'
       : PROMENADE.has(key) ? 'promenade'
         : isPlazaBlock(p.ix, p.iz) ? 'grand'
-          : blockProgram(p.ix, p.iz);
+          : p.cells.length > 2 ? 'towers'
+            : blockProgram(p.ix, p.iz);
     // 잘려서 남은 것이 없으면 그 대지는 통째로 광장이 먹었다는 뜻이다.
     const rect = clipToPlaza(p.rect) || p.rect;
     return {

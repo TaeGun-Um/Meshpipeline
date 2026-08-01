@@ -34,8 +34,22 @@ export function constructionPit(cx, cz) {
   return { x0: cx - PIT_HALF, x1: cx + PIT_HALF, z0: cz - PIT_HALF, z1: cz + PIT_HALF };
 }
 
-function constructionSite(b, cx, cz, rng, mats, pools) {
-  const half = BLOCK_SIZE / 2 - PIT_INSET;
+// ── 반폭은 **대지**에서 나온다 (사용자 지적) ──────────────────────────────
+//
+// 세 생성기 모두 `BLOCK_SIZE/2` 로 크기를 잡았다. 대지 병합이 들어온 뒤로는
+// 그게 틀린다 — 2칸(66x159m) 대지에 66m 짜리 공터를 놓으면 나머지 90m 가
+// 빈 땅으로 남는다. 대지가 정한다.
+//
+// 정사각형으로 유지한다. 이 셋은 둘레에 펜스·화단을 두르는 구조라 긴
+// 직사각형이 되면 안쪽이 비므로, **짧은 변에 맞춘 정사각형**이 안전하다.
+// 남는 자리는 아래 `fill` 이 바닥만 깔아 덮는다.
+function fitHalf(r, inset) {
+  if (!r) return BLOCK_SIZE / 2 - inset;
+  return Math.min(r.x1 - r.x0, r.z1 - r.z0) / 2 - inset;
+}
+
+function constructionSite(b, cx, cz, rng, mats, pools, r) {
+  const half = fitHalf(r, PIT_INSET);
 
   // 가설 펜스 — 블록 둘레. 파란 함석판에 세로 리브.
   const FH = 2.4;
@@ -150,11 +164,14 @@ function constructionSite(b, cx, cz, rng, mats, pools) {
 //
 // 도시에 숨 쉴 곳. 열린 바닥 + 낮은 요소만 둔다 — 광장의 본질은 **비어 있음** 이라
 // 여기에 높은 것을 세우면 광장이 아니라 그냥 또 다른 블록이 된다.
-function plaza(b, cx, cz, rng, mats, pools) {
-  const half = BLOCK_SIZE / 2 - 2;
+function plaza(b, cx, cz, rng, mats, pools, r) {
+  const half = fitHalf(r, 2);
 
-  // 포장 — 인도와 다른 재질로 깔아야 광장으로 읽힌다
-  b.add(upPlane(half * 2, half * 2, [cx, Y + 0.02, cz], [3.2, 3.2]), mats.plazaMat);
+  // 포장 — 인도와 다른 재질로 깔아야 광장으로 읽힌다.
+  // **대지 전체**에 깐다. 조형물은 가운데지만 바닥은 끝까지 가야 한다
+  const pw = r ? r.x1 - r.x0 - 4 : half * 2;
+  const pd = r ? r.z1 - r.z0 - 4 : half * 2;
+  b.add(upPlane(pw, pd, [cx, Y + 0.02, cz], [3.2, 3.2]), mats.plazaMat);
 
   // 중앙 조형물 — 회전체. 광장의 초점.
   const H = rng.range(7, 13);
@@ -220,9 +237,11 @@ function plaza(b, cx, cz, rng, mats, pools) {
 }
 
 // ── 빈 대지 (주차장) ───────────────────────────────────────────────────────
-function emptyLot(b, cx, cz, rng, mats) {
-  const half = BLOCK_SIZE / 2 - 3;
-  b.add(upPlane(half * 2, half * 2, [cx, Y + 0.02, cz], [6, 6]), mats.lotMat);
+function emptyLot(b, cx, cz, rng, mats, r) {
+  const half = fitHalf(r, 3);
+  const pw = r ? r.x1 - r.x0 - 6 : half * 2;
+  const pd = r ? r.z1 - r.z0 - 6 : half * 2;
+  b.add(upPlane(pw, pd, [cx, Y + 0.02, cz], [6, 6]), mats.lotMat);
 
   // 철망 펜스 — 기둥만 세우고 면은 반투명 판 하나로 근사
   for (const s of [-1, 1]) {
@@ -362,16 +381,16 @@ export function createPrograms(scene, rng, mats, blocks, signs = []) {
       b.mark('program', `${blk.program}:${blk.ix},${blk.iz}`, { program: blk.program });
     }
     if (blk.program === 'construction') {
-      constructionSite(b, blk.cx, blk.cz, rng, mats, pools);
+      constructionSite(b, blk.cx, blk.cz, rng, mats, pools, blk.rect);
       tally.construction++;
     } else if (blk.program === 'plaza') {
-      plaza(b, blk.cx, blk.cz, rng, mats, pools);
+      plaza(b, blk.cx, blk.cz, rng, mats, pools, blk.rect);
       tally.plaza++;
     } else if (blk.program === 'promenade') {
       promenade(b, blk.cx, blk.cz, PROMENADE.get(`${blk.ix},${blk.iz}`), rng, mats, pools);
       tally.promenade++;
     } else if (blk.program === 'lot') {
-      emptyLot(b, blk.cx, blk.cz, rng, mats);
+      emptyLot(b, blk.cx, blk.cz, rng, mats, blk.rect);
       tally.lot++;
     }
   }
