@@ -113,6 +113,28 @@ function stall(b, x, z, w, d, rng, mats, lit) {
       rng.chance(0.5) ? mats.crateMat : mats.crateAltMat
     );
   }
+  // ── 무엇을 파는 좌판인가 (사용자 지적) ─────────────────────────────────
+  // *"뭘 전시한건지 구분이 안되서, 뭐가 뭔지 잘 모르겠음"*
+  //
+  // 좌판은 전부 **같은 상자 더미**였다. 팔 물건이 없으니 가게가 아니라
+  // 짐이다. 좌판 위에 **매다는 작은 간판**을 하나 붙인다 — 도시의 다른
+  // 상가가 쓰는 픽토그램 시트를 그대로 쓰므로 업종이 하나씩 갈린다.
+  //
+  // `lit` 은 그대로 등의 유무다 (시장은 전부, 암거래는 드물게).
+  const sign = mats.shopfrontBrightMats[rng.int(0, mats.shopfrontBrightMats.length - 1)];
+  const sw = Math.min(w, d) > 1.5 ? Math.max(w, d) * 0.8 : Math.max(w, d) * 0.9;
+  const flat = w >= d;
+  b.add(
+    autoBox(flat ? sw : 0.08, 0.55, flat ? 0.08 : sw, [x, Y + 1.72, z], 0.02),
+    sign
+  );
+  // 매단 줄 — 간판이 공중에 뜬 판으로 안 보이게
+  for (const sg of [-1, 1]) {
+    const hx = flat ? x + sg * sw * 0.42 : x;
+    const hz = flat ? z : z + sg * sw * 0.42;
+    b.box(0.03, 0.5, 0.03, [hx, Y + 2.25, hz], mats.cableMat);
+  }
+
   // 좌판등 — 켜진 좌판만. 시장은 전부 켜져 있고 암거래는 드물다
   if (lit) {
     b.box(w * 0.7, 0.06, 0.1, [x, Y + 1.95, z], neonSoft(NEON.warm));
@@ -171,10 +193,17 @@ function arcade(b, r, rng, mats, signs, pools) {
       const cw = alongX ? c.x + t : c.x + sg * (wid / 2 - T / 2);
       const cz2 = alongX ? c.z + sg * (wid / 2 - T / 2) : c.z + t;
       const [bw, bd] = alongX ? [segLen, T] : [T, segLen];
-      // **난수를 먼저 뽑는다.** 문 칸에서 `continue` 로 건너뛰면 소비량이
-      // 갈려서 그 뒤 도시 전체가 다시 뽑힌다 (2.1 규칙 6 — 출입구를 넣다가
-      // 픽셀 회귀 16/16 을 낸 적이 있다).
-      const glowMat = [mats.glowWarm, mats.glowCool, mats.glowMagenta][rng.int(0, 2)];
+      // ── 무엇을 파는 가게인지 (사용자 지적) ────────────────────────────
+      // *"아케이드관 내부에 뭘 전시한건지 구분이 안되서, 뭐가 뭔지 잘 모르겠음"*
+      //
+      // 점포 전면에 `glowWarm/Cool/Magenta` **단색 발광판**을 붙이고 있었다.
+      // 색만 셋이니 가게가 셋으로 보이고, 그나마도 무엇을 파는지는 없다.
+      // 도시의 다른 상가는 이미 픽토그램이 구워진 `shopfrontBrightMats` 를
+      // 쓰고 있었는데 (시장 대문의 점포 띠가 그것이다) 여기만 안 썼다.
+      //
+      // 난수 호출 **횟수는 그대로 하나다.** 범위만 넓힌다 (2.1 규칙 6).
+      const shopSet = mats.shopfrontBrightMats;
+      const glowMat = shopSet[rng.int(0, shopSet.length - 1)];
       const door = doors.has(i);
 
       if (door) {
@@ -194,15 +223,65 @@ function arcade(b, r, rng, mats, signs, pools) {
         continue;
       }
 
-      b.add(rectBox(
-        { x0: cw - bw / 2, x1: cw + bw / 2, z0: cz2 - bd / 2, z1: cz2 + bd / 2 },
-        0, Y + H, PANEL_TILE
-      ), mats.tileWallMat);
-      // 안쪽 면의 점포 띠 — 통로를 향해 빛난다
-      const px = alongX ? cw : c.x + sg * (wid / 2 - T - 0.1);
-      const pz = alongX ? c.z + sg * (wid / 2 - T - 0.1) : cz2;
-      b.box(alongX ? segLen - 0.5 : 0.14, 2.6, alongX ? 0.14 : segLen - 0.5,
-        [px, Y + 1.9, pz], glowMat);
+      // ── 벽이 아니라 기둥 + 점포다 (사용자 재지적) ──────────────────────
+      //
+      // *"아직 아케이드관이 뭐하는 건물인지 잘 모르겠음"*
+      //
+      // 지붕을 빛나게 하고 문을 뚫어도 여전히 **창 없는 창고**였다. 밖에서
+      // 보이는 것이 민짜 벽과 검은 구멍 둘뿐이었기 때문이다.
+      //
+      // 아케이드는 건물이 아니라 **덮인 거리**다. 그러니 벽이 있으면 안 된다 —
+      // 기둥이 지붕을 받치고, 기둥 사이는 **양쪽 다 점포**여야 한다.
+      // 안쪽 점포는 통로를 향하고 바깥쪽 점포는 거리를 향한다. 그 두 줄이
+      // 밖에서 보이는 순간 "여기 가게가 잔뜩 있다" 가 된다.
+      //
+      //   0.0~3.2   점포 전면 (발광). 양면
+      //   3.2~3.9   차양. 시장의 신호는 결국 이것이다
+      //   3.9~H     벽. 위쪽만 막혀 덩치가 남는다
+      const PIER = 0.9;
+      const SHOP = 3.2;
+      const rect = { x0: cw - bw / 2, x1: cw + bw / 2, z0: cz2 - bd / 2, z1: cz2 + bd / 2 };
+
+      // 기둥 — 칸 경계마다. 이것이 지붕을 받친다.
+      // 벽 두께(T) 전체를 쓰고, 긴 축으로만 PIER 만큼 차지한다
+      b.add(rectBox({
+        x0: rect.x0, x1: alongX ? rect.x0 + PIER : rect.x1,
+        z0: rect.z0, z1: alongX ? rect.z1 : rect.z0 + PIER,
+      }, 0, Y + H, PANEL_TILE), mats.tileWallMat);
+
+      // 위쪽 벽 — 차양 위로만. 아래는 뚫려 있다
+      b.add(rectBox(rect, Y + SHOP + 0.7, H - SHOP - 0.7, PANEL_TILE), mats.tileWallMat);
+
+      // 점포 전면 — **양면**. 안쪽은 통로를, 바깥쪽은 거리를 향한다
+      const inset = T / 2 - 0.12;
+      for (const face of [-1, 1]) {
+        b.box(
+          alongX ? segLen - PIER - 0.4 : 0.16, SHOP - 0.5,
+          alongX ? 0.16 : segLen - PIER - 0.4,
+          alongX ? [cw + PIER / 2, Y + (SHOP - 0.5) / 2, cz2 + face * inset]
+            : [cw + face * inset, Y + (SHOP - 0.5) / 2, cz2 + PIER / 2],
+          glowMat
+        );
+      }
+
+      // 차양 — 양쪽으로 내민다. 시장의 신호
+      for (const face of [-1, 1]) {
+        const ow = 0.9;
+        b.add(autoBox(
+          alongX ? segLen - PIER - 0.2 : ow, 0.12, alongX ? ow : segLen - PIER - 0.2,
+          alongX ? [cw + PIER / 2, Y + SHOP + 0.35, cz2 + face * (T / 2 + ow / 2 - 0.1)]
+            : [cw + face * (T / 2 + ow / 2 - 0.1), Y + SHOP + 0.35, cz2 + PIER / 2],
+          0.02), mats.tarpMat);
+      }
+      // 점포 앞 바닥 빛 — 거리 쪽. 밖에서 보이는 것이 결국 이것이다
+      pools.push({
+        kind: 'floor',
+        x: alongX ? cw + PIER / 2 : cw + sg * (T / 2 + 2.2),
+        y: Y + 0.05,
+        z: alongX ? cz2 + sg * (T / 2 + 2.2) : cz2 + PIER / 2,
+        rx: alongX ? segLen * 0.5 : 3.4, rz: alongX ? 3.4 : segLen * 0.5,
+        tint: rgb01(NEON.warm, 0.34),
+      });
     }
   }
 
@@ -667,10 +746,15 @@ function underpass(b, r, rng, mats, signs, pools) {
       [endX, Y - DEPTH + 1.6, endZ], 0.02),
     neonSoft(NEON.cool)
   );
-  pools.push({
-    kind: 'floor', x: (c.x + endX) / 2, y: Y + 0.06, z: (c.z + endZ) / 2,
-    rx: 8, rz: 8, tint: rgb01(NEON.cool, 0.5),
-  });
+  // ── 입구 앞 바닥 빛을 뺐다 (사용자 지적) ────────────────────────────────
+  // *"지하상가 입구에 저 밝게 비추는 텍스쳐좀 지워봐 안보여 입구가"*
+  //
+  // 반지름 8m 짜리 가산합성 원반을 입구 앞에 깔아 뒀다. "아래에서 빛이 샌다"
+  // 를 표현하려던 것인데, **지면을 뚫기 전** 얘기였다. 구덩이가 안 보이던
+  // 시절에는 그 빛이 유일한 신호였지만, 지금은 구덩이가 실제로 뚫려 있으므로
+  // 같은 자리에 흰 원반을 깔면 **입구를 덮어 버린다.**
+  //
+  // 빛은 계단 끝의 발광판이 이미 낸다. 웅덩이는 없앤다.
 
   // ── 입구가 어느 쪽인가 ──────────────────────────────────────────────────
   // 계단은 `-ML/2` 에서 시작해 `+ML/2` 로 내려간다. 그러니 사람이 들어오는

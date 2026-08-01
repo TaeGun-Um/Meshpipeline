@@ -249,9 +249,24 @@ export function createDecks(scene, rng, mats, anchors) {
   for (const a of anchors) {
     // 2층 데크가 붙으려면 건물이 그만큼 높아야 한다
     if (a.top < DECK_Y + 3) continue;
+    // ── 필지가 아니라 **그린 것**에 붙인다 (사용자 지적) ──────────────────
+    // *"이런 갑자기 의미없이 튀어나오는 계단과 난간은 아직도 남아있고"*
+    //
+    // 실측: 데크 68개가 건물과 **0.23m** 만 닿아 있었다. 3m 짜리 판이 벽을
+    // 스치기만 하고 나머지는 허공에 떠 있었던 것이다.
+    //
+    // 원인은 `a.rect`(필지)를 벽으로 착각한 것이다. 건물은 필지를
+    // `shrink(rect, 0.35~1.4)` 해서 짓는다 (towers.js). 그래서 실제 벽은
+    // 필지 경계보다 최대 1.4m 안쪽이고, 필지 경계에 붙인 데크는 그만큼 뜬다.
+    //
+    // **브릿지에서 똑같은 것을 이미 고쳤다** (status.md 1기 14번 — "앵커 rect
+    // 와 실제 건물 경계가 다름"). 그때 앵커에 `solid` 를 넣어 두고 브릿지만
+    // 바꿨고, 데크는 안 바꿨다. 고칠 때 **같은 값을 쓰는 소비자를 전부**
+    // 세지 않은 것이다 (2.1 규칙 5).
+    const W = a.solid || a.rect;
     // 인도가 데크를 감당하는가. 공업 구역(3.2m)에는 못 놓는다.
-    const cx = (a.rect.x0 + a.rect.x1) / 2;
-    const cz = (a.rect.z0 + a.rect.z1) / 2;
+    const cx = (W.x0 + W.x1) / 2;
+    const cz = (W.z0 + W.z1) / 2;
     // blockIndexAt 을 쓴다. 예전에는 여기서 `Math.round(cx / PITCH + (GRID-1)/2)`
     // 를 썼는데 그건 **등간격일 때만** 맞는 식이다 (layout.js 머리말).
     // 다른 다섯 모듈은 진작 옮겼고 여기만 남아 있었다 — 그래서 데크가 엉뚱한
@@ -273,13 +288,14 @@ export function createDecks(scene, rng, mats, anchors) {
     const side = open[rng.int(0, open.length - 1)];
 
     const alongX = side === 'pz' || side === 'nz';
-    const len = (alongX ? a.rect.x1 - a.rect.x0 : a.rect.z1 - a.rect.z0) * rng.range(0.6, 0.95);
+    const len = (alongX ? W.x1 - W.x0 : W.z1 - W.z0) * rng.range(0.6, 0.95);
     if (len < 8) continue;
 
-    // 건물 면에서 바깥으로 DECK_W/2 만큼. 벽에 물려야 붙은 것으로 읽힌다.
-    const out = DECK_W / 2 - 0.2;
-    const dcx = alongX ? cx : (side === 'px' ? a.rect.x1 + out : a.rect.x0 - out);
-    const dcz = alongX ? (side === 'pz' ? a.rect.z1 + out : a.rect.z0 - out) : cz;
+    // 벽 안으로 **0.8m 물린다.** 0.2 로는 접촉이 20cm 라 붙은 것으로 안
+    // 읽히고, 배치 검사도 "닿기는 닿는다" 로 통과시켰다.
+    const out = DECK_W / 2 - 0.8;
+    const dcx = alongX ? cx : (side === 'px' ? W.x1 + out : W.x0 - out);
+    const dcz = alongX ? (side === 'pz' ? W.z1 + out : W.z0 - out) : cz;
 
     // ── 계단 자리를 **먼저** 정한다 ─────────────────────────────────────
     //

@@ -290,18 +290,33 @@ export function checkPlacement(scene) {
   // 데크는 건물 정면 **밖**에 있으므로 끝점이 건물 안일 수 없다. 대신
   // "데크 상자가 어떤 건물 상자와 맞닿아 있나" 를 본다. 어디에도 안 닿으면
   // 그건 길 한가운데 뜬 판이다.
+  // ── "닿나" 가 아니라 "얼마나 닿나" 다 (사용자 지적으로 고침) ────────────
+  //
+  // 원래는 데크 상자를 1.5m 부풀려 **겹치기만 하면** 통과였다. 그래서 3m 짜리
+  // 판이 벽을 **0.23m** 스치고 나머지가 허공에 뜬 것을 68개 전부 통과시켰다.
+  // 사용자가 "의미없이 튀어나오는 계단과 난간" 이라고 부른 것이 그것이다.
+  //
+  // 부풀리지 않고 **실제 겹친 깊이**를 잰다. 짧은 축으로 이만큼은 물려야
+  // 벽에 붙은 판이다.
+  const DECK_BITE = 0.5;
   const looseDecks = [];
   for (const d of decks) {
-    const grown = { x0: d.x0 - 1.5, x1: d.x1 + 1.5, z0: d.z0 - 1.5, z1: d.z1 + 1.5 };
-    let touch = false;
+    let best = 0;
     for (const bl of buildings) {
-      const ov = overlapXZ(grown, bl);
-      if (ov.x > 0 && ov.z > 0 && bl.y1 >= d.y0) { touch = true; break; }
+      if (bl.y1 < d.y0) continue;
+      const ov = overlapXZ(d, bl);
+      const bite = Math.min(ov.x, ov.z);
+      if (bite > best) best = bite;
     }
-    if (!touch) looseDecks.push(d.label);
+    if (best < DECK_BITE) looseDecks.push({ label: d.label, 물린깊이: +best.toFixed(2) });
   }
   if (looseDecks.length) {
-    add('데크가 안 붙음', `2층 데크 ${looseDecks.length}개가 어떤 건물에도 안 닿는다`, looseDecks.slice(0, 12));
+    looseDecks.sort((a2, b2) => a2.물린깊이 - b2.물린깊이);
+    add(
+      '데크가 벽에 안 물림',
+      `2층 데크 ${looseDecks.length}개가 건물에 ${DECK_BITE}m 도 안 물렸다 (최소 ${looseDecks[0].물린깊이}m)`,
+      looseDecks.slice(0, 12)
+    );
   }
 
   // ── 데크에 올라갈 계단이 있나 ────────────────────────────────────────────
