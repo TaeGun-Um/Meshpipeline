@@ -32,11 +32,24 @@ export function shopTextures(S) {
     //   · 창을 판자로 막은 칸            불이 아예 없다
     //   · 안이 훤한 칸                   따뜻한 빛
     // 규칙적인 격자 위에 이 넷을 섞는 것이 이 유형의 문법이다.
+    // ── 한 장이 한 **층**을 덮는다 (사용자 지적으로 고침) ──────────────────
+    //
+    // "창문 자체를 키우던지 해서. 아예 저 창문이 모델링이 번잡스러우니까"
+    //
+    // 이 텍스처를 쓰는 곳(bazaar 의 windowBand·upperFacade)은 **층마다 한 장**
+    // 을 붙인다. 그런데 3행짜리로 구워 놨으니 한 층에 창이 세 줄로 들어갔다 —
+    // 층고 3.1m 에 창 세 줄이면 한 줄이 0.8m 다. 그래서 창이 작고 잘아 보였다.
+    //
+    // 한 행으로 굽는다. 그러면 같은 띠 안에서 창이 **세 배 키가 커진다** —
+    // 실측 0.53m -> 1.60m. 칸 수도 6에서 4로 줄여 한 칸을 넓힌다.
+    //
+    // 비율(512x256 = 2:1)은 쓰는 쪽이 판을 자르는 근거다 (bazaar 의
+    // WIN_ASPECT). 여기를 바꾸면 거기도 같이 봐야 한다.
     tenantWindows(seed, tintHex) {
       const warm = rgb255(tintHex);
       const grain = tiledFbm(seed + 3, 20, 3);
-      const COLS = 6;
-      const ROWS = 3;
+      const COLS = 4;
+      const ROWS = 1;
 
       return bake([512, 256], 1, 1, (u, v, o) => {
         const gn = grain(u, v);

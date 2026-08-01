@@ -114,19 +114,43 @@ function frameOf(r, side) {
 const GLASS_H = 0.78;  // 층 높이 대비 유리 높이. 0.62 였다 — "키우라" 는 지시다
 const SILL = 0.11;     // 창 밑 턱
 
+// ── 판의 비율이 텍스처의 비율이어야 한다 (사용자 지적) ─────────────────────
+//
+// "4칸씩 있던 창문을 옆에 창문 리소스를 엎에고 디자인에 맞지않게 좌우로 주욱
+//  늘려놨네"
+//
+// 맞았다. 조각보를 없애려고 면 전체를 **한 장**으로 덮었는데, `autoBox` 의
+// 타일 인자를 안 줘서 UV 가 판 크기에 맞춰졌다. 그래서 512x256 짜리 창 그림
+// 하나가 25m 파사드에 통째로 늘어났다.
+//
+// 창을 이어 붙이는 것 자체는 맞다. 다만 **한 장이 덮는 넓이는 텍스처가
+// 정한다** — 판을 텍스처 비율로 잘라 이어야 안 늘어난다. 그래서 칸 수를
+// 폭이 아니라 **높이에서** 뽑는다.
+const WIN_ASPECT = 2.0;  // tenantWindows 는 512x256 이다
+
 function windowBand(b, f, y, rng, mats, D, lit, shut, doorAt = -1, fl = 0, seed = 0) {
-  const n = Math.max(2, Math.round(f.w / 4.2));
-  const bw = f.w / n;
   const h = SHOP_FLOOR * GLASS_H;
   const cy = y + SHOP_FLOOR * SILL + h / 2;
+  const n = Math.max(2, Math.round(f.w / (h * WIN_ASPECT)));
+  const bw = f.w / n;
 
-  // 1) 유리 띠 — 면 하나에 한 장, 재질도 하나.
-  //    2층까지는 아직 가게고(적층 상가), 3층부터는 세입자 방이다.
-  const pool = fl <= 1 ? mats.shopfrontBrightMats : mats.tenantWinMats;
-  const gi = Math.floor(hash2(seed + fl * 313, seed + 7) * 997) % pool.length;
-  const [gx, gz] = f.at(0, 0.06);
-  const [gw, gd] = f.size(f.w * 0.985, 0.1);
-  b.add(autoBox(gw, h, gd, [gx, cy, gz], 0.02), pool[gi]);
+  // ── 1) 유리 ────────────────────────────────────────────────────────────
+  //
+  // 재질은 층에 **하나**다 (조각보를 없앤 것). 그리고 위층에는 `shopfront` 를
+  // 쓰지 않는다 — 그 텍스처는 칸 위 30%가 **간판 띠**다 (shops.shopfront 의
+  // HEADER). 사용자가 "창문 위에 붙은 간판" 이라고 표시한 것이 그것이다.
+  // 3D 배너를 치워도 그림에 구워진 간판은 그대로 남는다.
+  //
+  // 위층은 창이다. 간판 띠가 없는 `tenantWindows` 가 이미 그것이고, 1층
+  // 점포에서만 `shopfront` 를 쓴다 — 거기는 실제로 가게 정면이다.
+  const mat = mats.tenantWinMats[
+    Math.floor(hash2(seed + fl * 313, seed + 7) * 997) % mats.tenantWinMats.length
+  ];
+  for (let i = 0; i < n; i++) {
+    const [ix, iz] = f.at(-f.w / 2 + bw * (i + 0.5), 0.06);
+    const [sw, sd] = f.size(bw, 0.1);
+    b.add(autoBox(sw, h, sd, [ix, cy, iz], 0.02), mat);
+  }
 
   // 2) 창틀 — 유리 앞에 세로 멀리언과 위아래 가로대.
   //    이 격자가 있어야 "한 장 붙인 그림" 이 아니라 창으로 읽힌다.
@@ -324,14 +348,23 @@ function upperFacade(b, rect, y0, n, mats, seed) {
       // 세입자가 제각각 쓰는 방이라 창마다 사정이 다르다
       // (shared/urban/shops.js tenantWindows).
       //
-      // 한 층을 한 장으로 붙인다. 칸을 쪼개 붙이면 텍스처 안의 창 격자와
-      // 조각 경계가 어긋나 이중 격자가 된다.
-      const [wx, wz] = f.at(0, 0.06);
-      const [ww, wd] = f.size(f.w * 0.985, 0.1);
-      b.add(
-        autoBox(ww, SHOP_FLOOR * 0.9, wd, [wx, y + SHOP_FLOOR * 0.52, wz], 0.02),
-        mats.tenantWinMats[Math.floor(hf * 997) % mats.tenantWinMats.length]
-      );
+      // ── 한 장으로 덮으면 늘어난다 (사용자 지적으로 고침) ────────────────
+      //
+      // "디자인에 맞지않게 좌우로 주욱 늘려놨네"
+      //
+      // 여기도 같은 실수를 하고 있었다 — 면 전체를 한 장으로 덮었다. 55m
+      // 파사드에 2:1 짜리 창 그림을 붙이면 가로로 스무 배 늘어난다.
+      // "칸을 쪼개면 이중 격자" 라던 옛 주석은 **쪼개는 폭을 텍스처 비율에
+      // 안 맞췄을 때** 얘기다. 비율대로 자르면 조각 경계가 곧 창 사이 벽이다.
+      const wh = SHOP_FLOOR * 0.9;
+      const nw = Math.max(1, Math.round(f.w / (wh * WIN_ASPECT)));
+      const wbw = f.w / nw;
+      const wmat = mats.tenantWinMats[Math.floor(hf * 997) % mats.tenantWinMats.length];
+      for (let i = 0; i < nw; i++) {
+        const [wx, wz] = f.at(-f.w / 2 + wbw * (i + 0.5), 0.06);
+        const [ww, wd] = f.size(wbw, 0.1);
+        b.add(autoBox(ww, wh, wd, [wx, y + SHOP_FLOOR * 0.52, wz], 0.02), wmat);
+      }
       // 그 층의 몇 칸은 셔터를 내렸다 — 빈 사무실. 이 어두운 칸이 있어야
       // 켜진 칸이 읽힌다 (shopStrip 과 같은 논리)
       const shutCells = Math.max(2, Math.round(f.w / 4.4));
