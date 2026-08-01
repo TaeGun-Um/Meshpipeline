@@ -94,7 +94,8 @@ node tools/pipeline.mjs --accept   # 새 스펙을 승인 (아래 참고)
 |---|---|
 | [docs/concepts.md](docs/concepts.md) | **개념 — 가장 먼저 읽는다.** 이게 무엇을 하는 것인가, DX11 과 무엇이 같고 다른가, 무엇이 엔진으로 넘어가고 무엇이 안 넘어가는가, 도구 버전 |
 | [docs/architecture.md](docs/architecture.md) | **아키텍처** — 계층 구조, 의존 방향, 왜 이렇게 나눴는가 |
-| [docs/pipeline.md](docs/pipeline.md) | 파이프라인 6단계, 규약(contract), 검사 항목 |
+| [docs/generation.md](docs/generation.md) | **도시 생성 — 새 기능을 만들기 전에 먼저 읽는다.** 순서·단일 출처·계약·난수 규율, 그리고 "이미 있는 것" 목록 |
+| [docs/pipeline.md](docs/pipeline.md) | 익스포트 파이프라인 6단계, 규약(contract), 검사 항목 |
 | [docs/modules.md](docs/modules.md) | 기능 모듈 — 텍스처·지오메트리·스켈레탈·익스포트·임포트 |
 | [docs/handover.md](docs/handover.md) | **인수인계** — 이어받을 때 가장 먼저 읽는다 |
 | [docs/city.md](docs/city.md) | **도시의 내력** — 왜 이 도시가 이렇게 생겼는가. 모든 형태 결정의 근거 |
