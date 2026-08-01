@@ -29,7 +29,10 @@ import {
   upPlane,
   rectCenter,
   rectSize,
+  bayRect,
 } from '../../core/boxfaces.js';
+import { showcase } from './shopfront.js';
+import { hash2 } from '../../core/textures.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 import { PANEL_TILE, FLOOR_HEIGHT, CURB_HEIGHT } from './layout.js';
@@ -538,13 +541,33 @@ function podiumBuilding(b, r, podH, rng, mats, st, pools, entrySide) {
     // 250m 짜리 새하얀 벽이 됐다 — 로비가 아니라 조명 상자다. 나머지 면은
     // 어두운 유리로 둔다. 실제로도 밤에 불이 켜진 곳은 로비 한 곳이고,
     // 그 대비가 "여기가 입구" 를 말해 준다.
-    const lit = side === entrySide;
-    const [gx, gz] = f.at(0, 0.1);
-    const [gw, gd] = f.size(f.w * 0.98, 0.16);
-    b.add(
-      autoBox(gw, GROUND * 0.82, gd, [gx, Y + GROUND * 0.47, gz], 0.02),
-      lit ? mats.lobbyLitMat : mats.vitrineGlassMat
-    );
+    // ── 나머지 면도 '로비 모양새' 여야 한다 (사용자 지적) ────────────────
+    //
+    // "쌍둥이빌딩 하단도 다른 빌딩처럼 로비같은 모양새 만들어달라니까"
+    //
+    // 맞았다. 단동은 `lobby()` 가 **네 면을 다 유리로** 만드는데, 군집 기단은
+    // 출입구 한 면만 밝히고 나머지 셋을 어두운 유리로 뒀다. 그래서 군집
+    // (쌍둥이가 여기 얹힌다)의 밑동만 검은 상자였다.
+    //
+    // 그렇다고 네 면을 통째로 밝히면 안 된다 — 한 번 해 보고 되돌렸다.
+    // 250m 짜리 새하얀 벽은 로비가 아니라 조명 상자다.
+    //
+    // 답은 **칸을 나눠 일부만 켜는 것**이다. 이 도시가 창에 쓰는 바로 그
+    // 문법이고(점등률), 그러면 통짜 발광면이 아니면서 로비로 읽힌다.
+    // 출입구 면은 전부 켠다 — 거기가 정면이라는 대비가 살아야 한다.
+    const bays = Math.max(3, Math.round(f.w / 5.5));
+    for (let i = 0; i < bays; i++) {
+      const u = -f.w * 0.49 + (f.w * 0.98 / bays) * (i + 0.5);
+      const [gx, gz] = f.at(u, 0.1);
+      const [gw, gd] = f.size((f.w * 0.98) / bays, 0.16);
+      // 점등은 **좌표 해시로.** 난수를 더 뽑으면 뒤의 도시가 다시 뽑힌다
+      const on = side === entrySide
+        || hash2(Math.round(gx) * 7 + i, Math.round(gz) * 13) < 0.45;
+      b.add(
+        autoBox(gw, GROUND * 0.82, gd, [gx, Y + GROUND * 0.47, gz], 0.02),
+        on ? mats.lobbyLitMat : mats.vitrineGlassMat
+      );
+    }
     // 멀리온 — 없으면 통짜 발광판이다
     const n = Math.max(4, Math.round(f.w / 3.4));
     for (let i = 0; i <= n; i++) {
@@ -553,6 +576,11 @@ function podiumBuilding(b, r, podH, rng, mats, st, pools, entrySide) {
       const [mw, md] = f.size(0.16, 0.26);
       b.box(mw, GROUND * 0.82, md, [mx, Y + GROUND * 0.47, mz], mats.frameMat);
     }
+    // 로비 슬래브 선 — 유리 위를 가로지르는 띠. 단동 `lobby()` 가 마지막에
+    // 두르는 것과 같은 것이다. 이 한 줄이 있어야 '유리벽' 이 '로비 층' 이 된다
+    const [sx, sz] = f.at(0, 0.22);
+    const [sw2, sd2] = f.size(f.w * 0.99, 0.3);
+    b.box(sw2, 0.5, sd2, [sx, Y + GROUND * 0.88, sz], mats.panelMat);
   }
 
   // 1) 필로티 열주 — 기단 모서리 선 위. 위를 실제로 받는다
@@ -600,6 +628,89 @@ function podiumBuilding(b, r, podH, rng, mats, st, pools, entrySide) {
     kind: 'floor', x: cc.x, y: Y + 0.04, z: cc.z,
     rx: cs.w * 0.52, rz: cs.d * 0.52, tint: rgb01(st.tint, 0.22),
   });
+
+  // ── 눈높이에 물건을 놓는다 (#57) ────────────────────────────────────────
+  //
+  // 위 웅덩이는 **바닥만** 밝힌다. 실측하니 그것으로는 1층이 여전히 검은
+  // 띠였다 — 사람 눈높이(1.7m)에 걸리는 것이 디지털 수목뿐이었다.
+  //
+  // 밝은 로비를 네 면에 다 두는 것은 이미 한 번 해 보고 되돌렸다 (250m 짜리
+  // 새하얀 벽이 됐다). 그러니 **면을 밝히는 대신 물건을 놓는다.**
+  //
+  //   쇼케이스  기업이 파는 것을 내놓는다. 좁고 밝아서 벽이 안 밝아진다
+  //   보안 볼라드 차량을 막는 기둥열. 기업 = 통제된 접근이라는 표시
+  //   차량 진입로 어두운 개구부 + 차단바 + 노면 표시
+  //
+  // `showcase` 는 **이미 있는데 죽어 있던 코드**다 (유일한 호출자 towers.podium
+  // 이 안 돈다). 새로 만들지 않고 잇는다 — #56 과 같은 판단이다.
+  groundLife(b, r, core, rng, mats, st, pools, entrySide, Y, GROUND, RECESS);
+}
+
+// 기단 1층의 눈높이 어휘. podiumBuilding 이 덩치를 세운 뒤 그 밑을 채운다.
+function groundLife(b, r, core, rng, mats, st, pools, entrySide, Y, GROUND, RECESS) {
+  for (const side of SIDES) {
+    const f = faceFrame(core, side);
+    if (f.w < 8) { rng.next(); continue; }   // 난수는 면마다 똑같이 쓴다
+
+    // ── 쇼케이스 ─────────────────────────────────────────────────────────
+    // 유리면 앞, 열주 사이 회랑에 세운다. 깊이 0.75m 라 2.2m 회랑을 안 막는다.
+    // 출입구 면은 로비가 이미 밝으므로 놓지 않는다 — 밝은 것 앞에 밝은 것을
+    // 놓으면 둘 다 안 읽힌다.
+    const roll = rng.next();
+    if (side !== entrySide) {
+      // ── 개수는 면 길이에 비례한다 (실측으로 고침) ───────────────────────
+      // 처음에 3개로 못 박았더니 **128m 짜리 기단에도 셋**이었다. 가운데만
+      // 밝고 양옆 50m 씩이 그대로 검은 띠였다 — 고치려던 것이 그대로 남았다.
+      //
+      // 24m 에 하나. 기업은 원래 1층에 점포가 없는 구역이라(city.md) 촘촘하면
+      // 번화가가 된다. 이 간격이 "관리되는 빈 벽 + 가끔 있는 진열" 이다.
+      const n = Math.max(1, Math.min(7, Math.round(f.w / 24)));
+      // ── 유리면보다 **앞에** 세운다 (실측으로 고침) ──────────────────────
+      // `core` 면에 그대로 붙였더니 진열장이 안 보였다. 그 자리에 이미
+      // 기단 로비 유리가 0.02~0.18m 로 서 있고, 출입구 아닌 면은 그게
+      // **어두운 유리**라 뒤의 발광면을 덮는다. 0.5m 밖으로 빼면 회랑
+      // (2.2m) 안에 그대로 있으면서 유리보다 앞이 된다.
+      const front = shrink(core, -0.5);
+      for (let i = 0; i < n; i++) {
+        // 칸 폭의 28% 를 여백으로 둔다 — 회랑을 걸어 지나갈 수 있어야 한다
+        const sub = bayRect(front, side, i, n, (f.w / n) * 0.28);
+        showcase(b, sub, side, Y + 0.1, GROUND * 0.62, rng, mats);
+      }
+    }
+
+    // ── 보안 볼라드 ──────────────────────────────────────────────────────
+    // 열주 바깥, 연석 안쪽. 낮지만 **눈높이 아래에 줄이 생기면** 그 자체로
+    // 거리가 읽힌다 — 아무것도 없는 바닥과는 다르다.
+    // 간격 4.6m — 3.2m 로 두었더니 점선이 너무 촘촘해 기계적으로 보였다
+    const g = faceFrame(r, side);
+    const bn = Math.max(3, Math.round(g.w / 4.6));
+    for (let i = 0; i <= bn; i++) {
+      const u = -g.w / 2 + g.w * (i / bn);
+      const [px, pz] = g.at(u, 1.1);
+      b.cylinder(0.14, 0.16, 0.95, [px, Y + 0.475, pz], mats.metalMat, 8);
+      // 머리에 표시등 하나. 이 점들의 줄이 밤에 경계선을 그린다
+      b.cylinder(0.15, 0.15, 0.05, [px, Y + 0.97, pz], neon(NEON.cool), 8);
+    }
+
+    // ── 차량 진입로 ──────────────────────────────────────────────────────
+    // 한 면에만. 출입구 반대쪽이라야 사람과 차가 안 섞인다.
+    if (roll < 0.34 && side !== entrySide && f.w >= 20) {
+      const [rx, rz] = g.at(g.w * 0.28, 1.6);
+      const [rw, rd] = g.size(7.0, 3.2);
+      // 노면 표시 — 진입로는 바닥이 갈리는 것으로 먼저 읽힌다
+      b.add(upPlane(rw, rd, [rx, Y + 0.05, rz]), mats.plazaStepMat);
+      // 차단바 — 가로로 누운 봉 하나. 이게 '통제' 를 말한다
+      const [ax, az] = g.at(g.w * 0.28, 2.6);
+      const [aw, ad] = g.size(6.2, 0.12);
+      b.box(aw, 0.12, ad, [ax, Y + 1.0, az], neon(NEON.amber));
+      const [bx3, bz3] = g.at(g.w * 0.28 - 3.3, 2.6);
+      b.cylinder(0.16, 0.18, 1.3, [bx3, Y + 0.65, bz3], mats.metalMat, 8);
+      pools.push({
+        kind: 'floor', x: rx, y: Y + 0.06, z: rz,
+        rx: 5.5, rz: 5.5, tint: rgb01(NEON.amber, 0.35),
+      });
+    }
+  }
 }
 
 // ── 세로 대형 광고판 ───────────────────────────────────────────────────────

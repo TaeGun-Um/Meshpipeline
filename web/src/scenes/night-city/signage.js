@@ -157,92 +157,125 @@ function footprint(q) {
 // 여기에 다시 적으면 그게 곧 결합 오류다. 안 주면 벽에 붙은 것으로 본다.
 const BLOCK_D1 = 0.4;
 
+// ── 마주 보는 벽은 같은 자리를 다툰다 (검사가 잡아서 발견) ──────────────────
+//
+// 벽면마다 따로 묶었더니 **`pz` 와 `nz` 가 서로를 몰랐다.** 두 필지 사이 1.3m
+// 틈에서, 한쪽 벽의 세로 간판이 그 틈을 가로질러 맞은편 간판과 겹쳤다
+// (blade/blade 0.89m).
+//
+// 벽이 다르니 다른 그룹인 것은 맞다 — **납작한 판이라면.** 그런데 세로 간판은
+// 벽에서 1.5m 나오고, 틈이 그보다 좁으면 맞은편에 닿는다.
+//
+// 그래서 묶는 기준을 **벽면이 아니라 축과 좌표 띠**로 바꾼다. 그러면 마주 보는
+// 두 벽이 한 그룹에 들어오고, 깊이 판정이 알아서 가른다 — 다만 깊이를 '벽에서
+// 얼마나 나왔나'(부호 없음)가 아니라 **세계 좌표 구간**(부호 있음)으로 재야
+// 두 방향을 같이 비교할 수 있다.
+//
+// 띠 폭은 6m. 이보다 넓게 잡으면 무관한 벽까지 한 그룹이 되어 O(n²) 이 커지고,
+// 좁으면 마주 보는 벽을 놓친다. 도시에서 제일 좁은 필지 간격이 1~4m 다.
+const BAND = 6;
+
 function layoutSigns(reqs) {
-  const groups = new Map();
+  // 축마다 좌표 띠로 나눈 자리 대장. 판정할 때는 **이웃 띠까지** 본다 —
+  // 그래야 띠 경계에 걸친 마주 보는 벽을 놓치지 않는다.
+  const shelf = { x: new Map(), z: new Map() };
+  const bandOf = (n) => Math.floor(n / BAND);
+  const near = (ax, n) => {
+    const k = bandOf(n);
+    const out = [];
+    for (const d of [-1, 0, 1]) {
+      const l = shelf[ax].get(k + d);
+      if (l) out.push(...l);
+    }
+    return out;
+  };
+  const put = (ax, n, item) => {
+    const k = bandOf(n);
+    if (!shelf[ax].has(k)) shelf[ax].set(k, []);
+    shelf[ax].get(k).push(item);
+  };
+
   for (const q of reqs) {
     const az = alongZ(q.side);
     const a = faceAnchor(q.rect, q.side);
-    q._c = az ? a.z : a.x;                                   // 면 위 위치의 세계 좌표
+    q._ax = az ? 'x' : 'z';                                  // 법선 축
+    q._c = az ? a.z : a.x;                                   // 면 위 위치 (세계)
+    q._n = az ? a.x : a.z;                                   // 벽면 좌표 (세계)
+    q._o = az ? outward(q.side).ox : outward(q.side).oz;     // 바깥 방향 부호
     q._fw = az ? q.rect.z1 - q.rect.z0 : q.rect.x1 - q.rect.x0;
-    const key = `${q.side}|${(az ? a.x : a.z).toFixed(1)}`;   // 벽면 자체
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(q);
   }
 
+  // ── 예약이 먼저다 ────────────────────────────────────────────────────────
+  //
+  // "여기는 이미 내 난간이 지나간다" 고 생산자가 신고한 자리(`block: true`).
+  // 크기 순으로 섞으면 큰 간판이 난간 자리를 먼저 차지한다 — 예약은 협상
+  // 대상이 아니다. 파사드에서 자리를 차지하는데 대장에 없으면, 지면에서
+  // siteplan 이 생기기 전 인도가 그랬던 것과 똑같이 된다.
+  const drawn = [];
+  for (const q of reqs) {
+    if (!q.block) { drawn.push(q); continue; }
+    // 깊이는 **세계 좌표 구간**으로 넣는다 (아래 주석 참고)
+    const n0 = q._n;
+    const n1 = q._n + q._o * (q.depth ?? BLOCK_D1);
+    put(q._ax, q._n, {
+      ax: q._ax, c: q._c, uw: Math.max(q.w, q._fw), h: q.h, cy: q.y + q.h / 2,
+      n0: Math.min(n0, n1), n1: Math.max(n0, n1), blk: true,
+    });
+  }
+
+  // **자리를 잡기 전에 비율부터 맞춘다.** 늘어난 크기로 자리를 잡으면
+  // 그 자리에 늘어난 판이 놓일 뿐이다.
+  for (const q of drawn) { const f = fitAspect(q, q._fw); q.w = f.w; q.h = f.h; }
+
+  // 큰 것부터. 작은 것이 먼저 좋은 자리를 차지하면 큰 것이 갈 데가 없어진다.
+  drawn.sort((p, q2) => q2.w * q2.h - p.w * p.h);
+
   const out = [];
-  for (const [, list] of groups) {
-    const placed = [];
-
-    // ── 간판만 아는 대장은 반쪽이다 (사용자 지적) ────────────────────────
-    //
-    // "번화가 건물 타입의 경우 난간과 간판과 세로간판, 그리고 창문같은게
-    //  겹쳐져 있는 경우도 있음"
-    //
-    // 맞았다. 이 대장은 **간판끼리만** 겹침을 봤다. 외부 복도와 난간, 층
-    // 슬래브는 파사드에서 자리를 차지하는데 대장에 없으니 서로를 모른다.
-    // 지면에서 겪은 것과 똑같은 문제다 — siteplan 이 생기기 전 인도가 그랬다.
-    //
-    // 그래서 **자리만 차지하고 그려지지는 않는 항목**을 같은 대장에 넣는다
-    // (`block: true`). 생산자가 "여기는 이미 내 난간이 지나간다" 고 신고하면
-    // 간판이 그 자리를 피한다.
-    //
-    // 예약은 **맨 먼저** 처리한다. 크기 순으로 섞으면 큰 간판이 난간 자리를
-    // 먼저 차지해 버린다 — 예약은 협상 대상이 아니다.
-    const drawn = [];
-    for (const q of list) {
-      if (!q.block) { drawn.push(q); continue; }
-      placed.push({
-        c: q._c, uw: Math.max(q.w, q._fw), h: q.h, cy: q.y + q.h / 2,
-        d0: 0, d1: q.depth ?? BLOCK_D1, blk: true,
+  for (const q of drawn) {
+    const w = Math.min(q.w, q._fw * 0.94);
+    // 벽 위에서 차지하는 폭은 w 와 다를 수 있다 (세로 간판)
+    const fp = footprint({ ...q, w });
+    // ── 깊이는 부호 있는 세계 좌표로 잰다 ────────────────────────────────
+    // "벽에서 얼마나 나왔나" 로 재면 마주 보는 두 벽을 비교할 수 없다.
+    // 한쪽은 +z 로, 다른 쪽은 -z 로 나오기 때문이다.
+    const a0 = q._n + q._o * fp.d0;
+    const a1 = q._n + q._o * fp.d1;
+    const nn0 = Math.min(a0, a1);
+    const nn1 = Math.max(a0, a1);
+    const half = Math.max(0, (q._fw - fp.uw) / 2);
+    const cands = [q.u ?? 0];
+    for (let k = 1; k <= 6 && half > 0.2; k++) {
+      const t = (k / 6) * half;
+      cands.push(t, -t);
+    }
+    const cy = q.y + q.h / 2;
+    const neighbours = near(q._ax, q._n);
+    let ok = null;
+    for (const cd of cands) {
+      const u = Math.max(-half, Math.min(half, cd));
+      const c = q._c + u;
+      // 여유는 상대에 따라 다르다.
+      //   간판끼리   0.35m — 두 장이 붙어 보이면 둘 다 안 읽힌다
+      //   예약 상대  0.05m — 난간은 벽에 붙어 있고 간판은 0.36m 나와 있어
+      //              스치듯 지나가도 관통이 아니다. 같은 여유를 쓰면 층 사이
+      //              빈 띠가 통째로 사라진다 (간판이 1,127장에서 498장이 됐다).
+      const hit = neighbours.some((p) => {
+        if (p.ax !== q._ax) return false;
+        const gap = p.blk ? 0.05 : 0.35;
+        if (Math.abs(p.c - c) >= (p.uw + fp.uw) / 2 + gap) return false;
+        if (Math.abs(p.cy - cy) >= (p.h + q.h) / 2 + gap) return false;
+        // 깊이까지 겹쳐야 같은 자리다. 여유를 주면 안 된다 — 세로 간판을
+        // 복도 **앞**에 매다는 회피가 통째로 무의미해진다.
+        return Math.min(p.n1, nn1) > Math.max(p.n0, nn0);
       });
+      if (!hit) { ok = u; break; }
     }
-
-    // **자리를 잡기 전에 비율부터 맞춘다.** 늘어난 크기로 자리를 잡으면
-    // 그 자리에 늘어난 판이 놓일 뿐이다.
-    for (const q of drawn) { const f = fitAspect(q, q._fw); q.w = f.w; q.h = f.h; }
-
-    // 큰 것부터 자리를 잡는다. 작은 것이 먼저 좋은 자리를 차지하면
-    // 큰 것이 갈 데가 없어져 통째로 버려진다.
-    drawn.sort((p, q2) => q2.w * q2.h - p.w * p.h);
-
-    for (const q of drawn) {
-      const w = Math.min(q.w, q._fw * 0.94);
-      // 벽 위에서 차지하는 폭은 w 와 다를 수 있다 (세로 간판). 자리는 이걸로 잡는다
-      const fp = footprint({ ...q, w });
-      const half = Math.max(0, (q._fw - fp.uw) / 2);
-      // 후보 자리 — 요청한 u 가 있으면 거기부터, 없으면 가운데부터 좌우로
-      const cands = [q.u ?? 0];
-      for (let k = 1; k <= 6 && half > 0.2; k++) {
-        const t = (k / 6) * half;
-        cands.push(t, -t);
-      }
-      const cy = q.y + q.h / 2;
-      let ok = null;
-      for (const cd of cands) {
-        const u = Math.max(-half, Math.min(half, cd));
-        const c = q._c + u;   // 자리 판정은 **세계 좌표**로 한다
-        // 여유는 상대에 따라 다르다.
-        //   간판끼리   0.35m — 두 장이 붙어 보이면 둘 다 안 읽힌다
-        //   예약 상대  0.05m — 난간은 벽에 붙어 있고 간판은 0.36m 나와 있어
-        //              스치듯 지나가도 관통이 아니다. 여기에 같은 여유를
-        //              쓰면 층 사이 빈 띠가 통째로 사라진다 (실제로 간판이
-        //              1,127장에서 498장으로 줄었다).
-        const hit = placed.some((p) => {
-          const gap = p.blk ? 0.05 : 0.35;
-          if (Math.abs(p.c - c) >= (p.uw + fp.uw) / 2 + gap) return false;
-          if (Math.abs(p.cy - cy) >= (p.h + q.h) / 2 + gap) return false;
-          // 깊이까지 겹쳐야 같은 자리다. 여기에 여유를 주면 안 된다 — 세로
-          // 간판을 복도 **앞**에 매다는 회피가 통째로 무의미해진다.
-          return Math.min(p.d1, fp.d1) > Math.max(p.d0, fp.d0);
-        });
-        if (!hit) { ok = u; break; }
-      }
-      // 자리가 없으면 **버린다.** 겹쳐 놓느니 없는 것이 낫다 —
-      // 겹친 간판은 둘 다 안 읽힌다.
-      if (ok === null) continue;
-      placed.push({ c: q._c + ok, uw: fp.uw, h: q.h, cy, d0: fp.d0, d1: fp.d1 });
-      out.push({ ...q, u: ok, w });
-    }
+    // 자리가 없으면 **버린다.** 겹쳐 놓느니 없는 것이 낫다
+    if (ok === null) continue;
+    put(q._ax, q._n, {
+      ax: q._ax, c: q._c + ok, uw: fp.uw, h: q.h, cy, n0: nn0, n1: nn1,
+    });
+    out.push({ ...q, u: ok, w });
   }
   return out;
 }

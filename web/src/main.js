@@ -390,6 +390,11 @@ window.__place = () => window.__stats?.placement ?? null;
 // 잊으면 예외가 아니라 이전 씬 잔재가 조용히 섞인다.
 window.__resets = () => sceneResetList();
 
+// 1층 점포 유형 분포. 가중치가 낮은 유형이 한 번도 안 나오는 것을 잡는다
+// (scenes/night-city/shopfront.js).
+window.__shops = async () =>
+  (await import('./scenes/night-city/shopfront.js')).shopTally();
+
 window.__lock = async (prefix = '') => {
   const views = await fetch('/shots/views.json').then((r) => r.json());
   const set = views[SCENE.meta.id];

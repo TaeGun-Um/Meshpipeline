@@ -21,6 +21,7 @@ import { autoBox } from '../../core/profile.js';
 import { NEON } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 
+import { onSceneReset } from '../../core/scenestate.js';
 export const ALCOVE = 1.3; // 벽감 깊이 (m)
 export const SHOP_H = 3.4; // 1층 층고
 
@@ -150,12 +151,22 @@ function noodleShop(b, f, y, rng, mats) {
   const c = f.at(0, -0.15);
   const [cx, cz] = f.dims(f.w * 0.92, 0.45);
   b.add(autoBox(cx, 1.05, cz, [c[0], y + 0.525, c[1]], 0.04), mats.metalMat);
-  // 스툴 셋 — 보도 위
+  // ── 스툴과 앉은 사람 (#56) ──────────────────────────────────────────────
+  //
+  // 스툴만 놓았을 때는 **빈 의자가 늘어선 폐업한 가게**로 보였다. 국숫집을
+  // 넣은 이유가 "사람이 앉는 자리가 있으면 거리가 살아 있다고 읽힌다" 인데,
+  // 정작 아무도 안 앉아 있었으니 목적이 절반만 이뤄진 셈이다.
+  //
+  // 전부 채우지는 않는다. 빈 자리가 섞여야 앉은 사람이 읽힌다 — 꽉 차면
+  // 그냥 덩어리다. 밤 늦은 포장마차의 밀도가 대략 이렇다.
   const n = Math.max(2, Math.round(f.w / 1.1));
   for (let i = 0; i < n; i++) {
     const u = (i + 0.5) / n - 0.5;
     const p = f.at(u, 0.62);
     b.cylinder(0.17, 0.15, 0.72, [p[0], y + 0.36, p[1]], mats.metalMat, 8);
+    // 난수는 자리마다 **똑같이 하나** 뽑는다. 조건부로 건너뛰면 소비량이
+    // 갈려 뒤의 도시가 다시 뽑힌다 (lessons.md 2.1 규칙 6)
+    if (rng.chance(0.55)) seatedFigure(b, f, u, y + 0.72, 0.62, mats);
   }
   // 매달린 전구
   for (let i = -1; i <= 1; i++) {
@@ -165,6 +176,34 @@ function noodleShop(b, f, y, rng, mats) {
   // 김 나는 냄비
   const k = f.at(rng.range(-0.3, 0.3), -0.5);
   b.cylinder(0.24, 0.26, 0.28, [k[0], y + 1.2, k[1]], mats.metalMat, 10);
+}
+
+// ── 앉은 사람 ──────────────────────────────────────────────────────────────
+//
+// `crowd.js` 에 사람 형상이 있지만 **서 있는 것뿐이고 export 도 안 한다.**
+// 앉으면 다리가 접혀 비율 자체가 달라지므로 돌려쓸 수가 없다 (머리 1 : 몸 3 :
+// 다리 3.5 가 서 있을 때의 비율이다). 소비하는 쪽도 다르다 — 저쪽은
+// InstancedMesh 고 여기는 MeshBuilder 로 병합된다.
+//
+// 재질은 `personMat` 을 그대로 쓴다. 거리의 사람과 앉은 사람이 다른 색이면
+// 그게 더 이상하다.
+// u  면 위 가로 위치 (-0.5~0.5) · d  면에서 바깥으로의 거리 · y  엉덩이 높이
+// 축 매핑은 `f.at`/`f.dims` 에 맡긴다. 손으로 x/z 를 쓰면 면 방향마다 틀린다 —
+// 이 프로젝트에서 여러 번 그랬다 (boxfaces.js 머리말).
+function seatedFigure(b, f, u, y, d, mats) {
+  // (면을 따라가는 폭, 바깥 방향 두께, 높이, u 오프셋(m), d 오프셋, y 오프셋)
+  const part = (fw, fd, h, du, dd, dy) => {
+    const p = f.at(u + du / f.w, d + dd);
+    const [sx, sz] = f.dims(fw, fd);
+    b.box(sx, h, sz, [p[0], y + dy, p[1]], mats.personMat);
+  };
+  part(0.24, 0.34, 0.11, 0, 0, 0.05);       // 허벅지 — 이 수평 조각이 '앉았다' 를 만든다
+  part(0.09, 0.10, 0.42, -0.06, 0.13, -0.21); // 정강이 — 스툴 아래로
+  part(0.09, 0.10, 0.42, 0.06, 0.13, -0.21);
+  part(0.28, 0.17, 0.40, 0, -0.03, 0.31);   // 몸통 — 카운터 쪽으로 기운다
+  part(0.07, 0.30, 0.09, -0.17, -0.10, 0.46); // 팔 — 카운터에 올린다
+  part(0.07, 0.30, 0.09, 0.17, -0.10, 0.46);
+  part(0.15, 0.15, 0.16, 0, -0.02, 0.60);   // 머리
 }
 
 // 노점 — 차양 밑에 상자·선반이 보도로 넘쳐 나온다
@@ -194,6 +233,164 @@ function stall(b, f, y, rng, mats) {
     const g = f.at(rng.range(-0.45, 0.45), 0.9);
     b.add(autoBox(0.5, rng.range(0.7, 1.3), 0.45, [g[0], y + 0.5, g[1]], 0.03), mats.rustMat);
   }
+}
+
+// ── 2077 의 거리 단위 셋 (사용자 지시) ─────────────────────────────────────
+//
+// "사이버펑크 세계관의 편의점이나, 라멘집, 리퍼닥 병원 뭐 그런것들 있잖아.
+//  여러 형태로 점검하고, 필요하면 사이버펑크 2077에서 조사해가지고 여기에 적용해"
+//
+// 기존 넷(열린가게·국숫집·노점·바문)은 **업종이 아니라 형태**로 갈려 있었다.
+// 2077 의 거리가 읽히는 이유는 형태가 아니라 **무엇을 파는 곳인지가 한눈에
+// 갈리기** 때문이다. 그 셋을 더한다.
+//
+//   편의점    통유리 + 밝은 실내 + 선반 줄. 거리에서 제일 밝은 칸
+//   리퍼닥    셔터를 반쯤 내리고 커튼. 수술등 하나. 뒷골목 시술소
+//   드롭포인트 사물함 벽 + 단말기. 사람이 없다 — 어두운 것이 이 유형의 정체
+//
+// 셋 다 **밝기가 다르다**: 편의점이 제일 밝고 드롭포인트가 제일 어둡다.
+// 그 폭이 있어야 늘어선 1층에 리듬이 생긴다.
+
+// 편의점 — 통유리. 거리에서 안이 훤히 보이는 유일한 유형이다.
+function convenience(b, f, y, rng, mats) {
+  const backD = -ALCOVE + 0.08;
+  // 안쪽 벽 — 가장 밝은 등급
+  b.add(
+    facePlane(f.rect(-0.46, 0.46, backD, backD), y + 0.05, SHOP_H - 0.5, f.side, null, 0),
+    mats.interiorMats[rng.int(0, mats.interiorMats.length - 1)]
+  );
+  sideReturns(b, f, y, SHOP_H - 0.2, mats);
+  // 선반 — **깊이 방향으로** 세 줄. 통유리라 줄이 겹쳐 보이는 것이 편의점이다
+  for (let i = 0; i < 3; i++) {
+    const u = -0.3 + i * 0.3;
+    const p = f.at(u, backD * 0.55);
+    const [sx, sz] = f.dims(0.16, ALCOVE * 0.62);
+    b.add(autoBox(sx, 1.55, sz, [p[0], y + 0.78, p[1]], 0.02), mats.metalMat);
+    // 진열된 물건 — 선반 위 색 띠 넷
+    for (let k = 0; k < 4; k++) {
+      const [gx, gz] = f.dims(0.13, ALCOVE * 0.5);
+      b.box(gx, 0.2, gz, [p[0], y + 0.35 + k * 0.38, p[1]],
+        k % 2 ? mats.glowCool : mats.glowWarm);
+    }
+  }
+  // 계산대 — 한쪽 구석
+  const c = f.at(0.34, -0.42);
+  const [cx, cz] = f.dims(f.w * 0.26, 0.42);
+  b.add(autoBox(cx, 1.0, cz, [c[0], y + 0.5, c[1]], 0.03), mats.wetConcreteMat);
+  // ── 유리는 '틀' 로만 그린다 (실측으로 고침) ───────────────────────────
+  //
+  // 처음에 `vitrineGlassMat` 한 장으로 벽감 입구를 통째로 덮었더니 **검은
+  // 사각형**이 됐다. 그 재질은 어둡고 반사만 하는 유리라, 진열장처럼 **얕은
+  // 상자 앞**에 세울 때만 성립한다 — 깊이 1.3m 벽감 앞에 세우면 안쪽 발광을
+  // 통째로 가린다.
+  //
+  // 통유리라는 인상은 유리판이 아니라 **선대(mullion)** 가 만든다. 얇은
+  // 세로대 둘과 위 가로대 하나면 밝은 실내 앞에 격자가 떨어져서 "유리 너머"
+  // 로 읽힌다. 판을 안 세우니 안이 그대로 보인다.
+  for (const s of [-1, 1]) {
+    const p = f.at(s * 0.22, -0.02);
+    const [jx, jz] = f.dims(0.07, 0.1);
+    b.box(jx, SHOP_H - 0.7, jz, [p[0], y + 0.1 + (SHOP_H - 0.7) / 2, p[1]], mats.metalMat);
+  }
+  const h = f.at(0, -0.02);
+  const [hx, hz] = f.dims(f.w * 0.92, 0.1);
+  b.box(hx, 0.09, hz, [h[0], y + 2.25, h[1]], mats.metalMat);
+  // 천장 형광등 — 위에서 아래로 쏟아지는 빛
+  const t = f.at(0, -ALCOVE * 0.5);
+  b.add(downPlane(...f.dims(f.w * 0.8, ALCOVE * 0.7), [t[0], y + SHOP_H - 0.55, t[1]]), mats.glowCool);
+  // 문턱 빛 — 밖으로 새어나온다
+  const d = f.at(0, 0.1);
+  b.add(downPlane(...f.dims(f.w * 0.9, 1.5), [d[0], y + 0.05, d[1]]), mats.glowCool);
+}
+
+// 리퍼닥 — 셔터를 반쯤 내리고 커튼으로 가린다. 안에 의자와 수술등.
+// 반쯤 열린 것이 이 유형의 전부다 — 완전히 열려도 닫혀도 시술소가 아니다.
+function ripperdoc(b, f, y, rng, mats) {
+  const backD = -ALCOVE + 0.1;
+  // 안쪽 벽 — 시술실 조명. **뒤가 밝아야 의자와 수술등이 실루엣으로 읽힌다**
+  // (발광 표면은 주변을 밝히지 않는다 — shared/lightpool.js 머리말).
+  b.add(
+    facePlane(f.rect(-0.45, 0.45, backD, backD), y + 0.1, SHOP_H - 0.6, f.side, null, 0),
+    mats.interiorMats[1 % mats.interiorMats.length]
+  );
+  sideReturns(b, f, y, SHOP_H - 0.2, mats);
+  // 반쯤 내린 셔터 — 위 45%
+  b.add(
+    facePlane(f.rect(-0.47, 0.47, -0.12, -0.12), y + SHOP_H * 0.55, SHOP_H * 0.45, f.side, [2.4, 2.4], 0),
+    mats.shutterMat
+  );
+  // 커튼 — 셔터 아래 천 **두 폭.** 셋으로 두르니 안이 통째로 가려져
+  // 검은 칸이 됐다. 양옆으로 젖혀 놓아야 '반쯤 열린' 이 성립한다
+  for (const s of [-1, 1]) {
+    const p = f.at(s * 0.33, -0.2);
+    const [wx, wz] = f.dims(f.w * rng.range(0.18, 0.26), 0.06);
+    b.box(wx, SHOP_H * rng.range(0.32, 0.46), wz,
+      [p[0], y + SHOP_H * 0.55 - SHOP_H * 0.2, p[1]], mats.rustMat);
+  }
+  // 시술 의자 — 등받이가 눕는다
+  const c = f.at(0, backD + 0.45);
+  const [cx, cz] = f.dims(0.6, 0.75);
+  b.add(autoBox(cx, 0.55, cz, [c[0], y + 0.4, c[1]], 0.04), mats.wetConcreteMat);
+  // 등받이 — 앉는 판보다 얇다. 두 덩이라야 의자로 읽힌다
+  const [bx, bz] = f.dims(0.6, 0.22);
+  const back = f.at(0, backD + 0.18);
+  b.add(autoBox(bx, 0.62, bz, [back[0], y + 0.95, back[1]], 0.04), mats.wetConcreteMat);
+  // 수술등 — 천장에서 내려온 팔 끝의 원반. 이 하나가 '병원' 을 말한다
+  const l = f.at(0, backD + 0.5);
+  b.cylinder(0.05, 0.05, 0.7, [l[0], y + SHOP_H - 0.5, l[1]], mats.metalMat, 6);
+  b.cylinder(0.3, 0.26, 0.1, [l[0], y + SHOP_H - 0.9, l[1]], mats.metalMat, 12);
+  b.add(downPlane(0.5, 0.5, [l[0], y + SHOP_H - 0.96, l[1]]), mats.glowCool);
+  // 기구 트레이 — 옆에 붙은 작은 상
+  const t = f.at(0.32, backD + 0.35);
+  const [tx, tz] = f.dims(0.34, 0.3);
+  b.box(tx, 0.05, tz, [t[0], y + 0.9, t[1]], mats.metalMat);
+}
+
+// 드롭포인트 — 사물함 벽과 단말기. **사람이 없는 것**이 이 유형의 정체다.
+// 늘어선 1층에서 어두운 칸 하나가 있어야 밝은 칸이 밝게 읽힌다.
+function dropPoint(b, f, y, rng, mats) {
+  const backD = -ALCOVE + 0.12;
+  // ── 뒤가 밝아야 앞이 보인다 (실측으로 고침) ────────────────────────────
+  //
+  // 처음에 사물함을 `metalMat` 으로만 세웠더니 **완전히 검은 칸**이 됐다.
+  // 이 씬에서 발광 표면은 주변을 밝히지 않으므로(shared/lightpool.js), 벽감
+  // 안의 물건은 **밝은 배경 앞의 실루엣**으로만 읽힌다. `openShop` 이 되는
+  // 이유가 안쪽 벽 한 장이 발광하기 때문이고, 그 한 장을 안 깔면 아무리
+  // 형태를 만들어도 안 보인다.
+  //
+  // 드롭포인트는 어두운 유형이 맞지만 **안 보이는 것과는 다르다.**
+  b.add(
+    facePlane(f.rect(-0.46, 0.46, backD - 0.04, backD - 0.04), y + 0.3, SHOP_H - 1.0, f.side, null, 0),
+    mats.glowCool
+  );
+  // 사물함 격자 — 그 앞에 실루엣으로 선다
+  const cols = Math.max(3, Math.round(f.w / 0.75));
+  const rows = 4;
+  for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < rows; r++) {
+      const u = (c + 0.5) / cols - 0.5;
+      const p = f.at(u * 0.92, backD + 0.12);
+      const [lx, lz] = f.dims((f.w / cols) * 0.82, 0.22);
+      // 몇 칸은 열려 있다 — 전부 닫혀 있으면 벽이지 사물함이 아니다
+      const open = rng.chance(0.12);
+      b.add(autoBox(lx, (SHOP_H - 0.9) / rows * 0.84, lz,
+        [p[0], y + 0.5 + r * ((SHOP_H - 0.9) / rows), p[1]], 0.02),
+        open ? mats.ductMat : mats.metalMat);
+    }
+  }
+  sideReturns(b, f, y, SHOP_H - 0.2, mats);
+  // 단말기 — 벽감 한쪽. 화면 하나만 빛난다
+  const t = f.at(-0.34, -0.35);
+  const [mx, mz] = f.dims(f.w * 0.2, 0.24);
+  b.add(autoBox(mx, 1.6, mz, [t[0], y + 0.8, t[1]], 0.02), mats.frameMat);
+  b.add(
+    facePlane(f.rect(-0.42, -0.26, -0.48, -0.48), y + 1.1, 0.5, f.side, null, 0),
+    mats.glowCool
+  );
+  // 천장 표시등 하나 — 나머지는 어둡다
+  const l = f.at(0.2, -0.3);
+  const [ex, ez] = f.dims(f.w * 0.3, 0.1);
+  b.box(ex, 0.06, ez, [l[0], y + SHOP_H - 0.3, l[1]], mats.glowMagenta);
 }
 
 // 좁은 문 하나 — 바·클럽. 벽 대부분이 막혀 있고 문만 빛난다.
@@ -238,12 +435,52 @@ function shuttered(b, f, y, rng, mats) {
 
 // ── 진입점 ─────────────────────────────────────────────────────────────────
 
+// ── 유형과 가중치 ──────────────────────────────────────────────────────────
+//
+// ── 왜 아직 구역별 표가 아닌가 (실측으로 정했다) ────────────────────────────
+//
+// #56 의 원래 계획은 이 표를 `district.byZone` 으로 가르는 것이었다. 그런데
+// **누가 `buildBay` 를 부르는지 먼저 셌다.**
+//
+//   bazaar.js       상업 구역. 실제로 돈다 (지면 계획에 shopEntrance 191곳)
+//   towers.podium   여섯 구역이 전부 자기 분기에서 continue 하거나 corpo 가
+//                   성공해서 **사실상 안 돈다** (lobbyEntrance 0곳)
+//
+// 즉 지금 이 표를 여섯 칸으로 가르면 **다섯 칸은 아무도 안 읽는 숫자**가 된다.
+// `byZone` 은 빠진 구역에 예외를 던져 "아무도 정하지 않은 값" 을 막는 장치인데,
+// 그 앞에서 다섯 개를 지어내는 것은 장치를 우회하는 것이다.
+//
+// 구역별 표는 **1층 점포가 두 구역 이상에 실제로 서는 순간** 만든다. 그게
+// #57(기업 1층)이고, 거기서 `podium` 을 되살리거나 걷어내는 결정이 함께 난다.
+//
+// ── 밝기가 갈려야 늘어선 1층에 리듬이 생긴다 ────────────────────────────────
+//   편의점 > 열린가게 > 국숫집 > 노점 > 리퍼닥 > 바문 > 드롭포인트
 const TYPES = [
-  { w: 2.6, fn: openShop },
-  { w: 1.3, fn: noodleShop },
-  { w: 1.5, fn: stall },
-  { w: 1.4, fn: barDoor },
+  { k: '열린가게', w: 2.2, fn: openShop },
+  { k: '편의점', w: 1.6, fn: convenience },
+  { k: '국숫집', w: 1.3, fn: noodleShop },
+  { k: '노점', w: 1.5, fn: stall },
+  { k: '바문', w: 1.4, fn: barDoor },
+  { k: '리퍼닥', w: 0.9, fn: ripperdoc },
+  { k: '드롭포인트', w: 0.7, fn: dropPoint },
 ];
+
+// ── 집계 ───────────────────────────────────────────────────────────────────
+//
+// **개수만 세면 일곱 종 중 둘이 한 번도 안 나오는 것을 못 잡는다.** 가중치로
+// 뽑으므로 낮은 것(드롭포인트 0.7)은 눈으로 훑어서는 있는지 없는지 알 수 없다 —
+// 실제로 번화가 유형에서 그렇게 놓쳤다 (market.marketSpots 머리말).
+//
+// 브라우저에서 `__shops()` 로 본다.
+let SHOP_TALLY = {};
+// 좌표까지 남긴다. 개수만 알면 "드롭포인트 54개" 는 알아도 **어디 있는지**를
+// 몰라 눈으로 확인할 수가 없다 — 실제로 유형 넷을 표본에서 못 찾아 헤맸다.
+// holo.holoSpots · market.marketSpots 와 같은 방식이다.
+let SHOP_SPOTS = [];
+export function shopTally() {
+  return { 집계: { ...SHOP_TALLY }, 표본: SHOP_SPOTS.slice() };
+}
+onSceneReset('1층 점포 집계', () => { SHOP_TALLY = {}; SHOP_SPOTS = []; });
 
 // 베이 하나를 채운다.
 //   D  구역 정의 (밝기·간판 밀도)
@@ -252,6 +489,7 @@ export function buildBay(b, sub, side, y, rng, mats, D, signs) {
 
   // 셔터는 구역 밝기가 정한다 — 공업 구역은 대부분 닫혀 있다
   if (!rng.chance(D.shopLit)) {
+    SHOP_TALLY['셔터'] = (SHOP_TALLY['셔터'] ?? 0) + 1;
     shuttered(b, f, y, rng, mats);
     awning(b, f, y, rng, mats, mats.glowCool);
     return;
@@ -267,6 +505,11 @@ export function buildBay(b, sub, side, y, rng, mats, D, signs) {
       pick = t;
       break;
     }
+  }
+  SHOP_TALLY[pick.k] = (SHOP_TALLY[pick.k] ?? 0) + 1;
+  {
+    const [px, pz] = f.at(0, 0);
+    SHOP_SPOTS.push({ k: pick.k, x: Math.round(px), z: Math.round(pz), side });
   }
   pick.fn(b, f, y, rng, mats);
 
@@ -466,9 +709,25 @@ export function showcase(b, sub, side, y, h, rng, mats) {
     );
   }
 
-  // 유리 — 어둡고 매끈해서 거리의 네온을 반사한다
-  b.add(facePlane({ x0: cx - boxW / 2, x1: cx + boxW / 2, z0: cz - boxD / 2, z1: cz + boxD / 2 },
-    y + 0.12, H - 0.24, side, null, 0.02), mats.vitrineGlassMat);
+  // ── 앞 유리는 세우지 않는다 (되살리면서 드러났다) ──────────────────────
+  //
+  // 원래 여기에 `vitrineGlassMat` 한 장을 세웠다. 그런데 이 함수는 **한 번도
+  // 안 쓰인 죽은 코드**였다 (유일한 호출자 `towers.podium` 이 안 돈다).
+  // 그래서 아무도 결과를 본 적이 없었고, 기업 1층에 되살려 놓고서야 드러났다 —
+  // 어두운 유리가 뒤의 발광면을 통째로 덮어 **검은 상자**가 된다.
+  //
+  // 편의점에서 방금 고친 것과 같은 오류다. 유리라는 인상은 판이 아니라
+  // **틀과 가로대**가 만든다. 아래 중간 가로대 하나로 대신한다.
+  //
+  // (docs/lessons.md 규칙 7 — 재질을 이름으로 믿지 않는다. 그리고 죽은 코드는
+  //  검증된 적이 없는 코드다.)
+  b.box(
+    alongZ ? D * 0.9 : w,
+    0.08,
+    alongZ ? w : D * 0.9,
+    [cx, y + H * 0.46, cz],
+    mats.frameMat
+  );
 
   // 진열물 — 마네킹이거나 상품 더미
   const n = Math.max(1, Math.round(w / 1.5));
