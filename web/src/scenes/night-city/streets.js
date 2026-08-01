@@ -5,13 +5,13 @@
 // 만들지 않는 이유는 블록 내부가 어차피 건물과 인도로 덮이기 때문이다.
 import * as THREE from 'three';
 import { MeshBuilder } from '../../core/builder.js';
-import { scaleUV } from '../../core/meshkit.js';
+import { scaleUV, mergeGeometries } from '../../core/meshkit.js';
 import { dressSidewalks } from './sidewalk.js';
 import { claim, TIER } from './siteplan.js';
 import { districtAt } from './district.js';
 import { parcels, roadOpen, roadOpenZ, allWalks } from './parcel.js';
 import { precinctHits } from './plaza.js';
-import { upPlane, downPlane } from '../../core/boxfaces.js';
+import { upPlane, downPlane, rectsMinus } from '../../core/boxfaces.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 import {
@@ -24,7 +24,9 @@ import {
   onIntersection,
   blockIndexAt,
 } from './layout.js';
-import { OPEN_GROUND } from './landmark.js';
+import { OPEN_GROUND, LANDMARK_BLOCKS, HALL_PIT_R } from './landmark.js';
+import { marketPits } from './market.js';
+import { constructionPit } from './program.js';
 
 const ASPHALT_TILE = 9.0;
 const SIDEWALK_TILE = 2.6;
@@ -38,11 +40,68 @@ const LAMP_TINT = [0.62, 0.74, 0.95];
 
 // ── 노면 ───────────────────────────────────────────────────────────────────
 
-function roadMesh(mat) {
-  const geo = new THREE.PlaneGeometry(GROUND_EXTENT, GROUND_EXTENT, 60, 60);
-  scaleUV(geo, GROUND_EXTENT / ASPHALT_TILE, GROUND_EXTENT / ASPHALT_TILE);
-  geo.rotateX(-Math.PI / 2);
-  const mesh = new THREE.Mesh(geo, mat);
+// ── 지면 평면 — 구멍을 뚫는다 (사용자 지적) ────────────────────────────────
+//
+// *"지하상가 뚫는다고 했는데, 전혀 안만들어졌음"*
+//
+// 지하상가는 만들어지고 있었다. **이 판이 덮고 있었을 뿐이다.**
+//
+// 한 변 3000m 짜리 불투명 평면이 y=0 에 깔려 있어서 그 아래는 무엇을 만들어도
+// 안 보인다. 이번 세션에서만 **세 번째**다 — 광장 안뜰(내려앉혔다가 폐기),
+// 공사장 구덩이(-3.2m), 그리고 지하상가(-5.2m). 앞의 둘은 "파지 말고 올려라"
+// 로 피했지만, 지하상가는 **내려가는 것이 정체**라 피할 방법이 없다.
+//
+// 그래서 판에 구멍을 낸다. `PlaneGeometry` 는 구멍을 못 내므로 사각형에서
+// 구멍 사각형을 뺀 **여러 장**으로 나눈다 (뺄 때마다 최대 넷으로 쪼갠다).
+// 구멍은 손에 꼽을 만큼이라 조각이 수십 장을 안 넘는다.
+//
+// UV 는 **세계 좌표 기준**으로 준다. 조각마다 0 에서 시작하면 이음매마다
+// 무늬가 어긋난다 (grandplaza.slab 에서 이미 당한 것).
+// ── 구멍 목록 ─────────────────────────────────────────────────────────────
+//
+// 셋이 지면 아래로 판다. **크기를 아는 곳은 각자 하나씩**이고 여기는 모으기만
+// 한다 — 크기를 여기서 다시 계산하면 판이 구덩이를 반쯤 덮는다 (2.1).
+//
+//   지하상가   market.marketPits()      towers 단계에서 채워진다 (streets 보다 먼저)
+//   공사장     program.constructionPit  blockProgram 이 순수 함수라 미리 안다
+//   중앙홀     landmark.HALL_PIT_R      손으로 박은 목록이라 늘 안다
+function groundHoles(blocks) {
+  const out = marketPits();
+  for (const blk of blocks) {
+    if (blk.program === 'construction') out.push(constructionPit(blk.cx, blk.cz));
+  }
+  for (const l of LANDMARK_BLOCKS) {
+    if (l.kind !== 'hall') continue;
+    const cx = blockCenter(l.ix);
+    const cz = blockCenter(l.iz);
+    out.push({ x0: cx - HALL_PIT_R, x1: cx + HALL_PIT_R, z0: cz - HALL_PIT_R, z1: cz + HALL_PIT_R });
+  }
+  return out;
+}
+
+function roadMesh(mat, holes) {
+  const E = GROUND_EXTENT / 2;
+  const rects = rectsMinus([{ x0: -E, x1: E, z0: -E, z1: E }], holes);
+
+  const parts = [];
+  for (const r of rects) {
+    const w = r.x1 - r.x0;
+    const d = r.z1 - r.z0;
+    if (w < 0.05 || d < 0.05) continue;
+    // 원래 60x60 등분이었다. 조각 크기에 비례해 나눠 같은 밀도를 유지한다
+    const g = new THREE.PlaneGeometry(w, d,
+      Math.max(1, Math.round(w / 50)), Math.max(1, Math.round(d / 50)));
+    scaleUV(g, w / ASPHALT_TILE, d / ASPHALT_TILE);
+    g.rotateX(-Math.PI / 2);
+    g.translate((r.x0 + r.x1) / 2, 0, (r.z0 + r.z1) / 2);
+    // 세계 좌표에 맞춘 UV — 회전 뒤 로컬 +y 가 -z 로 가므로 v 는 z1 기준
+    const uv = g.attributes.uv;
+    const du = r.x0 / ASPHALT_TILE;
+    const dv = -r.z1 / ASPHALT_TILE;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) + du, uv.getY(i) + dv);
+    parts.push(g);
+  }
+  const mesh = new THREE.Mesh(mergeGeometries(parts), mat);
   mesh.name = 'Road';
   mesh.receiveShadow = true;
   return mesh;
@@ -91,7 +150,7 @@ function walkPaving(b, rng, mats, pools) {
   }
 }
 
-function blockPlates(b, mats, programs) {
+function blockPlates(b, mats, programs, holes) {
   // 대지 단위로 깐다. 병합한 대지는 판이 하나로 이어져야 그 안에 도로가
   // 없다는 것이 읽힌다 — 칸마다 깔면 사이에 틈이 남는다.
   for (const p of parcels()) {
@@ -128,11 +187,21 @@ function blockPlates(b, mats, programs) {
       continue;
     }
 
-    b.add(
-      upPlane(bw, bd, [cx, CURB_HEIGHT, cz], [SIDEWALK_TILE, SIDEWALK_TILE]),
-      mats.sidewalkMat
-    );
-    b.box(bw, CURB_HEIGHT, bd, [cx, CURB_HEIGHT / 2, cz], mats.curbMat);
+    // ── 이 대지에 구덩이가 있으면 판에도 구멍을 낸다 ────────────────────
+    // 지하상가는 공사장처럼 블록을 통째로 쓰지 않고 **필지 하나**를 쓴다.
+    // 그래서 위 `construction` 분기에 안 걸리고, 판이 그대로 구덩이를 덮었다.
+    // 지면 평면만 뚫고 여기를 안 뚫으면 16cm 위에서 다시 막힌다.
+    const mine = holes.filter((h) => h.x1 > R.x0 && h.x0 < R.x1 && h.z1 > R.z0 && h.z0 < R.z1);
+    for (const g of rectsMinus([{ x0: R.x0, x1: R.x1, z0: R.z0, z1: R.z1 }], mine)) {
+      b.add(
+        upPlane(g.x1 - g.x0, g.z1 - g.z0,
+          [(g.x0 + g.x1) / 2, CURB_HEIGHT, (g.z0 + g.z1) / 2],
+          [SIDEWALK_TILE, SIDEWALK_TILE]),
+        mats.sidewalkMat
+      );
+      b.box(g.x1 - g.x0, CURB_HEIGHT, g.z1 - g.z0,
+        [(g.x0 + g.x1) / 2, CURB_HEIGHT / 2, (g.z0 + g.z1) / 2], mats.curbMat);
+    }
   }
 }
 
@@ -320,11 +389,12 @@ function trafficLights(b, mats, rng) {
 export function createStreets(scene, rng, mats, blocks) {
   const group = new THREE.Group();
   group.name = 'Streets';
-  group.add(roadMesh(mats.asphaltMat));
+  const holes = groundHoles(blocks);
+  group.add(roadMesh(mats.asphaltMat, holes));
 
   const programs = new Map(blocks.map((b) => [`${b.ix},${b.iz}`, b.program]));
   const plates = new MeshBuilder('Sidewalks', { castShadow: false });
-  blockPlates(plates, mats, programs);
+  blockPlates(plates, mats, programs, holes);
   // 보행로 — 대지 판 위에 덮는다. 판보다 **나중**이어야 위에 얹힌다.
   const pools = [];
   walkPaving(plates, rng, mats, pools);

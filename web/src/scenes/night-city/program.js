@@ -25,6 +25,15 @@ const Y = CURB_HEIGHT;
 // 구성 요소가 전부 "임시" 라는 신호를 준다: 가설 펜스, 굴착 구덩이, 타워크레인,
 // 비계, 자재 더미, 투광등. 특히 **크레인**은 실루엣이 독특해서 멀리서도 공사장인
 // 것을 알려 준다.
+// 굴착 구덩이의 반폭. **여기가 유일한 출처다** — `streets` 가 지면 평면에
+// 뚫을 구멍을 이 값으로 잡는다. 두 곳에서 계산하면 판이 구덩이를 반쯤
+// 덮는다 (docs/status.md 2.1).
+export const PIT_HALF = BLOCK_SIZE / 2 - PIT_INSET - 4;
+
+export function constructionPit(cx, cz) {
+  return { x0: cx - PIT_HALF, x1: cx + PIT_HALF, z0: cz - PIT_HALF, z1: cz + PIT_HALF };
+}
+
 function constructionSite(b, cx, cz, rng, mats, pools) {
   const half = BLOCK_SIZE / 2 - PIT_INSET;
 
@@ -36,7 +45,7 @@ function constructionSite(b, cx, cz, rng, mats, pools) {
   }
 
   // 굴착 구덩이 — 어두운 바닥 + 흙벽
-  const pit = half - 4;
+  const pit = PIT_HALF;
   b.add(upPlane(pit * 2, pit * 2, [cx, -3.2, cz]), mats.pitMat);
   for (const s of [-1, 1]) {
     b.box(pit * 2, 3.4, 0.4, [cx, -1.6, cz + s * pit], mats.pitMat);

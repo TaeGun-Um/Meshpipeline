@@ -145,3 +145,32 @@ export function faceFrame(r, side) {
     size: (wu, wd) => (az ? [wd, wu] : [wu, wd]),
   };
 }
+
+// ── 사각형에서 사각형을 뺀다 ───────────────────────────────────────────────
+//
+// 남은 모양은 ㅁ 자 고리라 사각형 하나로 표현할 수 없다. **최대 넷**으로
+// 쪼개서 돌려준다 (남·북 띠 + 그 사이 서·동 조각).
+//
+// 왜 필요한가: `PlaneGeometry` 는 구멍을 못 낸다. 그런데 이 씬에는 지면
+// 아래로 파는 것들이 있고(지하상가 -5.2m · 공사장 -3.2m · 중앙홀 -13m),
+// 그 위를 덮는 판이 셋이나 된다 — 지면 평면 · 블록 판 · 자기 포장.
+// 셋 다 같은 계산이 필요하므로 여기 하나만 둔다.
+export function rectMinus(r, hole) {
+  const hit = hole.x1 > r.x0 && hole.x0 < r.x1 && hole.z1 > r.z0 && hole.z0 < r.z1;
+  if (!hit) return [r];
+  const out = [];
+  if (hole.z0 > r.z0) out.push({ x0: r.x0, x1: r.x1, z0: r.z0, z1: hole.z0 });
+  if (hole.z1 < r.z1) out.push({ x0: r.x0, x1: r.x1, z0: hole.z1, z1: r.z1 });
+  const mz0 = Math.max(r.z0, hole.z0);
+  const mz1 = Math.min(r.z1, hole.z1);
+  if (hole.x0 > r.x0) out.push({ x0: r.x0, x1: hole.x0, z0: mz0, z1: mz1 });
+  if (hole.x1 < r.x1) out.push({ x0: hole.x1, x1: r.x1, z0: mz0, z1: mz1 });
+  return out;
+}
+
+// 여러 구멍을 차례로 뺀다.
+export function rectsMinus(rects, holes) {
+  let cur = rects;
+  for (const h of holes) cur = cur.flatMap((r) => rectMinus(r, h));
+  return cur;
+}

@@ -32,6 +32,7 @@ import {
   downPlane,
   rectCenter,
   rectSize,
+  rectMinus,
 } from '../../core/boxfaces.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon, neonSoft } from '../../shared/masters.js';
@@ -52,9 +53,23 @@ export function marketTally() {
 export function marketSpots() {
   return SPOTS.slice();
 }
+// ── 지면에 뚫어야 할 구멍 ─────────────────────────────────────────────────
+//
+// 지하상가는 -5.2m 로 내려간다. 그런데 그 위를 덮는 판이 셋이다 —
+// `streets.roadMesh`(y=0 세계 평면) · `streets.blockPlates`(대지 판) ·
+// 그리고 이 유형 자신의 포장. 셋 다 여기 목록을 보고 구멍을 낸다.
+//
+// **여기가 유일한 출처다.** 구덩이 크기를 아는 곳은 `underpass()` 하나이므로
+// 거기서 만들면서 등록한다 — 크기를 두 곳에서 계산하면 반드시 어긋난다
+// (docs/status.md 2.1).
+let PITS = [];
+export function marketPits() {
+  return PITS.slice();
+}
 export function resetMarketTally() {
   TALLY = {};
   SPOTS = [];
+  PITS = [];
 }
 // 적층 상가(bazaar.js)도 같은 장부에 올린다. 번화가의 대부분이 그것인데
 // 장부에 없으면 "번화가 건물이 전부 낮다" 같은 질문에 답할 수가 없다 —
@@ -612,9 +627,6 @@ function underpass(b, r, rng, mats, signs, pools) {
   const c = rectCenter(r);
   const s = rectSize(r);
 
-  // 광장 포장 — 이 필지는 대부분 빈 땅이다
-  b.add(upPlane(s.w, s.d, [c.x, Y + 0.03, c.z], [4, 4]), mats.plazaMat);
-
   const alongX = s.w >= s.d;
   const MW = Math.min(alongX ? s.d : s.w, 9) * 0.66; // 계단 폭
   const ML = Math.min(alongX ? s.w : s.d, 16) * 0.6; // 계단 길이
@@ -624,6 +636,16 @@ function underpass(b, r, rng, mats, signs, pools) {
   const pit = alongX
     ? { x0: c.x - ML / 2, x1: c.x + ML / 2, z0: c.z - MW / 2, z1: c.z + MW / 2 }
     : { x0: c.x - MW / 2, x1: c.x + MW / 2, z0: c.z - ML / 2, z1: c.z + ML / 2 };
+  // **여기가 구덩이 크기를 아는 유일한 곳이다.** 등록해 두면 지면 평면과
+  // 대지 판이 같은 사각형만큼 구멍을 낸다 (marketPits 머리말).
+  PITS.push({ ...pit });
+
+  // 광장 포장 — 이 필지는 대부분 빈 땅이다. **구덩이만큼 비운다** —
+  // 안 비우면 자기 포장이 자기 구덩이를 덮는다 (실제로 그랬다).
+  for (const g of rectMinus({ x0: c.x - s.w / 2, x1: c.x + s.w / 2, z0: c.z - s.d / 2, z1: c.z + s.d / 2 }, pit)) {
+    b.add(upPlane(g.x1 - g.x0, g.z1 - g.z0,
+      [(g.x0 + g.x1) / 2, Y + 0.03, (g.z0 + g.z1) / 2], [4, 4]), mats.plazaMat);
+  }
   b.add(rectBox(pit, -DEPTH, DEPTH + 0.1, PANEL_TILE), mats.pitMat);
 
   // 계단 — 한 단씩. 아래로 갈수록 어두워지지만 **끝에서 빛이 샌다**
@@ -853,11 +875,21 @@ function weights(side, near) {
       underpass: 0,
     };
   }
+  // ── 암거래는 번화가에서 통째로 뺐다 (사용자 지시) ────────────────────────
+  // *"암시장 필지는 좀 크게 해서, 주변에 북쪽 번화가에만 있는 이런 미완성
+  //  구조물이랑 같이 배치하는걸로. 나중에 저쪽 슬럼쪽으로 미루는걸로 하고
+  //  여기서는 아예 빼자"*
+  //
+  // 필지 폭을 아무리 넓혀도 번화가 격자 안에서는 "칸에 맞춰 앉은 것" 이
+  // 된다. 암시장은 **계획 밖에서 자란 것**이라 그 자리가 슬럼이 맞다 —
+  // slum.js 의 내력(기업이 사 모으고 공사가 멈춘 자리)과 그대로 이어진다.
+  //
+  // `blackMarket()` 은 지우지 않는다. 슬럼으로 옮길 때 그대로 쓴다 (#55).
   return {
     bazaar: 1.0,
     nightlife: 0.34,
     underpass: 0.26,
-    black: 0.10 + (1 - close) * 0.55, // 기업에서 멀수록 암거래
+    black: 0,
     vitrine: 0.04 + close * 0.22,
     arcade: 0.12,
   };
