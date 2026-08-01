@@ -42,7 +42,7 @@ import {
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neonSoft } from '../../shared/masters.js';
 import { PANEL_TILE } from './layout.js';
-import { entranceBay } from './shopfront.js';
+import { entranceBay, buildBay, ALCOVE, SHOP_H } from './shopfront.js';
 import { claim, TIER } from './siteplan.js';
 import { hash2 } from '../../core/textures.js';
 import { marketTallyAdd } from './market.js';
@@ -388,8 +388,34 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
   const floors = rng.int(3, 6);
   const top = floors * SHOP_FLOOR;
 
-  // 덩치. 세트백 없이 대지를 꽉 채운다. 물러설 여유가 없었다.
-  b.add(rectBox(r, 0, top, PANEL_TILE), mats.tileWallMat);
+  // ── 덩치 — 1층만 들여서 벽감을 판다 (사용자 지시 #56) ────────────────────
+  //
+  // 세트백 없이 대지를 꽉 채우되, **1층 띠만 `ALCOVE` 만큼 들인다.**
+  //
+  // 왜 지금 고치나: `shopfront.js` 에 벽감·카운터·스툴·선반을 갖춘 점포 체계가
+  // 있는데 **아무도 안 쓰고 있었다.** 유일한 호출자 `towers.podium()` 이 죽은
+  // 코드라(구역 여섯이 전부 자기 생성기로 분기한다) 실측하니 `lobbyEntrance`
+  // 가 0개였다 — 즉 그 좋은 1층이 도시에 한 채도 없었다.
+  //
+  // 그동안 번화가 1층은 **평면 한 장에 텍스처**였다. 깊이가 없으니 "들어간다"
+  // 가 안 읽히고, 그래서 "무슨 건물인지 모르겠다" 가 반복됐다.
+  //
+  // 새 모듈을 만들지 않는다. 있는 것을 잇는다 (docs/generation.md 5절).
+  const inner = shrink(r, ALCOVE);
+  b.add(rectBox(inner, 0, SHOP_H, PANEL_TILE), mats.tileWallMat);
+  b.add(rectBox(r, SHOP_H, Math.max(0.5, top - SHOP_H), PANEL_TILE), mats.tileWallMat);
+  // 벽감 천장 — 이 한 겹이 있어야 위가 떠 보이지 않는다
+  b.add(rectBox(r, SHOP_H - 0.14, 0.14, PANEL_TILE), mats.frameMat);
+  // 길에 안 면한 면은 벽감을 메운다. 점포를 만들어 봐야 옆 건물에 가린다
+  for (const sd of SIDES) {
+    if (faces[sd]) continue;
+    const fill = { ...r };
+    if (sd === 'px') fill.x0 = r.x1 - ALCOVE;
+    else if (sd === 'nx') fill.x1 = r.x0 + ALCOVE;
+    else if (sd === 'pz') fill.z0 = r.z1 - ALCOVE;
+    else fill.z1 = r.z0 + ALCOVE;
+    b.add(rectBox(fill, 0, SHOP_H, PANEL_TILE), mats.tileWallMat);
+  }
 
   // ── 위로 무엇이 더 올라가는가 (사용자 지적) ──────────────────────────────
   //
@@ -482,8 +508,39 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
       const doorAt = fl === 0 && f.w >= 9
         ? Math.floor(nBay * (0.2 + 0.6 * hash2(Math.round(r.x0) * 4 + SIDES.indexOf(side), Math.round(r.z0))))
         : -1;
-      shopStrip(b, f, y, rng, mats, D, litBase * (1 - fl * 0.1), shutBase + fl * 0.11, doorAt,
-        fl, Math.round(r.x0) * 4 + SIDES.indexOf(side) + Math.round(r.z0));
+
+      // ── 1층은 벽감 점포, 2층부터는 띠 (#56) ────────────────────────────
+      //
+      // 1층만 `shopfront.buildBay` 로 보낸다. 거기에 깊이 1.3m 짜리 벽감과
+      // 유형 넷(열린 가게·국숫집·노점·바 문)이 이미 있다 — 카운터·스툴·
+      // 선반·김 나는 냄비까지. **쓰이지 않고 있던 것을 잇는 것**이다.
+      //
+      // 위층은 그대로 띠다. 눈높이에서 안 보이는 곳에 벽감을 파면 삼각형만
+      // 늘고, 실제 잡거빌딩도 위층은 창이지 점포 정면이 아니다.
+      if (fl === 0) {
+        for (let i = 0; i < nBay; i++) {
+          const sub = bayRect(r, side, i, nBay, (f.w / nBay) * 0.06);
+          // 출입구 칸은 아래에서 따로 그린다. **난수는 여기서 똑같이 쓴다** —
+          // 건너뛰면 소비량이 갈려 도시 전체가 다시 뽑힌다 (2.1 규칙 6)
+          if (i === doorAt) { rng.next(); rng.next(); continue; }
+          buildBay(b, sub, side, y, rng, mats, D, signs);
+        }
+        // 베이 경계 기둥 — 벽감을 가게 단위로 끊는다
+        for (let i = 0; i <= nBay; i++) {
+          const pr = bayRect(r, side, Math.min(i, nBay - 1), nBay, 0);
+          const a = faceAnchor(pr, side);
+          const o = outward(side);
+          const edge = i === nBay ? 0.5 : -0.5;
+          const bw = f.w / nBay;
+          const px = o.oz ? a.x + edge * bw : a.x - o.ox * (ALCOVE / 2);
+          const pz = o.oz ? a.z - o.oz * (ALCOVE / 2) : a.z + edge * bw;
+          const [dx, dz] = o.oz ? [0.5, ALCOVE] : [ALCOVE, 0.5];
+          b.add(autoBox(dx, SHOP_H, dz, [px, SHOP_H / 2, pz], 0.04), mats.tileWallMat);
+        }
+      } else {
+        shopStrip(b, f, y, rng, mats, D, litBase * (1 - fl * 0.1), shutBase + fl * 0.11, doorAt,
+          fl, Math.round(r.x0) * 4 + SIDES.indexOf(side) + Math.round(r.z0));
+      }
       if (doorAt >= 0) {
         const sub = bayRect(r, side, doorAt, nBay, 0);
         const e = entranceBay(b, sub, side, y, rng, mats, true);
