@@ -8,7 +8,7 @@
 | # | 씬 | 무엇 | 삼각형 | 텍스처 |
 |---|---|---|---|---|
 | 1 | `vacant-lot` 주택가 공터 | 낮 · 3인칭 · 기준 씬. 좌표계·조명 규약을 여기서 확정했다 | 182,428 | 63MB |
-| 2 | `night-city` 나이트시티 | 사이버펑크 야간 도시 · 프리캠 · 구역·매싱·1층 점포 | 3,327,840 | 189MB |
+| 2 | `night-city` 나이트시티 | 사이버펑크 야간 도시 · 프리캠 · 구역·매싱·1층 점포 | 2,950,012 | 214MB |
 
 삼각형은 씬이 들고 있는 지오메트리 총량이다 (`__audit()`). 한 프레임에 실제로
 그리는 수는 그림자 패스 때문에 이보다 많다.
@@ -90,20 +90,31 @@ node tools/pipeline.mjs --accept   # 새 스펙을 승인 (아래 참고)
 
 ## 문서
 
+문서는 **공통**과 **씬별**로 갈라져 있다. 씬을 늘려도 공통 문서는 그대로다.
+
+### 공통 — 씬을 가리지 않는다
+
 | 문서 | 내용 |
 |---|---|
-| [docs/concepts.md](docs/concepts.md) | **개념 — 가장 먼저 읽는다.** 이게 무엇을 하는 것인가, DX11 과 무엇이 같고 다른가, 무엇이 엔진으로 넘어가고 무엇이 안 넘어가는가, 도구 버전 |
-| [docs/architecture.md](docs/architecture.md) | **아키텍처** — 계층 구조, 의존 방향, 왜 이렇게 나눴는가 |
-| [docs/generation.md](docs/generation.md) | **도시 생성 — 새 기능을 만들기 전에 먼저 읽는다.** 순서·단일 출처·계약·난수 규율, 그리고 "이미 있는 것" 목록 |
-| [docs/pipeline.md](docs/pipeline.md) | 익스포트 파이프라인 6단계, 규약(contract), 검사 항목 |
-| [docs/modules.md](docs/modules.md) | 기능 모듈 — 텍스처·지오메트리·스켈레탈·익스포트·임포트 |
+| [docs/concepts.md](docs/concepts.md) | **개념 — 가장 먼저 읽는다.** 이게 무엇을 하는 것인가, DX11 과 무엇이 같고 다른가, 무엇이 엔진으로 넘어가고 무엇이 안 넘어가는가 |
 | [docs/handover.md](docs/handover.md) | **인수인계** — 이어받을 때 가장 먼저 읽는다 |
-| [docs/city.md](docs/city.md) | **도시의 내력** — 왜 이 도시가 이렇게 생겼는가. 모든 형태 결정의 근거 |
-| [docs/status.md](docs/status.md) | **현재 상태** — 안 된 것, 깨진 것, 다음에 할 일 |
-| [docs/districts.md](docs/districts.md) | 구역 설계 명세 (레퍼런스 분석 → 파라미터) |
+| [docs/lessons.md](docs/lessons.md) | **실패 패턴과 규칙.** 결합 대장·검증의 구멍. 씬을 만들기 전에 읽는다 |
+| [docs/status.md](docs/status.md) | **현재 상태** — 브라우저 뷰 단계, 씬 목록, 씬 상태 계약, 계층 |
+| [docs/architecture.md](docs/architecture.md) | **아키텍처** — 계층 구조, 의존 방향, 왜 이렇게 나눴는가 |
+| [docs/modules.md](docs/modules.md) | 기능 모듈 — 텍스처·지오메트리·스켈레탈·익스포트·임포트 |
+| [docs/pipeline.md](docs/pipeline.md) | **익스포트** 파이프라인 6단계, 규약(contract), 검사 항목 |
 | [docs/verification.md](docs/verification.md) | **검증** — 무엇이 버그를 잡았고 무엇이 시간만 썼는가 |
 | [docs/toolchain.md](docs/toolchain.md) | 언어·프레임워크·엔진 버전과 설치 상태 |
 | [docs/references.md](docs/references.md) | 학습 자료와 실측 기록 |
+
+### 씬별 — `docs/scenes/<id>/`
+
+| 문서 | 내용 |
+|---|---|
+| [scenes/night-city/city.md](docs/scenes/night-city/city.md) | **도시의 내력** — 왜 이 도시가 이렇게 생겼는가. 모든 형태 결정의 근거 |
+| [scenes/night-city/generation.md](docs/scenes/night-city/generation.md) | **도시 생성 — 새 기능을 만들기 전에 먼저 읽는다.** 순서·단일 출처·계약·난수 규율 |
+| [scenes/night-city/districts.md](docs/scenes/night-city/districts.md) | 구역 설계 명세 (레퍼런스 분석 → 파라미터) |
+| [scenes/night-city/status.md](docs/scenes/night-city/status.md) | 그 씬의 상태와 작업 기록 |
 
 ## 저장소 구조
 
@@ -111,17 +122,23 @@ node tools/pipeline.mjs --accept   # 새 스펙을 승인 (아래 참고)
 pipeline/contract.json      규약의 단일 출처 — 모든 단계가 이걸 읽는다
 tools/                      파이프라인 도구 (Node + 블렌더 파이썬)
 web/
+  src/main.js               렌더러·카메라·입력·검증 하네스. 장소는 모른다
+  src/scenemenu.js          씬 전환 햄버거 (우측 상단)
   src/core/                 엔진. 씬을 하나도 모른다
+    scene.js                씬 부모 클래스 — build() 가 상태 리셋까지 맡는다
+    scenestate.js           씬 상태 계약 — 빌드 한 번의 수명을 갖는 것을 등록
     audit.js                예산·규약·개수 점검 (__audit)
     placement.js            배치 검사 — 관통·부유를 지오메트리에서 잰다 (__place)
   src/shared/               둘 이상의 씬이 쓰는 레시피
+  src/scenes/index.js       저장된 씬 목록 — 햄버거가 여기서 나온다
   src/scenes/<씬>/          장소별 구성 (지우지 않고 쌓는다)
   src/dynamic/              리그·포즈·클립·스킨
   src/export/               GLB 익스포트
   shots/views.json          회귀 검증용 카메라 설정 — 기준 이미지의 '입력'
   shots/baseline_*.png      기준 스크린샷 (커밋하지 않는다 — __lock('base') 로 재생성)
 unity/                      유니티 프로젝트 — 검증 대상
-docs/                       문서
+docs/                       공통 문서
+docs/scenes/<씬>/           씬별 문서 (내력·구역·생성·상태)
 ```
 
 ### 씬을 새로 추가하는 방법
@@ -129,9 +146,13 @@ docs/                       문서
 1. `web/src/scenes/<id>/index.js` 에서 `core/scene.js` 의 `Scene` 을 상속하고
    `surfaceHeight()` 와 `createWorld()` 를 구현한다
 2. 그 모듈을 `export default new MyScene()` 으로 내보낸다
-3. `web/src/scenes/index.js` 의 `SAVED` 배열에 추가한다 (기존 항목은 건드리지 않는다)
-4. 재질은 `new THREE.Material` 로 직접 만들지 말고 마스터에서 `instance()` 로 뽑는다
+3. `web/src/scenes/index.js` 의 `SAVED` 배열에 추가한다 (기존 항목은 건드리지 않는다).
+   우측 상단 햄버거 목록이 여기서 나온다
+4. **모듈 수준 캐시나 장부를 만들면 `onSceneReset()` 에 등록한다**
+   (`core/scenestate.js`). 안 하면 예외가 아니라 이전 씬 잔재가 조용히 섞인다
+5. 재질은 `new THREE.Material` 로 직접 만들지 말고 마스터에서 `instance()` 로 뽑는다
    (값이 같으면 공유되고, 파라미터 이름 오타가 즉시 잡힌다)
-5. `web/shots/views.json` 에 뷰를 등록하고 브라우저에서 `await __lock('base')` 로
+6. 문서는 `docs/scenes/<id>/` 아래에 둔다
+7. `web/shots/views.json` 에 뷰를 등록하고 브라우저에서 `await __lock('base')` 로
    기준을 잡는다. 이후 `node tools/verify.mjs <id>` 가 회귀를 잡아준다
    ([docs/verification.md](docs/verification.md))
