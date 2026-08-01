@@ -19,7 +19,7 @@ import { createCrown } from './rooftop.js';
 import { retrofit } from './retrofit.js';
 import { bazaarBlock } from './bazaar.js';
 import { factoryBlock } from './factory.js';
-import { housingSlab } from './housing.js';
+import { housingEstate } from './housing.js';
 import { corpoTower, corpoCluster } from './corpo.js';
 import { slumBlock } from './slum.js';
 import { applySkin, facadeRelief } from './facade.js';
@@ -584,9 +584,15 @@ export function createTowers(scene, rng, mats, blocks) {
       // (housing.js 머리말). 탑이 아니라 슬래브다.
       if (D.name === '주거') {
         rng.int(2, 3); // 난수 소비를 맞춘다
-        const hs = housingSlab(b, r, rng, mats, faces, detail, pools);
-        if (hs.top > tallest) tallest = hs.top;
-        anchors.push({ rect: r, solid: solidOf(r, b.takeMark()), top: hs.top, zone: D.name, faces });
+        const he = housingEstate(b, r, rng, mats, faces, detail, pools);
+        if (he.top > tallest) tallest = he.top;
+        // 대지 하나에 동이 여럿이다. **동마다** 앵커를 건다 — 대지를 통째로
+        // 걸면 브릿지·데크가 동과 동 사이 마당(빈 땅)에 물린다.
+        // 기업 군집이 타워마다 거는 것과 같은 이유다.
+        for (const sl of he.slabs) {
+          anchors.push({ rect: sl.rect, solid: sl.rect, top: sl.top, zone: D.name, faces });
+        }
+        count += he.slabs.length - 1; // 위에서 한 채는 이미 셌다
         districts.add(D.name);
         continue;
       }
