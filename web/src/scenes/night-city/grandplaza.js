@@ -73,12 +73,32 @@ const PLINTH_R = 3.4; // 가운데 대. 물이 원반이 아니라 고리로 보
 // 읽힌다. 캐노피가 더 높으면 상가가 캐노피의 부속으로 보인다.
 const CANOPY_Y = 16.5;
 
-// 바닥 판 하나. 높이는 **한 값뿐**이다 (아래 FLOOR).
-function slab(b, r, y, mat, tile) {
+// 포장 한 장 — 크기도 무늬도 **모든 판이 같게** 나온다.
+//
+// ── 두 번 틀렸다 ─────────────────────────────────────────────────────────
+// 1) `upPlane(w, d, at, tile)` 의 tile 은 **한 장의 크기(m)** 인데
+//    `[w/tile, d/tile]`(반복 횟수)을 넘기고 있었다. 그래서 판마다 "전체를
+//    3.2등분" 이 되어, 124m 광장은 39m 짜리 타일이, 22m 쉼터는 7m 짜리
+//    타일이 깔렸다. 같은 재질인데 무늬 크기가 판마다 달랐다.
+//
+// 2) 크기를 맞춰도 **격자가 자기 모서리에서 시작**한다. 이음매마다 무늬가
+//    반 칸씩 어긋나서 여전히 "제각각" 으로 보인다.
+//    → UV 를 세계 좌표에 맞춰 밀어 준다. 그러면 광장과 쉼터와 길이 **한 장의
+//      바닥을 잘라 놓은 것**처럼 이어진다.
+const PAVE_TILE = 3.2; // 포장 한 장의 한 변(m). 광장·쉼터·길이 전부 이 값
+
+function slab(b, r, y, mat, tile = PAVE_TILE) {
   const w = r.x1 - r.x0;
   const d = r.z1 - r.z0;
   if (w < 0.05 || d < 0.05) return;
-  b.add(upPlane(w, d, [(r.x0 + r.x1) / 2, y, (r.z0 + r.z1) / 2], [w / tile, d / tile]), mat);
+  const g = upPlane(w, d, [(r.x0 + r.x1) / 2, y, (r.z0 + r.z1) / 2], [tile, tile]);
+  // 회전 뒤 로컬 +y 가 -z 로 간다 (rotateX(-90)). 그래서 v 는 z1 기준이다.
+  const uv = g.attributes.uv;
+  const du = r.x0 / tile;
+  const dv = -r.z1 / tile;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) + du, uv.getY(i) + dv);
+  uv.needsUpdate = true;
+  b.add(g, mat);
 }
 
 // ── 바닥은 한 겹이다 (사용자 지시) ────────────────────────────────────────
@@ -102,7 +122,7 @@ function slab(b, r, y, mat, tile) {
 const FLOOR = 0.06; // 도시 인도 판(0.16) 위 이만큼. 이 값 하나만 쓴다
 
 function paving(b, mats, pools) {
-  slab(b, PLAZA, Y + FLOOR, mats.plazaMat, 3.2);
+  slab(b, PLAZA, Y + FLOOR, mats.plazaMat);
 
   // ── 광장 밖으로 이어지는 길 (사용자 지시 3번) ──────────────────────────
   // *"광장 주변에 사람이 지나다닐 수 있을법한 부분들은 체크하고, 도로 포장 개편해"*
@@ -112,7 +132,7 @@ function paving(b, mats, pools) {
   // 재질도 높이도 광장과 같은 것 하나를 쓴다.
   for (const w of allWalks()) {
     if (!precinctHits(w.rect)) continue;
-    slab(b, w.rect, Y + FLOOR, mats.plazaMat, 3.2);
+    slab(b, w.rect, Y + FLOOR, mats.plazaMat);
     // 길 가장자리 두 줄 — 광장의 십자 팔과 같은 표시로 이어 준다
     const nz = (w.rect.z1 - w.rect.z0) < (w.rect.x1 - w.rect.x0);
     const cx = (w.rect.x0 + w.rect.x1) / 2;
@@ -433,6 +453,104 @@ function planting(b, rng, mats, pools) {
 //
 // 광장 같은 목적지가 아니라 **지나다 앉는 자리**다. 그래서 문법이 다르다:
 // 가운데를 비우고, 짧은 쪽 벽에 붙여 앉을 것을 놓고, 등 하나로 끝낸다.
+//
+// ── 넓은 자리는 그 문법이 안 통한다 (사용자 지적) ─────────────────────────
+// *"지운곳은 커다란 공간이 생겨서, 여기는 공원같은 쉼터 조성해야할듯"*
+// *"땅이 너무 통일 안되어있고, 제각각 놀고있네"*
+//
+// 맞다. 위 문법은 **띠**를 위한 것이다. 59x30 짜리 마당에 그것을 쓰면 벽을
+// 따라 화분이 늘어서고 한가운데가 텅 빈다 — 물건은 있는데 자리는 없다.
+//
+// 넓은 자리는 반대로 간다: **가운데를 심고 둘레로 걷는다.** 그게 공원이다.
+function park(b, rng, mats, pools, r) {
+  const w = r.x1 - r.x0;
+  const d = r.z1 - r.z0;
+  const cx = (r.x0 + r.x1) / 2;
+  const cz = (r.z0 + r.z1) / 2;
+  const alongX = w >= d;
+
+  // 화단 덩어리 — 긴 축을 따라 몇 덩이로 나눈다. 그 사이가 가로지르는 길이다.
+  // 한 덩어리로 두면 둘러 가야 해서 사람이 안 들어온다.
+  const RIM = 5.5;                       // 둘레를 걷는 폭
+  const BW = (alongX ? w : d) - RIM * 2; // 긴 축으로 화단이 쓸 길이
+  const BD = (alongX ? d : w) - RIM * 2; // 짧은 축
+  if (BW < 10 || BD < 6) return;
+  const N = Math.max(2, Math.round(BW / 17));
+  const GAP = 6.5;
+  const seg = (BW - GAP * (N - 1)) / N;
+
+  for (let i = 0; i < N; i++) {
+    const t = (alongX ? r.x0 : r.z0) + RIM + (seg + GAP) * i + seg / 2;
+    const bx = alongX ? t : cx;
+    const bz = alongX ? cz : t;
+    const [bw, bd] = alongX ? [seg, BD] : [BD, seg];
+
+    // 테 — 낮게. 앉을 수 있고, 흙이 인도로 안 넘어온다
+    const K = 0.42;
+    b.add(autoBox(bw, K, bd, [bx, Y + K / 2, bz], 0.05), mats.frameConcMat);
+    b.add(upPlane(bw - 0.6, bd - 0.6, [bx, Y + K + 0.01, bz]), mats.pitMat);
+    // 테 옆선 — **네 변 전부.** 밤에 화단 경계가 안 보이면 사람이 밟고,
+    // 두 변만 켜면 화단이 사각형으로 안 읽힌다 (안뜰 턱에서 이미 겪었다)
+    for (const s of [-1, 1]) {
+      b.box(bw - 0.4, 0.06, 0.1, [bx, Y + K, bz + s * bd / 2], neon(NEON.warm));
+      b.box(0.1, 0.06, bd - 0.4, [bx + s * bw / 2, Y + K, bz], neon(NEON.warm));
+    }
+    // 화단 위로 번지는 빛 — 잎이 어두운 재질(0x1e3524)이라 뭐라도 받아야 보인다
+    pools.push({
+      kind: 'floor', x: bx, y: Y + K + 0.03, z: bz,
+      rx: bw * 0.55, rz: bd * 0.55, tint: rgb01(NEON.warm, 0.34),
+    });
+
+    // 나무 — 덩이마다 **뭉쳐서** 심는다. 고르게 흩으면 가로수가 되지 공원이 안 된다
+    const trees = Math.max(2, Math.round((bw * bd) / 90));
+    for (let k = 0; k < trees; k++) {
+      const tx = bx + rng.range(-bw / 2 + 1.6, bw / 2 - 1.6);
+      const tz = bz + rng.range(-bd / 2 + 1.6, bd / 2 - 1.6);
+      const th = rng.range(3.6, 5.4);
+      b.cylinder(0.2, 0.3, th, [tx, Y + K + th / 2, tz], mats.rustMat, 8);
+      for (let c = 0; c < 3; c++) {
+        b.sphere(rng.range(1.4, 2.2),
+          [tx + rng.range(-0.7, 0.7), Y + K + th + 0.4 + c * 0.9, tz + rng.range(-0.7, 0.7)],
+          mats.foliageMat, 8, 6);
+      }
+    }
+    // 관목 — 발치를 채운다. 나무만 있으면 화단이 흙판으로 보인다
+    for (let k = 0; k < trees * 2; k++) {
+      b.sphere(rng.range(0.5, 0.9),
+        [bx + rng.range(-bw / 2 + 0.8, bw / 2 - 0.8), Y + K + 0.35,
+          bz + rng.range(-bd / 2 + 0.8, bd / 2 - 0.8)], mats.foliageMat, 7, 5);
+    }
+
+    // 벤치 — 화단을 **바라보게** 긴 두 변에 붙인다
+    for (const s of [-1, 1]) {
+      for (const u of [-0.28, 0.28]) {
+        const [px, pz] = alongX
+          ? [bx + bw * u, bz + s * (bd / 2 + 1.5)]
+          : [bx + s * (bw / 2 + 1.5), bz + bd * u];
+        const [w2, d2] = alongX ? [2.8, 0.7] : [0.7, 2.8];
+        b.add(autoBox(w2, 0.44, d2, [px, Y + 0.22, pz], 0.04), mats.frameConcMat);
+        b.box(w2 - 0.4, 0.05, d2 - 0.4, [px, Y + 0.44, pz], neonSoft(NEON.warm));
+      }
+    }
+  }
+
+  // 등 — 화단 사이 틈마다. 걷는 자리를 밝힌다
+  for (let i = 1; i < N; i++) {
+    const t = (alongX ? r.x0 : r.z0) + RIM + (seg + GAP) * i - GAP / 2;
+    lamp(b, mats, pools, alongX ? t : cx, alongX ? cz : t);
+  }
+  // 네 귀퉁이에도 하나씩 — 둘레 길이 어두우면 공원이 섬이 된다
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      lamp(b, mats, pools, cx + sx * (w / 2 - 2.6), cz + sz * (d / 2 - 2.6));
+    }
+  }
+  pools.push({
+    kind: 'floor', x: cx, y: Y + FLOOR + 0.02, z: cz,
+    rx: w * 0.5, rz: d * 0.5, tint: rgb01(NEON.warm, 0.2),
+  });
+}
+
 function restArea(b, rng, mats, pools, r) {
   const w = r.x1 - r.x0;
   const d = r.z1 - r.z0;
@@ -440,10 +558,7 @@ function restArea(b, rng, mats, pools, r) {
   const cz = (r.z0 + r.z1) / 2;
   const alongX = r.axis === 'x'; // 띠가 X 로 길다
 
-  // 포장 — 차도가 아니라는 것을 바닥이 먼저 말한다.
-  // 재질도 높이도 **광장과 같은 것 하나**를 쓴다 (FLOOR 머리말).
-  slab(b, { x0: r.x0 + 0.5, x1: r.x1 - 0.5, z0: r.z0 + 0.5, z1: r.z1 - 0.5 },
-    Y + FLOOR, mats.plazaMat, 3.2);
+  // 포장은 restAreas 가 이미 깔았다. 여기서 또 깔면 판이 두 겹이 된다.
 
   // 앉을 것과 심을 것을 **긴 축을 따라** 번갈아 놓는다.
   //
@@ -484,11 +599,20 @@ function restArea(b, rng, mats, pools, r) {
   });
 }
 
+// 띠냐 마당이냐. 짧은 변이 20m 넘고 긴 변이 블록(66m)보다 짧으면 마당이다 —
+// 그런 자리는 벽을 따라 늘어놓는 문법이 안 통한다 (park 머리말).
 function restAreas(b, rng, mats, pools) {
   let n = 0;
   for (const r of emptyRoadRects()) {
-    b.mark('fixture', `plaza:rest${n}`, {});
-    restArea(b, rng, mats, pools, r);
+    const w = r.x1 - r.x0;
+    const d = r.z1 - r.z0;
+    const yard = Math.min(w, d) >= 20 && Math.max(w, d) <= 62;
+    b.mark('fixture', `plaza:${yard ? 'park' : 'rest'}${n}`, {});
+    // 바닥은 어느 쪽이든 같은 한 장이다
+    slab(b, { x0: r.x0 + 0.5, x1: r.x1 - 0.5, z0: r.z0 + 0.5, z1: r.z1 - 0.5 },
+      Y + FLOOR, mats.plazaMat);
+    if (yard) park(b, rng, mats, pools, r);
+    else restArea(b, rng, mats, pools, r);
     n++;
   }
   return n;
