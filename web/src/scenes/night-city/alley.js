@@ -391,55 +391,76 @@ function backDoorSign(b, x, z, rot, rng, mats, pools) {
 // 골목 벽은 건물의 뒷면이라 정면 같은 창 격자가 없다. 대신 환기창·비상구
 // 창처럼 **띄엄띄엄한 작은 빛**을 둔다. 이게 있으면 벽이 단순한 판이 아니라
 // 사람이 있는 건물의 뒷면으로 읽히고, 위로 갈수록 성기게 두면 높이도 읽힌다.
-function alleyWindows(b, a, rng, mats, wallH, halfW) {
+// ── 벽이 실제로 어디 있나 (사용자 지적으로 추가) ───────────────────────────
+//
+// "골목이라고 생성된 곳 보면 이상한 네모 형광이 양쪽 공중에 더덕더덕 붙어있음"
+//
+// `a.w` 는 **필지 사이 틈의 폭**이지 건물 사이 거리가 아니다. 골목은 필지를
+// 자른 자리를 벌린 틈인데(layout.splitToTarget), 건물은 그 필지 안에서 **다시
+// 물러나 선다** — 명품관은 3.4~5.2m, 슬럼은 3%, 기업 타워는 10~19%.
+//
+// 그래서 틈의 절반(halfW)에 창을 붙이면 실제 벽에서 최대 5m 떨어진 허공이다.
+// 벽을 안 세우기로 한 순간(#42) **벽이 어디인지는 이웃 건물만 안다**가 됐는데,
+// 소품은 여전히 틈 폭을 보고 있었다.
+//
+// 그리고 이웃이 아예 없으면 붙일 벽이 없다 — 그때는 **아무것도 그리지 않는다.**
+// 오늘 골목 빨래에서 배운 것과 같다: 매달 곳이 안 보이면 놓지 않는다.
+function wallDistance(a, side, solids) {
   const c = rectCenter(a.rect);
+  const s = rectSize(a.rect);
+  const alongX = a.alongX;
+  // 골목이 뻗는 구간 (겹치는 건물만 본다)
+  const lo = alongX ? a.rect.x0 : a.rect.z0;
+  const hi = alongX ? a.rect.x1 : a.rect.z1;
+  const mid = alongX ? c.z : c.x;
+  const room = (alongX ? s.d : s.w) / 2;
+
+  let best = Infinity;
+  for (const q of solids) {
+    const qlo = alongX ? q.x0 : q.z0;
+    const qhi = alongX ? q.x1 : q.z1;
+    if (qhi < lo + 0.5 || qlo > hi - 0.5) continue; // 골목을 따라 안 걸친다
+    const nlo = alongX ? q.z0 : q.x0;
+    const nhi = alongX ? q.z1 : q.x1;
+    // 그 건물이 이 side 쪽에 있고, 골목 안쪽을 향한 면까지의 거리
+    const face = side > 0 ? nlo : nhi;
+    const d = (face - mid) * side;
+    if (d < room - 0.6) continue;   // 골목 안까지 들어온 것 (다른 건물)
+    if (d > room + 9) continue;     // 너무 멀다 — 이 골목의 벽이 아니다
+    if (d < best) best = d;
+  }
+  return Number.isFinite(best) ? best : null;
+}
+
+// ── 골목 창을 뺐다 (사용자 지시) ───────────────────────────────────────────
+//
+// "골목이라고 생성된 곳 보면 이상한 네모 형광이 양쪽 공중에 더덕더덕 붙어있음.
+//  이거 체크해서 없에"  /  "고집 그만 부리고 창문 없에면 안되냐고"
+//
+// 의도는 "벽이 사람이 있는 건물의 뒷면으로 읽히게" 였는데, 화면에서는 공중에
+// 더덕더덕 붙은 형광 사각형이었다. 위치를 실제 벽에 맞추는 쪽으로 고쳐 봤지만
+// 사용자가 그걸 원한 게 아니었다 — **없애 달라는 것이었다.**
+//
+// 골목 빨래와 같은 결론이다. 붙일 곳이 확실하지 않은 것은 놓지 않는다.
+// 골목의 어둠은 결함이 아니라 이 구역의 성격이다. 벽등·뒷문 간판·설비는
+// 벽에 확실히 붙어 있으므로 그대로 둔다.
+//
+// 난수는 그대로 소비한다 — 건너뛰면 뒤의 모든 생성이 밀린다.
+function alleyWindows(b, a, rng, mats, wallH, halfW, solids) {
   const sz = rectSize(a.rect);
   const long = a.alongX ? sz.w : sz.d;
+  void halfW; void solids; void mats; void b;
 
   for (const side of [-1, 1]) {
-    const rot = a.alongX
-      ? (side > 0 ? -Math.PI / 2 : Math.PI / 2)
-      : (side > 0 ? Math.PI : 0);
-    const cos = Math.cos(rot);
-    const sin = Math.sin(rot);
-
-    // ── 왜 세로 열로 묶는가 ────────────────────────────────────────────────
-    // 처음에는 위치·크기를 매번 새로 뽑아 벽에 흩뿌렸다. 그랬더니 창이
-    // 아니라 **벽에 뿌린 색종이**로 보였다. 실제 건물의 창은 층과 열을
-    // 따르고, 같은 열의 창은 크기가 같다. 그 규칙성이 있어야 창으로 읽히고,
-    // 불이 켜지고 꺼지는 **패턴**만 불규칙해야 한다.
+    void side;
     const cols = Math.max(2, Math.round(long / 11));
     for (let ci = 0; ci < cols; ci++) {
-      // 열 위치를 살짝 흔든다 — 정확히 등간격이면 이번엔 격자무늬가 된다
-      const t = ((ci + 0.5) / cols) * long + rng.range(-1.6, 1.6);
-      if (t < 2 || t > long - 2) continue;
-      const along = -long / 2 + t;
-      const wx = (a.alongX ? c.x + along : c.x + halfW * side) + cos * 0.05;
-      const wz = (a.alongX ? c.z + halfW * side : c.z + along) + sin * 0.05;
-
-      // 열마다 창 크기가 정해진다 (같은 건물의 같은 열이므로)
-      const w = rng.range(0.55, 0.95);
-      const h = rng.range(0.7, 1.05);
-      const warm = rng.chance(0.68);
-      // 벽 안에서만. 벽보다 높은 창은 붙을 데가 없어 허공에 뜬다.
+      rng.range(-1.6, 1.6);
+      rng.range(0.55, 0.95);
+      rng.range(0.7, 1.05);
+      rng.chance(0.68);
       const top = Math.min(wallH - 2.5, rng.range(16, 26));
-
-      for (let fy = 4.6; fy < top; fy += 3.6) {
-        // 위로 갈수록 켜진 창이 준다
-        if (!rng.chance(0.5 * (1 - (fy - 4.6) / 46))) continue;
-        const wy = CURB_HEIGHT + fy;
-        // 틀을 먼저, 발광면을 그 앞에. 틀이 없으면 창이 벽에 뚫린 구멍으로
-        // 안 읽히고 그냥 붙인 색면이 된다.
-        const fr = autoBox(0.05, h + 0.14, w + 0.14, null, 0.01);
-        fr.rotateY(rot);
-        fr.translate(wx, wy, wz);
-        b.add(fr, mats.winFrameMat);
-
-        const g = autoBox(0.06, h, w, null, 0.01);
-        g.rotateY(rot);
-        g.translate(wx + cos * 0.02, wy, wz + sin * 0.02);
-        b.add(g, warm ? mats.alleyWinWarm : mats.alleyWinCool);
-      }
+      for (let fy = 4.6; fy < top; fy += 3.6) rng.chance(0.5 * (1 - (fy - 4.6) / 46));
     }
   }
 }
@@ -509,9 +530,11 @@ function alleyMouth(b, x, z, dir, rng, mats, pools) {
 
 // ── 조립 ───────────────────────────────────────────────────────────────────
 
-export function createAlleys(scene, rng, mats, alleys) {
+export function createAlleys(scene, rng, mats, alleys, anchors = []) {
   const b = new MeshBuilder('Alleys');
   const pools = [];
+  // 벽이 어디인지는 이웃 건물만 안다 (wallDistance 머리말).
+  const solids = anchors.map((x) => x.solid || x.rect);
 
   for (const a of alleys) {
     // 구역이 벽 높이를 정한다. 골목 벽은 양옆 건물의 옆면을 대신하는 것이라
@@ -569,8 +592,10 @@ export function createAlleys(scene, rng, mats, alleys) {
     let side = rng.chance(0.5) ? 1 : -1;
     while (t < long - 2) {
       const along = -long / 2 + t;
-      // 벽면 위치와 벽이 바라보는 방향(골목 안쪽)
-      const wallU = (halfW) * side;
+      // 벽면 위치와 벽이 바라보는 방향(골목 안쪽).
+      // 창과 같은 이유로 **실제 벽까지의 거리**를 쓴다 — 배관·실외기·뒷문이
+      // 틈 폭에 붙으면 벽에서 몇 미터 떨어져 뜬다 (wallDistance 머리말).
+      const wallU = (wallDistance(a, side, solids) ?? halfW) * side;
       const x = a.alongX ? c.x + along : c.x + wallU;
       const z = a.alongX ? c.z + wallU : c.z + along;
       // 벽에서 골목 안쪽을 보는 각
@@ -655,7 +680,7 @@ export function createAlleys(scene, rng, mats, alleys) {
       alleyMouth(b, mx + dir[0] * 0.9, mz + dir[1] * 0.9, dir, rng, mats, pools);
     }
 
-    alleyWindows(b, a, rng, mats, wallH, halfW);
+    alleyWindows(b, a, rng, mats, wallH, halfW, solids);
     overhead(b, a, rng, mats, halfW);
   }
 

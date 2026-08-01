@@ -190,7 +190,9 @@ class NightCity extends Scene {
     // 골목 — 블록을 관통하는 좁은 뒷길. 어느 블록에 낼지는 towers 가
     // 필지를 나누면서 함께 정한다 (골목을 먼저 빼야 통로가 된다).
     const alleys = await step('골목 · 뒷골목 설비', 60, () =>
-      createAlleys(scene, rng, mats, towers.alleys)
+      // 앵커를 같이 넘긴다 — 골목에 벽을 안 세우므로 **벽이 어디인지는
+      // 이웃 건물만 안다** (alley.wallDistance)
+      createAlleys(scene, rng, mats, towers.alleys, towers.anchors)
     );
     built.alleys = alleys.group;
 
