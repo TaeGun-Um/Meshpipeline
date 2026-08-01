@@ -48,6 +48,8 @@ const TOLERANCE = 0;
 // 중앙값을 본다. 평균은 네온 몇 개에 끌려 올라가지만 중앙값은 "화면의 절반이
 // 무엇인가" 를 말한다. 밤 씬이라 기준을 낮게 잡되, 0 에 가까우면 잡는다.
 const MIN_MEDIAN = 1.5;
+// 상위 1% 밝기. 건물 속이면 이것도 0 이다 — 중앙값과 **둘 다** 낮아야 실패다.
+const MIN_P99 = 24;
 
 const views = JSON.parse(readFileSync(join(SHOTS, 'views.json'), 'utf8'));
 const want = process.argv[2];
@@ -75,11 +77,22 @@ for (const scene of scenes) {
     if (!existsSync(base)) { console.log(`  ${name.padEnd(8)} 기준 없음 — __lock('base') 필요`); missing++; continue; }
     if (!existsSync(cur))  { console.log(`  ${name.padEnd(8)} 현재 샷 없음 — __lock() 필요`); missing++; continue; }
 
-    // 기준선이 아무것도 안 보고 있으면 비교 자체가 무의미하다
+    // 기준선이 아무것도 안 보고 있으면 비교 자체가 무의미하다.
+    //
+    // ── 중앙값만으로는 오탐한다 (두 번 걸렸다) ────────────────────────────
+    // 밤 도시의 넓은 도로는 화면 절반이 검은 아스팔트라 **중앙값이 낮은 것이
+    // 정상**이다. 실제로 교차로 뷰가 중앙값 1.4 로 두 번 걸렸는데, 그 화면에는
+    // 횡단보도·가로등·신호등·건물이 다 있었다.
+    //
+    // 잡으려는 것은 "카메라가 건물 속" 이고, 그때는 **어디에도 밝은 것이
+    // 없다.** 그러니 중앙값과 상위 1% 를 같이 본다.
+    //   교차로  중앙 1.4 · p99 205   <- 어둡지만 볼 것이 있다
+    //   골목    중앙 3.1 · p99  18   <- 원래 어두운 곳
+    //   건물 속 중앙 0   · p99   0   <- 이것만 잡아야 한다
     const lum = luminance(cur);
-    if (lum.중앙 < MIN_MEDIAN) {
+    if (lum.중앙 < MIN_MEDIAN && lum.p99 < MIN_P99) {
       console.log(
-        `  ${name.padEnd(8)} **거의 검은 화면** (중앙 ${lum.중앙}, 평균 ${lum.평균}) — ` +
+        `  ${name.padEnd(8)} **거의 검은 화면** (중앙 ${lum.중앙}, p99 ${lum.p99}) — ` +
         `카메라가 건물 속이거나 불 없는 곳을 본다. 재조준 필요`
       );
       failed++;
