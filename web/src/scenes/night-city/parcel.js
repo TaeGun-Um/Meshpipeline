@@ -31,7 +31,7 @@ import { GRID, BLOCK_SIZE, blockCenter, blockIndexAt, roads, HIGHWAY_BAND } from
 import { districtAt } from './district.js';
 import { hash2 } from '../../core/textures.js';
 import { LANDMARK_BLOCKS, PROMENADE } from './landmark.js';
-import { inPrecinct, plazaCells, plazaHits, clipToPlaza } from './plaza.js';
+import { inPrecinct, plazaCells, plazaHits, clipToPlaza, armWalkRects } from './plaza.js';
 
 // 랜드마크가 선 칸은 병합하지 않는다. 손으로 지은 것이 있는 자리라
 // 남의 대지에 묶이면 그 블록을 통째로 잡아먹는다.
@@ -157,25 +157,45 @@ function build() {
   // 자연히 광장이 되고, 사람은 늘 그런 자리에 모인다.
   const walksFor = (p) => {
     const w = WALK_W[p.district.name] ?? 10;
-    if (w <= 0 || p.cells.length < 2) return [];
-    const xs = p.cells.map((c) => c[0]);
-    const zs = p.cells.map((c) => c[1]);
-    const ix0 = Math.min(...xs), ix1 = Math.max(...xs);
-    const iz0 = Math.min(...zs), iz1 = Math.max(...zs);
     const out = [];
-    // 띠 k 는 칸 k-1 과 k 사이다. 대지 안쪽 띠만 후보다.
-    const mid = (a, b2) => a + Math.floor((b2 - a + 1) / 2);
-    if (ix1 > ix0) out.push({ axis: 'x', band: mid(ix0, ix1), w });
-    if (iz1 > iz0) out.push({ axis: 'z', band: mid(iz0, iz1), w });
-    // 둘 다 없을 수는 없다 (cells >= 2 이므로 한 축은 반드시 뻗어 있다)
-    for (const g of out) {
-      const c = blockCenter(g.band - 1) + BLOCK_SIZE / 2;
-      const c2 = blockCenter(g.band) - BLOCK_SIZE / 2;
-      const m = (c + c2) / 2;
-      g.rect = g.axis === 'x'
-        ? { x0: m - w / 2, x1: m + w / 2, z0: p.rect.z0, z1: p.rect.z1 }
-        : { x0: p.rect.x0, x1: p.rect.x1, z0: m - w / 2, z1: m + w / 2 };
+    // ── 병합한 대지를 관통하는 길 ──────────────────────────────────────
+    // 칸 하나짜리 대지에는 없다. 원래 도로에 둘러싸여 있기 때문이다.
+    if (w > 0 && p.cells.length >= 2) {
+      const xs = p.cells.map((c) => c[0]);
+      const zs = p.cells.map((c) => c[1]);
+      const ix0 = Math.min(...xs), ix1 = Math.max(...xs);
+      const iz0 = Math.min(...zs), iz1 = Math.max(...zs);
+      // 띠 k 는 칸 k-1 과 k 사이다. 대지 안쪽 띠만 후보다.
+      const mid = (a, b2) => a + Math.floor((b2 - a + 1) / 2);
+      if (ix1 > ix0) out.push({ axis: 'x', band: mid(ix0, ix1), w });
+      if (iz1 > iz0) out.push({ axis: 'z', band: mid(iz0, iz1), w });
+      // 둘 다 없을 수는 없다 (cells >= 2 이므로 한 축은 반드시 뻗어 있다)
+      for (const g of out) {
+        const c = blockCenter(g.band - 1) + BLOCK_SIZE / 2;
+        const c2 = blockCenter(g.band) - BLOCK_SIZE / 2;
+        const m = (c + c2) / 2;
+        g.rect = g.axis === 'x'
+          ? { x0: m - w / 2, x1: m + w / 2, z0: p.rect.z0, z1: p.rect.z1 }
+          : { x0: p.rect.x0, x1: p.rect.x1, z0: m - w / 2, z1: m + w / 2 };
+      }
     }
+    // ── 광장의 동서 팔 ────────────────────────────────────────────────
+    // 이 대지를 지나가면 그것도 사람 길이다. 대지를 갈라 건물이 위아래로
+    // 물러나게 한다 (plaza.armWalkRects 머리말).
+    //
+    // **위 조건 밖에 둔다.** 광장 옆 블록은 광장이 RESERVED 로 잡아 둔
+    // 칸 하나짜리 대지라, 위에서 먼저 반환하면 이 길이 영영 안 생긴다 —
+    // 실제로 그렇게 만들어 놓고 "왜 안 갈라지지" 하고 있었다.
+    for (const a of armWalkRects()) {
+      const r = {
+        x0: Math.max(a.x0, p.rect.x0), x1: Math.min(a.x1, p.rect.x1),
+        z0: Math.max(a.z0, p.rect.z0), z1: Math.min(a.z1, p.rect.z1),
+      };
+      // 길이가 짧으면 길이 아니라 틈이다
+      if (r.x1 - r.x0 < 14 || r.z1 - r.z0 < 6) continue;
+      out.push({ axis: 'z', band: -1, w: r.z1 - r.z0, rect: r });
+    }
+
     // 광장에 걸친 보행로는 잘라 낸다. 광장이 이미 그 자리를 사람 길로 쓰고
     // 있는데 대지가 또 길을 주장하면, 광장 상가가 "보행로를 침범했다" 로
     // 신고된다 (실제로 16m 짜리 길 하나가 통째로 먹혔다).

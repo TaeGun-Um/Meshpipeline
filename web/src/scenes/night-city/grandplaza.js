@@ -29,8 +29,10 @@ import { autoBox, lathe } from '../../core/profile.js';
 import { upPlane, rectSize } from '../../core/boxfaces.js';
 import { CURB_HEIGHT } from './layout.js';
 import {
-  PLAZA, INNER, ARMS, CROSSING, arcadeBars, emptyRoadRects, PLAZA_IX, PLAZA_IZ,
+  PLAZA, INNER, ARMS, CROSSING, arcadeBars, emptyRoadRects, precinctHits,
+  PLAZA_IX, PLAZA_IZ,
 } from './plaza.js';
+import { allWalks } from './parcel.js';
 import { districtAt } from './district.js';
 import { bazaarBlock } from './bazaar.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
@@ -71,16 +73,7 @@ const PLINTH_R = 3.4; // 가운데 대. 물이 원반이 아니라 고리로 보
 // 읽힌다. 캐노피가 더 높으면 상가가 캐노피의 부속으로 보인다.
 const CANOPY_Y = 16.5;
 
-// ── 바닥 ──────────────────────────────────────────────────────────────────
-//
-// 세 겹이다. 마감이 갈려야 '넓은 아스팔트' 가 아니라 '설계된 바닥' 으로 읽힌다.
-//   둘레   광장 전체 포장
-//   십자   다른 마감. 이 한 겹이 십자를 만든다
-//   안뜰   앉는 턱으로 두른 가운데. 아래 court() 가 그린다
-// 마감 한 겹. 높이를 조금씩 달리해 겹쳐 깐다 — 아래에서 위로
-//   +0.020 광장 전체
-//   +0.035 십자 팔
-//   +0.045 안뜰
+// 바닥 판 하나. 높이는 **한 값뿐**이다 (아래 FLOOR).
 function slab(b, r, y, mat, tile) {
   const w = r.x1 - r.x0;
   const d = r.z1 - r.z0;
@@ -88,37 +81,74 @@ function slab(b, r, y, mat, tile) {
   b.add(upPlane(w, d, [(r.x0 + r.x1) / 2, y, (r.z0 + r.z1) / 2], [w / tile, d / tile]), mat);
 }
 
-function paving(b, mats) {
-  slab(b, PLAZA, Y + 0.02, mats.plazaMat, 3.2);
+// ── 바닥은 한 겹이다 (사용자 지시) ────────────────────────────────────────
+//
+// *"바닥 통일좀 하자. 바닥 텍스쳐로 보이는게 왜 이렇게 난잡하게 다 겹쳐있어"*
+// *"하나로 통일해"*
+//
+// 맞다. 세어 보니 광장 한 자리에 판이 **다섯 겹**이었다.
+//
+//   0.160  streets.blockPlates 의 인도 판 (도시가 원래 까는 것)
+//   0.180  광장 전체         plazaMat
+//   0.195  십자 팔           tileWallMat
+//   0.205  안뜰              plazaStepMat
+//   0.210  둘레 점자블록     tactileMat
+//
+// 4~5cm 안에 재질이 다른 판 다섯 장이 겹쳐 있으니, 비스듬히 보면 어느 것이
+// 바닥인지 알 수 없고 경계마다 다른 무늬가 서로를 밀어낸다.
+//
+// **한 장만 깐다.** 십자와 안뜰은 마감을 바꾸는 대신 **가장자리에 빛 줄을
+// 새긴다** — 줄은 판이 아니라서 겹치지 않는다.
+const FLOOR = 0.06; // 도시 인도 판(0.16) 위 이만큼. 이 값 하나만 쓴다
 
-  // 십자 팔 — 다른 마감. 이 한 겹이 십자를 만든다
-  for (const a of [ARMS.ns, ARMS.ew]) slab(b, a, Y + 0.035, mats.tileWallMat, 2.2);
+function paving(b, mats, pools) {
+  slab(b, PLAZA, Y + FLOOR, mats.plazaMat, 3.2);
 
-  // 상가 앞 띠 — 열린 광장의 가장자리를 두른다. 점자블록 마감이 경계를 긋는다.
-  const W = 2.4;
-  const rim = (x, z, w, d) =>
-    b.add(upPlane(w, d, [x, Y + 0.05, z], [w / 1.2, d / 1.2]), mats.tactileMat);
-  rim((INNER.x0 + INNER.x1) / 2, INNER.z0 + W / 2, INNER.x1 - INNER.x0, W);
-  rim((INNER.x0 + INNER.x1) / 2, INNER.z1 - W / 2, INNER.x1 - INNER.x0, W);
-  rim(INNER.x0 + W / 2, PLAZA.cz, W, INNER.z1 - INNER.z0 - W * 2);
-  rim(INNER.x1 - W / 2, PLAZA.cz, W, INNER.z1 - INNER.z0 - W * 2);
+  // ── 광장 밖으로 이어지는 길 (사용자 지시 3번) ──────────────────────────
+  // *"광장 주변에 사람이 지나다닐 수 있을법한 부분들은 체크하고, 도로 포장 개편해"*
+  //
+  // 동서 팔이 좌우 블록을 지나 다음 도로까지 이어진다 (plaza.armWalkRects).
+  // `streets.walkPaving` 은 이 구간을 건너뛰므로 **여기가 유일한 포장**이다 —
+  // 재질도 높이도 광장과 같은 것 하나를 쓴다.
+  for (const w of allWalks()) {
+    if (!precinctHits(w.rect)) continue;
+    slab(b, w.rect, Y + FLOOR, mats.plazaMat, 3.2);
+    // 길 가장자리 두 줄 — 광장의 십자 팔과 같은 표시로 이어 준다
+    const nz = (w.rect.z1 - w.rect.z0) < (w.rect.x1 - w.rect.x0);
+    const cx = (w.rect.x0 + w.rect.x1) / 2;
+    const cz = (w.rect.z0 + w.rect.z1) / 2;
+    for (const s of [-1, 1]) {
+      const [ex, ez] = nz ? [cx, cz + s * (w.rect.z1 - w.rect.z0) / 2]
+        : [cx + s * (w.rect.x1 - w.rect.x0) / 2, cz];
+      b.box(nz ? w.rect.x1 - w.rect.x0 : 0.22, 0.05, nz ? 0.22 : w.rect.z1 - w.rect.z0,
+        [ex, Y + FLOOR + 0.01, ez], neonSoft(NEON.warm));
+    }
+    pools.push({
+      kind: 'floor', x: cx, y: Y + FLOOR + 0.02, z: cz,
+      rx: (w.rect.x1 - w.rect.x0) * 0.5, rz: (w.rect.z1 - w.rect.z0) * 0.5,
+      tint: rgb01(NEON.warm, 0.22),
+    });
+  }
+
+  // 십자 팔 — 가장자리 두 줄. 마감을 안 바꾸고 선만 새긴다
+  const line = (x, z, w, d) =>
+    b.box(w, 0.05, d, [x, Y + FLOOR + 0.01, z], neonSoft(NEON.warm));
+  for (const x of [ARMS.ns.x0, ARMS.ns.x1]) {
+    line(x, PLAZA.cz, 0.22, PLAZA.d - 1);
+  }
+  for (const z of [ARMS.ew.z0, ARMS.ew.z1]) {
+    line(PLAZA.cx, z, PLAZA.w - 1, 0.22);
+  }
 }
 
-// ── 내려앉은 안뜰 ─────────────────────────────────────────────────────────
-//
-// 계단은 **네 변 전부**에 두른다. 십자 팔 넷이 모두 여기로 내려오기 때문이다.
-// 한두 변만 두면 나머지 팔이 절벽에서 끊긴다.
 // 안뜰 — 파는 대신 **테를 두른다.**
 //
 // 턱은 네 변을 두르되 십자 팔이 들어오는 자리에서 끊긴다. 그 네 틈이 안뜰의
 // 문이고, 끊기지 않으면 안뜰이 화단이 된다.
+//
+// 바닥은 **깔지 않는다.** 광장 판 한 장이 여기까지 덮고, 안뜰이라는 것은
+// 턱과 그 위 빛줄이 말한다 (FLOOR 머리말).
 function court(b, mats, pools) {
-  // 바닥 마감 — 광장 포장과 다른 결. 이 한 겹이 '여기가 안뜰' 을 말한다
-  b.add(upPlane(CROSSING.x1 - CROSSING.x0, CROSSING.z1 - CROSSING.z0,
-    [PLAZA.cx, Y + 0.045, PLAZA.cz],
-    [(CROSSING.x1 - CROSSING.x0) / 2.0, (CROSSING.z1 - CROSSING.z0) / 2.0]),
-    mats.plazaStepMat);
-
   // 앉는 턱 — 팔이 지나는 구간을 빼고 토막으로 놓는다
   const seg = (x0, x1, z0, z1) => {
     if (x1 - x0 < 0.4 || z1 - z0 < 0.4) return;
@@ -142,7 +172,7 @@ function court(b, mats, pools) {
   }
 
   pools.push({
-    kind: 'floor', x: PLAZA.cx, y: Y + 0.06, z: PLAZA.cz,
+    kind: 'floor', x: PLAZA.cx, y: Y + FLOOR + 0.02, z: PLAZA.cz,
     rx: (C.x1 - C.x0) * 0.55, rz: (C.z1 - C.z0) * 0.55, tint: rgb01(NEON.cool, 0.3),
   });
   return { rect: C };
@@ -203,7 +233,7 @@ function waterFeature(b, rng, mats, pools) {
 
   // 웅덩이는 **바닥에** 눕힌다. 수면 높이에 두면 수반 테에 가려 안 보인다
   pools.push({
-    kind: 'floor', x: cx, y: Y + 0.06, z: cz,
+    kind: 'floor', x: cx, y: Y + FLOOR + 0.02, z: cz,
     rx: BASIN_R * 2.6, rz: BASIN_R * 2.6, tint: rgb01(NEON.cool, 0.45),
   });
 }
@@ -293,7 +323,7 @@ function lamp(b, mats, pools, x, z) {
   b.cylinder(0.14, 0.18, 5.2, [x, Y + 2.6, z], mats.metalMat, 8);
   b.box(1.1, 0.16, 1.1, [x, Y + 5.3, z], neon(NEON.warm));
   pools.push({
-    kind: 'floor', x, y: Y + 0.05, z, rx: 5.6, rz: 5.6, tint: rgb01(NEON.warm, 0.4),
+    kind: 'floor', x, y: Y + FLOOR + 0.02, z, rx: 5.6, rz: 5.6, tint: rgb01(NEON.warm, 0.4),
   });
 }
 
@@ -330,7 +360,7 @@ function lamps(b, mats, pools) {
   const wash = (x0, x1, z0, z1) => {
     if (x1 - x0 < 2 || z1 - z0 < 2) return;
     pools.push({
-      kind: 'floor', x: (x0 + x1) / 2, y: Y + 0.03, z: (z0 + z1) / 2,
+      kind: 'floor', x: (x0 + x1) / 2, y: Y + FLOOR + 0.02, z: (z0 + z1) / 2,
       rx: (x1 - x0) * 0.62, rz: (z1 - z0) * 0.62, tint: rgb01(NEON.warm, 0.26),
     });
   };
@@ -410,9 +440,10 @@ function restArea(b, rng, mats, pools, r) {
   const cz = (r.z0 + r.z1) / 2;
   const alongX = r.axis === 'x'; // 띠가 X 로 길다
 
-  // 포장 — 차도가 아니라는 것을 바닥이 먼저 말한다
-  b.add(upPlane(w - 1.0, d - 1.0, [cx, Y + 0.03, cz], [(w - 1) / 2.6, (d - 1) / 2.6]),
-    mats.plazaMat);
+  // 포장 — 차도가 아니라는 것을 바닥이 먼저 말한다.
+  // 재질도 높이도 **광장과 같은 것 하나**를 쓴다 (FLOOR 머리말).
+  slab(b, { x0: r.x0 + 0.5, x1: r.x1 - 0.5, z0: r.z0 + 0.5, z1: r.z1 - 0.5 },
+    Y + FLOOR, mats.plazaMat, 3.2);
 
   // 앉을 것과 심을 것을 **긴 축을 따라** 번갈아 놓는다.
   //
@@ -448,7 +479,7 @@ function restArea(b, rng, mats, pools, r) {
     lamp(b, mats, pools, alongX ? t : cx + off, alongX ? cz + off : t);
   }
   pools.push({
-    kind: 'floor', x: cx, y: Y + 0.04, z: cz,
+    kind: 'floor', x: cx, y: Y + FLOOR + 0.02, z: cz,
     rx: w * 0.5, rz: d * 0.5, tint: rgb01(NEON.warm, 0.2),
   });
 }
@@ -502,7 +533,7 @@ function colonnade(b, mats, pools, r, inward) {
   b.box(along === 'x' ? bw - 1.5 : 0.16, 0.12, along === 'x' ? 0.16 : bd - 1.5,
     [cx, Y + H - 0.25, cz], neon(NEON.warm));
   pools.push({
-    kind: 'floor', x: (cx + (along === 'x' ? cx : face)) / 2, y: Y + 0.05,
+    kind: 'floor', x: (cx + (along === 'x' ? cx : face)) / 2, y: Y + FLOOR + 0.02,
     z: (cz + (along === 'x' ? face : cz)) / 2,
     rx: along === 'x' ? (a1 - a0) * 0.5 : 7, rz: along === 'x' ? 7 : (a1 - a0) * 0.5,
     tint: rgb01(NEON.warm, 0.3),
@@ -573,7 +604,7 @@ function arcadeShops(b, rng, mats, signs, pools) {
 
 // ── 진입점 ────────────────────────────────────────────────────────────────
 export function grandPlaza(b, rng, mats, signs, pools) {
-  paving(b, mats);
+  paving(b, mats, pools);
   const inner = court(b, mats, pools);
   waterFeature(b, rng, mats, pools);
   canopy(b, mats, pools);

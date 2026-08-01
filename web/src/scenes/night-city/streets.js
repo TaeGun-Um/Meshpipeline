@@ -10,6 +10,7 @@ import { dressSidewalks } from './sidewalk.js';
 import { claim, TIER } from './siteplan.js';
 import { districtAt } from './district.js';
 import { parcels, roadOpen, roadOpenZ, allWalks } from './parcel.js';
+import { precinctHits } from './plaza.js';
 import { upPlane, downPlane } from '../../core/boxfaces.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
@@ -58,6 +59,9 @@ function roadMesh(mat) {
 function walkPaving(b, rng, mats, pools) {
   for (const g of allWalks()) {
     const r = g.rect;
+    // 광장 둘레의 길은 **광장이 직접 깐다.** 여기서 또 깔면 4cm 안에 판이
+    // 두 겹 더 쌓인다 — 바닥이 난잡해진 원인이었다 (grandplaza FLOOR 머리말).
+    if (precinctHits(r)) continue;
     const cx = (r.x0 + r.x1) / 2;
     const cz = (r.z0 + r.z1) / 2;
     const w = r.x1 - r.x0;
