@@ -13,6 +13,7 @@ import {
   stripTextures,
   boxTextures,
   clothTextures,
+  SIGN_STYLES,
 } from '../../shared/glyphs.js';
 import {
   TexturedSurface,
@@ -31,16 +32,42 @@ import { SURFACE } from './palette.js';
 // 시드 기준값을 종류마다 명시한다. 종류 이름에서 유도하면(예: kind.length*211)
 // 이름을 바꾸는 순간 모든 간판의 글자가 달라진다 — 실제로 리팩터링 중에 그렇게
 // 됐고, 저장해 둔 스크린샷과 어긋났다.
+// ── styled: 화법 축을 붙일 것인가 (사용자 지적) ────────────────────────────
+//
+// "간판도 종류를 더 늘려봐라 너무 적어서 똑같은거밖에 없어"
+//
+// 종류 일곱 x 배색 여섯인데도 그렇게 보였다. **일곱 종이 전부 같은 화법**이라
+// 그렇다 (glyphs.SIGN_STYLES 머리말). 그래서 화법 축을 하나 더 건다.
+//
+// 전부에 걸지는 않는다.
+//   · `mega` 는 인물 사진이라 화법이라는 개념이 없다
+//   · `billboard` 는 512x512 라 굽는 양이 네 배가 되면 혼자 280MB 를 쓴다.
+//     멀리 있는 것이라 화법 차이가 덜 읽히기도 한다
+// 눈높이에서 반복이 보이는 넷에만 건다 — 그게 사용자가 지목한 것이다.
+//
+// ── 예산 안에서 다양함을 어디에 쓸 것인가 (실측으로 정했다) ────────────────
+//
+// 화법 넷을 배색 여섯 전부에 걸었더니 텍스처가 **301.7MB** 가 됐다 (예산 220).
+// 감사가 바로 잡았다. 그래서 무엇을 줄일지 실측으로 정했다.
+//
+//   `화법 4 x 배색 6` = 24 가지 · 4배 메모리
+//   `화법 4 x 배색 3` = 12 가지 · 2배 메모리   <- 이걸 고른다
+//
+// 가짓수는 절반이지만 **화법 차이가 배색 차이보다 훨씬 크게 읽힌다.** 색만
+// 여섯이던 지금이 "똑같은거밖에 없어" 였다는 것이 그 증거다.
+//
+// 그리고 `mega` 를 6 -> 3 으로 줄였다. 512x1024 짜리 여섯 장이 혼자 64MB 인데
+// 도시에 열몇 장 걸리는 것이고, 인물은 얼굴 자체가 시드마다 다르다.
 const SIGN_KINDS = [
-  { kind: 'banner', seed: 9100, make: bannerTextures },
-  { kind: 'blade', seed: 9300, make: bladeTextures },
+  { kind: 'banner', seed: 9100, make: bannerTextures, styled: true, schemes: 3 },
+  { kind: 'blade', seed: 9300, make: bladeTextures, styled: true, schemes: 3 },
   { kind: 'billboard', seed: 9500, make: billboardTextures },
   // 새 유형 셋 — 비율부터 다르다. 비율이 같으면 결국 같은 판이다
-  { kind: 'strip', seed: 9900, make: stripTextures },
-  { kind: 'box', seed: 9950, make: boxTextures },
+  { kind: 'strip', seed: 9900, make: stripTextures, styled: true, schemes: 3 },
+  { kind: 'box', seed: 9950, make: boxTextures, styled: true, schemes: 3 },
   { kind: 'cloth', seed: 9980, make: clothTextures },
   // 초대형 인물 광고판 — 타워 한 면을 20~60m 덮는다
-  { kind: 'mega', seed: 9700, make: portraitTextures },
+  { kind: 'mega', seed: 9700, make: portraitTextures, schemes: 3 },
 ];
 
 // 점포 정면 색온도. 순서가 곧 인덱스이고, SHOP_WASH(towers.js)와 짝을 이룬다.
@@ -134,12 +161,22 @@ export function buildMaterials() {
   const punchedMats = matsOf(punchedSets, 'Punched', 0.9);
   const slabMats = matsOf(slabSets, 'Slab', 0.5);
 
+  // 배열은 **화법 바깥, 배색 안쪽** 으로 편다 — `화법 * 배색수 + 배색`.
+  // 종류마다 배색 수가 다르므로 그 수를 `signVariants` 에 같이 실어 보낸다 —
+  // 배열 길이에서 되짚게 하면 signage.js 가 화법 수를 다시 알아야 하고,
+  // 그게 곧 결합 오류다 (같은 값을 두 곳에서 계산한다).
   const signMats = {};
-  for (const { kind, seed, make } of SIGN_KINDS) {
-    signMats[kind] = SIGN_SCHEMES.map((scheme, i) =>
-      TexturedSurface.instance(
-        { set: make(seed + i * 7, scheme), normalScale: 0.5, roughness: 0.55 },
-        `Sign_${kind}_${i}`
+  const signVariants = {};
+  for (const { kind, seed, make, styled, schemes } of SIGN_KINDS) {
+    const cols = SIGN_SCHEMES.slice(0, schemes ?? SIGN_SCHEMES.length);
+    const styles = styled ? SIGN_STYLES : [undefined];
+    signVariants[kind] = { styles: styles.length, schemes: cols.length };
+    signMats[kind] = styles.flatMap((style, s) =>
+      cols.map((scheme, i) =>
+        TexturedSurface.instance(
+          { set: make(seed + i * 7 + s * 331, scheme, style), normalScale: 0.5, roughness: 0.55 },
+          `Sign_${kind}_${style ?? 'tube'}_${i}`
+        )
       )
     );
   }
@@ -207,6 +244,7 @@ export function buildMaterials() {
     windowSets,
     windowMats,
     signMats,
+    signVariants,
     shopfrontMats,
     shopfrontBrightMats,
     stallMats,

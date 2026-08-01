@@ -240,6 +240,23 @@ function frameInk(pu, pv, W, H, m, w) {
   return 0;
 }
 
+// ── 전구 테두리 ────────────────────────────────────────────────────────────
+//
+// 관이 아니라 **점점이 박힌 전구**. 극장·파칭코·오래된 상가의 어휘다.
+// 관과 결정적으로 다른 점은 사이가 비어 있다는 것이고, 그래서 멀리서도
+// "이건 다른 종류의 간판" 으로 갈린다.
+function bulbInk(pu, pv, W, H, m, w) {
+  const dL = pu, dR = W - pu, dB = pv, dT = H - pv;
+  const outer = Math.min(dL, dR, dB, dT);
+  if (Math.abs(outer - (m + w * 1.3)) > w * 1.25) return 0;
+  // 가장 가까운 변을 따라가는 좌표 — 네 변을 한 줄로 편다
+  const t = outer === dL || outer === dR ? pv : pu;
+  const P = w * 5.4;                        // 전구 간격
+  const f = Math.abs(((t / P) % 1) - 0.5);  // 0 이 전구 한복판
+  if (f > 0.27) return 0;
+  return f < 0.13 ? 2 : 1;
+}
+
 // ── 라틴 문자 줄 ───────────────────────────────────────────────────────────
 //
 // 레퍼런스의 간판은 큰 표의문자 아래 **작은 로마자 줄**이 반드시 있다
@@ -274,10 +291,32 @@ function scanline(v, px) {
 // layout 은 그 셋을 어떻게 배치할지다. 가로 배너·세로 간판·광고판이
 // 서로 다른 배치를 갖는다 — 세로 간판을 가로 간판 돌려서 만들면
 // 픽토그램이 눕고 글자 순서가 어긋난다.
-function signPainter(seed, scheme, layout, size) {
+//
+// ── 화법 (사용자 지적으로 추가) ────────────────────────────────────────────
+//
+// "간판도 종류를 더 늘려봐라 너무 적어서 똑같은거밖에 없어 / 똑같은거 계속
+//  반복되니까 지루하고 현학적이네"
+//
+// 맞았다. 종류는 일곱인데 **화법이 하나**였다 — 어두운 판 + 네온 관 테두리 +
+// 픽토그램 + 글자. 비율만 다르고 그리는 법이 같으니 결국 다 같은 간판이다.
+//
+// 배색을 늘려도 안 고쳐진다. 색이 여섯이어도 구성이 같으면 같아 보인다 —
+// 실제로 이미 여섯이었고, 그런데도 "똑같은거밖에 없어" 라는 말이 나왔다.
+// 늘려야 하는 것은 색이 아니라 **판을 그리는 법**이다.
+//
+//   tube     어두운 판에 네온 관. 지금까지의 것
+//   panel    거꾸로다 — 판이 통째로 빛나고 글자가 **검다**. 아크릴 라이트박스
+//   marquee  테두리가 이어진 관이 아니라 전구 점점이. 극장·파칭코
+//   split    머리에 색 띠가 얹히고 몸은 어둡다. 상호 + 업종
+export const SIGN_STYLES = ['tube', 'panel', 'marquee', 'split'];
+
+function signPainter(seed, scheme, layout, size, style = 'tube') {
   const ground = rgb255(scheme.ground);
   const glyph = rgb255(scheme.glyph);
   const edge = rgb255(scheme.edge);
+  const litPlate = style === 'panel';   // 판이 빛나고 글자가 어둡다
+  const bulbs = style === 'marquee';
+  const banded = style === 'split';
   const grime = tiledFbm(seed + 3, 5, 3);
   const trade = (hash2(seed * 17, 3) * PICTS.length) | 0;
 
@@ -300,6 +339,16 @@ function signPainter(seed, scheme, layout, size) {
     o.e[1] = (col[1] * k + 255 * wash) * sl;
     o.e[2] = (col[2] * k + 255 * wash) * sl;
   };
+  // 빛나는 판 위의 글자는 **빛을 빼서** 그린다. 발광면에서 유일한 '어둠' 이다
+  const cut = (o) => {
+    o.c[0] = 10; o.c[1] = 10; o.c[2] = 12;
+    o.r = 0.55; o.h = 0.35;
+    o.e[0] = 0; o.e[1] = 0; o.e[2] = 0;
+  };
+  // 화법에 따라 잉크를 놓는 법이 갈린다. 여기서 한 번만 갈라 두면 아래는
+  // 배치만 신경 쓰면 된다 — 화법마다 그리기 코드를 복사하면 반드시 어긋난다
+  const ink = (o, col, lvl, sl) => (litPlate ? cut(o) : put(o, col, lvl, sl));
+
   // 상자 [x, y, w, h] 안의 지역 좌표. 밖이면 null
   const local = (pu, pv, B) => {
     const lu = (pu - B[0]) / B[2];
@@ -313,25 +362,49 @@ function signPainter(seed, scheme, layout, size) {
     const sl = scanline(v, sh);
     const gm = grime(u, v);
 
-    // 바탕 — 어둡다. 네온은 어두운 판 위에 있어야 네온이다
-    o.c[0] = ground[0] + gm * 8;
-    o.c[1] = ground[1] + gm * 8;
-    o.c[2] = ground[2] + gm * 8;
-    o.r = 0.42; o.h = 0.5;
-    o.e[0] = ground[0] * 0.5 * sl;
-    o.e[1] = ground[1] * 0.5 * sl;
-    o.e[2] = ground[2] * 0.5 * sl;
+    // ── 바탕 ────────────────────────────────────────────────────────────
+    if (litPlate) {
+      // 판이 곧 빛이다. 아크릴 라이트박스 — 뒤에서 형광등이 비친다.
+      // 얼룩(gm)을 남기는 이유는 통짜 색면이 되면 종이로 보이기 때문이다.
+      const k = 0.86 + gm * 0.14;
+      o.c[0] = glyph[0] * 0.22; o.c[1] = glyph[1] * 0.22; o.c[2] = glyph[2] * 0.22;
+      o.r = 0.36; o.h = 0.3;
+      o.e[0] = glyph[0] * k * sl; o.e[1] = glyph[1] * k * sl; o.e[2] = glyph[2] * k * sl;
+    } else {
+      // 어둡다. 네온은 어두운 판 위에 있어야 네온이다
+      o.c[0] = ground[0] + gm * 8;
+      o.c[1] = ground[1] + gm * 8;
+      o.c[2] = ground[2] + gm * 8;
+      o.r = 0.42; o.h = 0.5;
+      o.e[0] = ground[0] * 0.5 * sl;
+      o.e[1] = ground[1] * 0.5 * sl;
+      o.e[2] = ground[2] * 0.5 * sl;
+      // 머리 띠 — 긴 변을 따라 위쪽 일부를 색으로 채운다. 상호 + 업종의 위계
+      if (banded) {
+        const head = W > H ? pv < H * 0.30 : pu < W * 0.26;
+        if (head) {
+          o.c[0] = edge[0] * 0.2; o.c[1] = edge[1] * 0.2; o.c[2] = edge[2] * 0.2;
+          o.e[0] = edge[0] * 0.8 * sl; o.e[1] = edge[1] * 0.8 * sl; o.e[2] = edge[2] * 0.8 * sl;
+        }
+      }
+    }
 
-    // 1) 테두리 관
-    const fi = frameInk(pu, pv, W, H, M, TW);
-    if (fi) { put(o, edge, fi, sl); return; }
+    // ── 1) 테두리 ───────────────────────────────────────────────────────
+    if (bulbs) {
+      const bi = bulbInk(pu, pv, W, H, M, TW);
+      if (bi) { put(o, edge, bi, sl); return; }
+    } else {
+      const fi = frameInk(pu, pv, W, H, M, TW);
+      // 빛나는 판에서는 테두리도 **어두운 홈**이다. 밝은 위에 밝은 것은 안 보인다
+      if (fi) { litPlate ? cut(o) : put(o, edge, fi, sl); return; }
+    }
 
     // 2) 픽토그램 — 무엇을 파는가
     if (layout.pict) {
       const L = local(pu, pv, layout.pict);
       if (L) {
         const pi = pictInk(trade + seed, L[0], L[1]);
-        if (pi) put(o, glyph, pi, sl);
+        if (pi) ink(o, glyph, pi, sl);
         return;
       }
     }
@@ -341,7 +414,7 @@ function signPainter(seed, scheme, layout, size) {
       const B = layout.latin[i];
       const L = local(pu, pv, B);
       if (L) {
-        if (latinInk(seed + 13 * (i + 1), L[0], L[1], B[4])) put(o, edge, 1, sl);
+        if (latinInk(seed + 13 * (i + 1), L[0], L[1], B[4])) ink(o, edge, 1, sl);
         return;
       }
     }
@@ -359,7 +432,7 @@ function signPainter(seed, scheme, layout, size) {
 
     const id = (hash2(cx * 7 + seed, cy * 13 + seed) * 4096) | 0;
     if (!glyphInk(id, fx, fy)) return;
-    put(o, glyph, 2, sl);
+    ink(o, glyph, 2, sl);
   };
 }
 
@@ -368,7 +441,7 @@ function signPainter(seed, scheme, layout, size) {
 
 // 가로 배너 (점포 위, 처마 밑). pu 0..4 · pv 0..1
 // 픽토그램 왼쪽 정사각, 큰 글자 넉 자, 아래 라틴 줄.
-export function bannerTextures(seed, scheme) {
+export function bannerTextures(seed, scheme, style) {
   const size = [512, 128];
   return bake(size, 1, 1, signPainter(seed, scheme, {
     margin: 0.06, tube: 0.020,
@@ -376,12 +449,12 @@ export function bannerTextures(seed, scheme) {
     glyphBox: [1.02, 0.06, 2.86, 0.58],
     cells: [4, 1],
     latin: [[1.02, 0.68, 2.86, 0.22, 15]],
-  }, size), { emissive: true });
+  }, size, style), { emissive: true });
 }
 
 // 세로 간판 (벽에서 직각으로 돌출). pu 0..1 · pv 0..6
 // 위 픽토그램, 가운데 문자 스택, 아래 라틴 — 레퍼런스의 세로 간판 문법.
-export function bladeTextures(seed, scheme) {
+export function bladeTextures(seed, scheme, style) {
   const size = [128, 768];
   return bake(size, 1, 1, signPainter(seed, scheme, {
     margin: 0.06, tube: 0.020,
@@ -389,12 +462,12 @@ export function bladeTextures(seed, scheme) {
     glyphBox: [0.06, 1.05, 0.88, 4.30],
     cells: [1, 4],
     latin: [[0.10, 5.48, 0.80, 0.38, 6]],
-  }, size), { emissive: true });
+  }, size, style), { emissive: true });
 }
 
 // 대형 광고판 (타워 벽면). pu 0..1 · pv 0..1
 // 글자를 크게 잡고 라틴 두 줄로 위계를 만든다.
-export function billboardTextures(seed, scheme) {
+export function billboardTextures(seed, scheme, style) {
   const size = [512, 512];
   return bake(size, 1, 1, signPainter(seed, scheme, {
     margin: 0.045, tube: 0.013,
@@ -405,7 +478,7 @@ export function billboardTextures(seed, scheme) {
       [0.08, 0.52, 0.84, 0.13, 15],
       [0.08, 0.70, 0.58, 0.08, 21],
     ],
-  }, size), { emissive: true });
+  }, size, style), { emissive: true });
 }
 
 // ── 새 유형 셋 (사용자 지적) ───────────────────────────────────────────────
@@ -425,7 +498,7 @@ export function billboardTextures(seed, scheme) {
 
 // 전광판 띠 — 흐르는 문자열. 픽토그램 없이 글자만 길게 간다.
 // 실제로도 이런 띠에는 그림이 안 들어간다 — 한 줄로 흐르는 글자가 전부다.
-export function stripTextures(seed, scheme) {
+export function stripTextures(seed, scheme, style) {
   const size = [1024, 64];
   return bake(size, 1, 1, signPainter(seed, scheme, {
     margin: 0.09, tube: 0.028,
@@ -433,32 +506,32 @@ export function stripTextures(seed, scheme) {
     glyphBox: [0.55, 0.14, 6.4, 0.72],
     cells: [8, 1],
     latin: [[7.4, 0.22, 8.1, 0.30, 44]],
-  }, size), { emissive: true });
+  }, size, style), { emissive: true });
 }
 
 // 상자간판 — 벽에서 튀어나온 입방체. 텍스처는 정사각이고 **세 면에 같은 것**이
 // 붙는다. 옆에서 걸어와도 읽히는 것이 이 유형의 값어치다.
-export function boxTextures(seed, scheme) {
+export function boxTextures(seed, scheme, style) {
   const size = [256, 256];
   return bake(size, 1, 1, signPainter(seed, scheme, {
     margin: 0.08, tube: 0.026,
     pict: [0.20, 0.10, 0.60, 0.44],
     glyphBox: [0.10, 0.60, 0.80, 0.30],
     cells: [2, 1],
-  }, size), { emissive: true });
+  }, size, style), { emissive: true });
 }
 
 // 천 배너 — 세로로 긴 천. 봉에 매달려 있어 아래가 흔들린다.
 // 발광이 약하다 — 천은 스스로 빛나지 않고 뒤에서 비추는 것이라, 이 하나만
 // 어둡게 두면 네온 사이에서 오히려 눈에 띈다.
-export function clothTextures(seed, scheme) {
+export function clothTextures(seed, scheme, style) {
   const size = [128, 512];
   return bake(size, 1, 1, signPainter(seed, scheme, {
     margin: 0.10, tube: 0.016,
     glyphBox: [0.12, 0.30, 0.76, 2.90],
     cells: [1, 3],
     latin: [[0.14, 3.36, 0.72, 0.30, 5]],
-  }, size), { emissive: true });
+  }, size, style), { emissive: true });
 }
 
 // ── 초대형 인물 광고판 ─────────────────────────────────────────────────────

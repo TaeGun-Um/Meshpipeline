@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { MeshBuilder } from '../../core/builder.js';
 import { outward, faceAnchor, alongZ } from '../../core/boxfaces.js';
 import { SIGN_SCHEMES, rgb01 } from '../../shared/neon.js';
+import { hash2 } from '../../core/textures.js';
 
 const STANDOFF = 0.3;
 
@@ -229,6 +230,26 @@ function layoutSigns(reqs) {
   return out;
 }
 
+// ── 어느 판을 쓸 것인가 ────────────────────────────────────────────────────
+//
+// 배색은 요청이 고르고(`req.scheme`), **화법은 자리가 고른다.**
+//
+// 화법까지 난수로 뽑으면 소비량이 늘어 도시 전체가 다시 뽑힌다 (2.1 규칙 6).
+// 좌표 해시로 정하면 그 자리의 간판은 늘 같은 화법이고, 옆 간판과는 갈린다 —
+// 한 벽에 라이트박스와 네온관이 섞이는 것이 실제 거리의 모습이기도 하다.
+//
+// 색인 규칙은 materials.js 가 배열을 편 순서와 **짝**이다: 화법 * 배색수 + 배색.
+function signMat(mats, req, f) {
+  const arr = mats.signMats[req.kind];
+  const { styles, schemes } = mats.signVariants[req.kind];
+  // 요청은 배색을 0..5 로 고른다. 종류에 따라 굽는 배색이 그보다 적으므로
+  // 여기서 접는다 — 요청 쪽에서 접게 하면 여섯 생산자가 각자 알아야 한다.
+  const col = req.scheme % schemes;
+  if (styles <= 1) return arr[col];
+  const h = hash2(Math.round(f.x * 2) + req.kind.length * 17, Math.round(f.z * 2) + Math.round(req.y));
+  return arr[Math.min(styles - 1, Math.floor(h * styles)) * schemes + col];
+}
+
 // 간판이 붙는 면의 좌표 틀
 function frameOf(req) {
   const a = faceAnchor(req.rect, req.side);
@@ -263,7 +284,7 @@ function frameOf(req) {
 // 그러니 벽에서 얼마나 나와 붙는지를 생산자가 말할 수 있게 한다.
 function flatSign(b, req, mats) {
   const f = frameOf(req);
-  const mat = mats.signMats[req.kind][req.scheme];
+  const mat = signMat(mats, req, f);
   const cy = req.y + req.h / 2;
   const off = req.standoff ?? 0;
 
@@ -288,7 +309,7 @@ function flatSign(b, req, mats) {
 // 튀어나온 간판은 측면에서도 줄줄이 보여 거리에 리듬이 생긴다.
 function bladeSign(b, req, mats) {
   const f = frameOf(req);
-  const mat = mats.signMats.blade[req.scheme];
+  const mat = signMat(mats, req, f);
   const out = req.w; // 벽에서 튀어나오는 길이 = 간판 폭
   // ── 벽에서 얼마나 떨어져 매다는가 ──────────────────────────────────────
   // 기본은 벽에 붙인다. 그런데 적층 상가는 층마다 외부 복도가 1.5m 나와
@@ -341,7 +362,7 @@ function bladeSign(b, req, mats) {
 // 된다 — 그래서 모퉁이와 출입구 위에 어울린다.
 function boxSign(b, req, mats) {
   const f = frameOf(req);
-  const mat = mats.signMats.box[req.scheme];
+  const mat = signMat(mats, req, f);
   const D = Math.min(req.w * 0.55, 1.1); // 튀어나오는 깊이
   const cy = req.y + req.h / 2;
   const cx = f.x + f.ox * (D / 2 + 0.1);
@@ -385,7 +406,7 @@ function boxSign(b, req, mats) {
 // 아래가 갈라져 있어 천이라는 것이 읽힌다.
 function clothSign(b, req, mats) {
   const f = frameOf(req);
-  const mat = mats.signMats.cloth[req.scheme];
+  const mat = signMat(mats, req, f);
   const cy = req.y + req.h / 2;
   const d = 0.5; // 벽에서 떨어진 거리 — 천이라 벽에 붙지 않는다
 
