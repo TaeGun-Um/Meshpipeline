@@ -95,6 +95,59 @@ const tally = (k, r, top) => {
 //
 // 시장과 암거래가 공유하는 최소 단위. 상판 + 다리 + 그 위에 쌓인 물건.
 // 물건이 없으면 그냥 탁자다.
+// ── 좌판 유형 다섯 (사용자 지시로 새로 만듦) ───────────────────────────────
+//
+// "아케이드 새로 만든거 내부는, 뭐 군대인지 일렬로 만들어놨는데, 누가 매장을
+//  저런식으로 전시하는지? 죄다 똑같은 탁자를 인테리어 특성없이 일렬로
+//  나열해놨는데 이게 내부 구조가 맞나? 인테리어좀 해라"
+//
+// 맞았다. 좌판이 **한 종류**였다 — 같은 높이의 탁자를 같은 폭으로 잘라 두 줄로
+// 세웠다. 그 위 물건만 네 가지로 섞어 봐야, 멀리서 보이는 것은 똑같은 탁자가
+// 늘어선 줄이다. 유형을 안 늘리고 소품만 늘린 것이 실수였다.
+//
+// 시장이 시장으로 보이는 이유는 **파는 물건마다 가구가 다르기** 때문이다.
+// 생선은 얼음판에, 옷은 봉에, 국수는 카운터에, 부품은 부스 안에 있다.
+//
+//   table   좌판 — 낮은 탁자에 물건을 벌여 놓는다 (지금까지의 것)
+//   hang    행거 — 가구가 없다. 봉에 천이 줄줄이 걸린다. **키가 큰 덩어리**
+//   noodle  조리대 — 높은 카운터 + 스툴 + 후드. 사람이 **앉는** 유일한 것
+//   crate   매대 — 탁자 없이 바닥에 상자를 쌓고 그 위에 판다. 낮고 어지럽다
+//   booth   부스 — 사방이 막힌 칸에 창 하나. 환전·부품·정보
+//
+// 높이가 갈리는 것이 핵심이다: crate 0.7 · table 0.9 · noodle 1.6 · booth 2.3 ·
+// hang 2.0. 눈높이에서 이 들쭉날쭉함이 곧 "시장" 이다.
+const STALL_KINDS = ['table', 'hang', 'noodle', 'crate', 'booth'];
+
+// 난수는 칸마다 **똑같이 열둘**을 뽑는다. 유형마다 다르게 뽑으면 소비량이
+// 갈려 도시 전체가 다시 뽑힌다 (docs/status.md 2.1 규칙 6). 뽑아 두고 골라 쓴다.
+const ROLLS = 12;
+const rr = (R, i, lo, hi) => lo + R[i % ROLLS] * (hi - lo);
+const ri = (R, i, lo, hi) => Math.min(hi, lo + Math.floor(R[i % ROLLS] * (hi - lo + 1)));
+
+// 매다는 간판 — 다섯 유형이 다 쓴다. 업종은 이것이 말한다
+function stallSign(b, x, y, z, w, d, R, mats) {
+  const sign = mats.signMats.banner[ri(R, 9, 0, mats.signMats.banner.length - 1)];
+  const flat = w >= d;
+  const sw = (flat ? w : d) * 0.82;
+  b.add(autoBox(flat ? sw : 0.08, 0.5, flat ? 0.08 : sw, [x, y, z], 0.02), sign);
+  for (const sg of [-1, 1]) {
+    b.box(0.03, 0.42, 0.03,
+      [flat ? x + sg * sw * 0.42 : x, y + 0.46, flat ? z : z + sg * sw * 0.42], mats.cableMat);
+  }
+}
+
+// 미리 뽑아 둔 열둘을 rng 처럼 쓰게 감싼다. 좌판은 시장 통로에서도 쓰이고
+// (소비량이 유형마다 같아야 한다) 암거래에서도 쓰이므로 (거기는 rng 를 그대로
+// 쓴다), **뽑는 곳만 갈아 끼운다.** 본문을 복사하면 반드시 어긋난다.
+function rollsOf(R) {
+  let i = 0;
+  return {
+    int: (lo, hi) => ri(R, i++, lo, hi),
+    range: (lo, hi) => rr(R, i++, lo, hi),
+    chance: (p) => rr(R, i++, 0, 1) < p,
+  };
+}
+
 function stall(b, x, z, w, d, rng, mats, lit) {
   const Y = CURB_HEIGHT;
   const H = 0.86;
@@ -173,6 +226,159 @@ function stall(b, x, z, w, d, rng, mats, lit) {
   // 좌판등 — 켜진 좌판만. 시장은 전부 켜져 있고 암거래는 드물다
   if (lit) {
     b.box(w * 0.7, 0.06, 0.1, [x, Y + 1.95, z], neonSoft(NEON.warm));
+  }
+}
+
+// ── 행거 ───────────────────────────────────────────────────────────────────
+// 가구가 없다. 봉 두 단에 천이 줄줄이 걸려 **면이 아니라 술(fringe)** 로
+// 보인다. 탁자만 늘어선 줄에서 이것 하나가 결을 바꾼다.
+function stallHang(b, x, z, w, d, fx, fz, R, mats) {
+  const Y = CURB_HEIGHT;
+  const flat = w >= d;
+  const L = (flat ? w : d) - 0.3;
+  // 세로 기둥 둘 + 가로 봉 두 단
+  for (const sg of [-1, 1]) {
+    b.box(0.08, 2.1, 0.08,
+      [flat ? x + sg * L / 2 : x, Y + 1.05, flat ? z : z + sg * L / 2], mats.metalMat);
+  }
+  for (const [hy, k] of [[1.95, 0], [1.15, 4]]) {
+    b.add(tubeBetween(
+      flat ? [x - L / 2, Y + hy, z] : [x, Y + hy, z - L / 2],
+      flat ? [x + L / 2, Y + hy, z] : [x, Y + hy, z + L / 2], 0.04, 6), mats.metalMat);
+    // 걸린 천 — 폭과 길이가 제각각이라야 옷더미로 읽힌다
+    const n = Math.max(3, Math.round(L / 0.42));
+    for (let i = 0; i < n; i++) {
+      const t = -L / 2 + (L / n) * (i + 0.5);
+      const cw = rr(R, i + k, 0.24, 0.38);
+      const ch = rr(R, i + k + 1, 0.55, 1.0);
+      b.add(autoBox(flat ? cw : 0.1, ch, flat ? 0.1 : cw,
+        [flat ? x + t : x, Y + hy - ch / 2 - 0.06, flat ? z : z + t], 0.02),
+        i % 3 === 0 ? mats.tarpMat : mats.stallMats[i % mats.stallMats.length]);
+    }
+  }
+  stallSign(b, x, Y + 2.42, z, w, d, R, mats);
+  b.box(w * 0.6, 0.05, d * 0.6, [x + fx * 0.1, Y + 2.15, z + fz * 0.1], neonSoft(NEON.cool));
+}
+
+// ── 조리대 ─────────────────────────────────────────────────────────────────
+// 시장에서 **사람이 앉는** 유일한 자리다. 카운터가 높고(1.05) 스툴이 앞에
+// 나와 있어, 통로에서 보면 등받이 없는 동그란 것들이 줄지어 보인다.
+// 위에는 후드가 걸려 김을 빨아들인다 — 그 실루엣이 국숫집의 표식이다.
+function stallNoodle(b, x, z, w, d, fx, fz, R, mats) {
+  const Y = CURB_HEIGHT;
+  const flat = w >= d;
+  const L = (flat ? w : d) - 0.4;
+  const CH = 1.05;
+  // 카운터 — 두꺼운 상판 + 앞치마
+  b.add(autoBox(flat ? L : 0.8, 0.12, flat ? 0.8 : L, [x, Y + CH, z], 0.02), mats.plywoodMat);
+  b.add(autoBox(flat ? L : 0.6, CH, flat ? 0.6 : L,
+    [x - fx * 0.1, Y + CH / 2, z - fz * 0.1], 0.02), mats.tileWallMat);
+  // 스툴 — 통로 쪽으로 나온다
+  const stools = Math.max(2, Math.round(L / 0.75));
+  for (let i = 0; i < stools; i++) {
+    const t = -L / 2 + (L / stools) * (i + 0.5);
+    const sx = (flat ? x + t : x) + fx * 0.78;
+    const sz = (flat ? z : z + t) + fz * 0.78;
+    b.cylinder(0.05, 0.05, 0.6, [sx, Y + 0.3, sz], mats.metalMat, 6);
+    b.cylinder(0.17, 0.17, 0.07, [sx, Y + 0.63, sz], mats.rustMat, 8);
+  }
+  // 조리 화구와 냄비 — 카운터 안쪽
+  for (let i = 0; i < 2; i++) {
+    const t = (i - 0.5) * L * 0.4;
+    const px = (flat ? x + t : x) - fx * 0.22;
+    const pz = (flat ? z : z + t) - fz * 0.22;
+    b.cylinder(0.22, 0.24, 0.3, [px, Y + CH + 0.21, pz], mats.metalMat, 10);
+    // ── 김은 만들지 않는다 (실측으로 두 번 고쳤다) ──────────────────────
+    //
+    // 처음에 반지름 0.16~0.30 짜리 공 셋을 쌓았더니 발광 재질이 불투명이라
+    // **베이지색 버섯**이 카운터마다 두 개씩 솟았다. 원뿔로 바꿨더니 이번엔
+    // **공사장 라바콘**이 됐다.
+    //
+    // 당연하다. 김은 형태가 없는 것이고, 이 파이프라인에는 반투명이 없다.
+    // 없는 것을 불투명한 덩어리로 흉내 내면 늘 다른 물건이 된다
+    // (docs/status.md 2.1 규칙 8 과 같은 종류다 — 이름이 아니라 결과를 본다).
+    //
+    // 뜨겁다는 것은 **국물이 빛나는 것**으로 말한다. 냄비 아가리에 얇은
+    // 발광 원반 하나. 아래에서 김이 오르는 대신 위로 빛이 새어 나온다.
+    b.cylinder(0.2, 0.2, 0.04, [px, Y + CH + 0.37, pz], mats.glowWarm, 10);
+  }
+  // 후드 — 위에서 내려온다. 이 실루엣이 국숫집이다
+  b.add(autoBox(flat ? L : 1.0, 0.5, flat ? 1.0 : L, [x, Y + 2.35, z], 0.03), mats.ductMat);
+  b.cylinder(0.16, 0.16, 1.2, [x, Y + 3.1, z], mats.ductMat, 8);
+  // 카운터 밑 등 — 앉은 사람 얼굴을 아래에서 비춘다
+  b.box(flat ? L : 0.1, 0.06, flat ? 0.1 : L,
+    [x + fx * 0.42, Y + CH + 0.02, z + fz * 0.42], neonSoft(NEON.amber));
+  stallSign(b, x, Y + 2.0, z, w, d, R, mats);
+}
+
+// ── 매대 ───────────────────────────────────────────────────────────────────
+// 탁자가 없다. 상자를 층층이 쌓아 그 자체가 진열대다. 낮고 어지러워서,
+// 옆의 부스·행거와 나란히 놓이면 높이 차가 크게 읽힌다.
+function stallCrate(b, x, z, w, d, fx, fz, R, mats) {
+  const Y = CURB_HEIGHT;
+  const cols = Math.max(2, Math.round(Math.max(w, d) / 0.8));
+  const flat = w >= d;
+  const L = (flat ? w : d) - 0.3;
+  for (let i = 0; i < cols; i++) {
+    const t = -L / 2 + (L / cols) * (i + 0.5);
+    const cx = flat ? x + t : x;
+    const cz = flat ? z : z + t;
+    // 두세 층으로 쌓되 층마다 어긋나게 — 반듯하면 화물이다
+    const stack = ri(R, i, 2, 3);
+    for (let k = 0; k < stack; k++) {
+      const cw = rr(R, i + k + 2, 0.5, 0.72);
+      const jx = rr(R, i + k + 5, -0.07, 0.07);
+      b.add(autoBox(cw, 0.34, cw * 0.82, [cx + jx, Y + 0.17 + k * 0.35, cz], 0.02),
+        k % 2 ? mats.crateMat : mats.crateAltMat);
+    }
+    // 맨 위 물건 — 비스듬히 기울인 판에 벌여 놓은 것
+    const top = Y + 0.17 + stack * 0.35;
+    b.add(autoBox(0.62, 0.09, 0.5, [cx, top, cz], 0.02),
+      mats.stallMats[i % mats.stallMats.length]);
+    for (let g = 0; g < 3; g++) {
+      b.sphere(rr(R, i + g + 7, 0.07, 0.12),
+        [cx + (g - 1) * 0.17, top + 0.12, cz + rr(R, g, -0.1, 0.1)], mats.bagMat);
+    }
+  }
+  // 값 널판 — 매대 앞에 비스듬히 세운 판
+  b.add(autoBox(flat ? L * 0.5 : 0.06, 0.34, flat ? 0.06 : L * 0.5,
+    [x + fx * (d / 2 + 0.1), Y + 0.9, z + fz * (w / 2 + 0.1)], 0.02),
+    mats.stallMats[1 % mats.stallMats.length]);
+  stallSign(b, x, Y + 1.85, z, w, d, R, mats);
+}
+
+// ── 부스 ───────────────────────────────────────────────────────────────────
+// 사방이 막힌 칸에 창 하나. 환전·부품·정보처럼 **물건을 안 벌여 놓는** 가게다.
+// 시장 안에서 유일하게 속이 안 보이는 것이라, 늘어선 줄에 마침표를 찍는다.
+function stallBooth(b, x, z, w, d, fx, fz, R, mats, closed) {
+  const Y = CURB_HEIGHT;
+  const H = 2.3;
+  b.add(autoBox(w, H, d, [x, Y + H / 2, z], 0.03), mats.tileWallMat);
+  const flat = w >= d;
+  const ww = (flat ? w : d) * 0.72;
+  // 앞 창 — 닫힌 칸은 셔터다. 몇 칸은 닫혀 있어야 열린 칸이 읽힌다
+  b.box(flat ? ww : 0.1, closed ? 1.5 : 1.0, flat ? 0.1 : ww,
+    [x + fx * (d / 2 + 0.05), Y + (closed ? 1.35 : 1.55), z + fz * (w / 2 + 0.05)],
+    closed ? mats.shutterMat : mats.interiorMats[ri(R, 3, 0, mats.interiorMats.length - 1)]);
+  // 창턱 — 돈과 물건이 오가는 자리
+  if (!closed) {
+    b.add(autoBox(flat ? ww + 0.2 : 0.32, 0.09, flat ? 0.32 : ww + 0.2,
+      [x + fx * (d / 2 + 0.12), Y + 1.02, z + fz * (w / 2 + 0.12)], 0.02), mats.metalMat);
+  }
+  // 지붕 테 — 부스가 상자로 안 보이게
+  b.box(w + 0.16, 0.1, d + 0.16, [x, Y + H + 0.05, z], mats.frameMat);
+  stallSign(b, x, Y + 2.72, z, w, d, R, mats);
+}
+
+// 유형 하나로 모은다. 난수는 **바깥에서 열둘 뽑아** 넘긴다 — 유형마다
+// 다르게 뽑으면 소비량이 갈려 도시가 다시 뽑힌다.
+function stallCell(b, kind, x, z, w, d, fx, fz, R, rng, mats) {
+  switch (kind) {
+    case 'hang': return stallHang(b, x, z, w, d, fx, fz, R, mats);
+    case 'noodle': return stallNoodle(b, x, z, w, d, fx, fz, R, mats);
+    case 'crate': return stallCrate(b, x, z, w, d, fx, fz, R, mats);
+    case 'booth': return stallBooth(b, x, z, w, d, fx, fz, R, mats, R[6] < 0.28);
+    default: return stall(b, x, z, w, d, rollsOf(R), mats, true);
   }
 }
 
@@ -447,25 +653,125 @@ function arcade(b, r, rng, mats, signs, pools) {
   //
   // 좌판은 등뼈에만 놓는다. 벽 쪽은 이미 점포 전면(marketStall)이 맡는다 —
   // 양쪽에 다 놓으면 통로가 사라진다.
+  //
+  // ── 그런데도 "군대" 였다 (사용자 재지적) ────────────────────────────────
+  //
+  // *"뭐 군대인지 일렬로 만들어놨는데 (…) 죄다 똑같은 탁자를 인테리어
+  //  특성없이 일렬로 나열해놨는데"*
+  //
+  // 등뼈와 교차로를 만들어 놓고도 그랬다. 남은 두 가지 때문이다.
+  //
+  //   1) 좌판이 **한 종류**였다 — 같은 높이의 탁자 하나 (STALL_KINDS 로 다섯)
+  //   2) 칸을 **똑같은 폭으로** 잘랐다 — `segLen2 / cells` 라 자로 잰 듯 같다
+  //
+  // 둘째가 특히 컸다. 유형을 아무리 섞어도 폭이 같으면 격자로 보인다.
+  // 그래서 폭을 좌표 해시로 흔들고, 한 칸이 큰 가게가 되기도 하게 둔다.
+  // 그리고 **두 줄의 칸 경계를 어긋나게** 한다 — 마주 보는 두 줄의 칸이
+  // 딱 맞으면 그 자체가 격자다.
   const SPINE = wid * 0.30;                       // 등뼈 폭
   const groups = Math.max(2, Math.round(len / 16)); // 교차로로 끊긴 토막 수
   const CROSS = 3.2;                              // 교차 통로 폭
   const segLen2 = (len - CROSS * (groups - 1)) / groups;
+  const hseed = Math.round(r.x0) * 31 + Math.round(r.z0);
   for (let gI = 0; gI < groups; gI++) {
     const g0 = -len / 2 + (segLen2 + CROSS) * gI;
-    const cells = Math.max(2, Math.round(segLen2 / 3.2));
-    for (let i = 0; i < cells; i++) {
-      const t = g0 + (segLen2 / cells) * (i + 0.5);
-      // 등을 맞댄 두 줄 — 가운데를 향해 등, 통로를 향해 앞
-      for (const sg of [-1, 1]) {
+    // 등을 맞댄 두 줄 — 가운데를 향해 등, 통로를 향해 앞.
+    // 줄마다 따로 자른다. 그래야 마주 보는 칸 경계가 안 맞는다
+    for (const sg of [-1, 1]) {
+      let acc = 0;
+      for (let i = 0; acc < segLen2 - 1.6 && i < 24; i++) {
+        const h = hash2(hseed + gI * 71 + i * 13 + (sg > 0 ? 517 : 0), hseed + i * 7);
+        const cw = Math.min(2.0 + h * 3.0, segLen2 - acc);   // 2.0~5.0m
+        const t = g0 + acc + cw / 2;
+        acc += cw;
+        // 유형 — 좌표 해시로. 난수로 뽑으면 도시가 다시 뽑힌다
+        const hk = hash2(hseed + i * 197 + gI * 29 + (sg > 0 ? 83 : 0), hseed + 401);
+        const kind = STALL_KINDS[Math.min(STALL_KINDS.length - 1,
+          Math.floor(hk * STALL_KINDS.length))];
+        // 난수는 유형과 무관하게 **칸마다 열둘**. 소비량이 갈리면 안 된다
+        const R = [];
+        for (let k = 0; k < ROLLS; k++) R.push(rng.next());
         const sx = alongX ? c.x + t : c.x + sg * (SPINE / 2);
         const sz = alongX ? c.z + sg * (SPINE / 2) : c.z + t;
-        stall(b, sx, sz,
-          alongX ? segLen2 / cells - 0.5 : SPINE / 2 - 0.3,
-          alongX ? SPINE / 2 - 0.3 : segLen2 / cells - 0.5,
-          rng, mats, true);
+        // 깊이도 칸마다 조금씩 다르다. 등뼈 바깥선이 자로 그은 듯하면 안 된다
+        const dep = SPINE / 2 - 0.3 - h * 0.35;
+        stallCell(b, kind, sx, sz,
+          alongX ? cw - 0.45 : dep, alongX ? dep : cw - 0.45,
+          alongX ? 0 : sg, alongX ? sg : 0, R, rng, mats);
       }
     }
+    // ── 통로 바닥 ───────────────────────────────────────────────────────
+    //
+    // 좌판만 놓고 통로를 비워 두면 **전시장**이지 시장이 아니다. 장사하는
+    // 곳의 바닥에는 늘 재고와 빈 상자와 손수레가 나와 있고, 그것들이
+    // 통로를 좁혀 사람이 비켜 다니게 만든다. 그 좁아짐이 곧 붐빔이다.
+    //
+    // 좌판 앞 통로 쪽에만 놓는다 — 가운데에 놓으면 길을 막는다.
+    for (const sg of [-1, 1]) {
+      const props = Math.max(2, Math.round(segLen2 / 7));
+      for (let i = 0; i < props; i++) {
+        const hp = hash2(hseed + gI * 137 + i * 53 + (sg > 0 ? 911 : 0), hseed + i * 19);
+        if (hp < 0.34) continue;                       // 다 놓으면 그것도 격자다
+        const t = g0 + segLen2 * ((i + 0.5) / props + (hp - 0.5) * 0.14);
+        const off = SPINE / 2 + 0.5 + hp * 0.5;
+        const px = alongX ? c.x + t : c.x + sg * off;
+        const pz = alongX ? c.z + sg * off : c.z + t;
+        if (hp < 0.58) {
+          // 빈 상자 더미 — 두세 개를 어긋나게
+          for (let k = 0; k < 2 + Math.round(hp); k++) {
+            const s2 = 0.42 + hp * 0.18;
+            b.add(autoBox(s2, 0.3, s2 * 0.8,
+              [px + (k % 2 ? 0.09 : -0.06), Y + 0.15 + k * 0.31, pz + (k % 2 ? -0.05 : 0.07)], 0.02),
+              k % 2 ? mats.crateMat : mats.crateAltMat);
+          }
+        } else if (hp < 0.8) {
+          // 자루 더미 — 상자와 실루엣이 갈린다
+          for (let k = 0; k < 3; k++) {
+            b.add(lathe([[0.24, 0], [0.26, 0.14], [0.16, 0.36], [0.09, 0.46]], 8,
+              [px + (k - 1) * 0.3, Y + 0.03, pz + (k === 1 ? 0.22 : 0)]), mats.bagMat);
+          }
+        } else {
+          // 손수레 — 바퀴 둘과 손잡이. 이것 하나로 "짐이 오간다" 가 된다
+          b.add(autoBox(0.9, 0.1, 0.6, [px, Y + 0.52, pz], 0.02), mats.plywoodMat);
+          for (const s2 of [-1, 1]) {
+            b.cylinder(0.22, 0.22, 0.08, [px + s2 * 0.36, Y + 0.24, pz + 0.24], mats.rustMat, 10);
+          }
+          b.add(tubeBetween([px - 0.4, Y + 0.57, pz - 0.28], [px - 0.4, Y + 1.0, pz - 0.28], 0.04, 5),
+            mats.metalMat);
+          b.add(tubeBetween([px + 0.4, Y + 0.57, pz - 0.28], [px + 0.4, Y + 1.0, pz - 0.28], 0.04, 5),
+            mats.metalMat);
+        }
+      }
+    }
+
+    // 전구 줄 — 통로를 가로질러 늘어진다. 위를 올려다봤을 때 천장이
+    // 비어 있으면 아무리 아래를 채워도 창고로 보인다
+    {
+      const strands = Math.max(1, Math.round(segLen2 / 9));
+      for (let i = 0; i < strands; i++) {
+        const t = g0 + (segLen2 / strands) * (i + 0.5);
+        const ax = alongX ? c.x + t : c.x - wid / 2 + 1.2;
+        const az = alongX ? c.z - wid / 2 + 1.2 : c.z + t;
+        const bx = alongX ? ax : c.x + wid / 2 - 1.2;
+        const bz = alongX ? c.z + wid / 2 - 1.2 : az;
+        const bulbs = 7;
+        for (let k = 0; k <= bulbs; k++) {
+          const f = k / bulbs;
+          const sag = Math.sin(f * Math.PI) * 0.5;    // 늘어짐
+          const lx = ax + (bx - ax) * f;
+          const lz = az + (bz - az) * f;
+          if (k < bulbs) {
+            const f2 = (k + 1) / bulbs;
+            b.add(tubeBetween(
+              [lx, Y + 3.9 - sag, lz],
+              [ax + (bx - ax) * f2, Y + 3.9 - Math.sin(f2 * Math.PI) * 0.5, az + (bz - az) * f2],
+              0.02, 4), mats.cableMat);
+          }
+          if (k > 0 && k < bulbs) b.sphere(0.09, [lx, Y + 3.78 - sag, lz], neon(NEON.warm));
+        }
+      }
+    }
+
     // 토막 끝의 등 기둥 — 교차로가 어디인지 알려 준다
     if (gI < groups - 1) {
       const t = g0 + segLen2 + CROSS / 2;
