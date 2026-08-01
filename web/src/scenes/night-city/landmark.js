@@ -13,8 +13,9 @@
 import * as THREE from 'three';
 import { MeshBuilder } from '../../core/builder.js';
 import {
-  SIDES, shrink, rectBox, facePlane, upPlane, downPlane, rectSize,
+  SIDES, shrink, rectBox, facePlane, upPlane, downPlane, rectSize, faceFrame,
 } from '../../core/boxfaces.js';
+import { applySkin } from './facade.js';
 import { lathe, autoBox, tubeBetween } from '../../core/profile.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon, neonSoft } from '../../shared/masters.js';
@@ -26,6 +27,16 @@ import {
   PANEL_TILE,
 } from './layout.js';
 import { districtAt } from './district.js';
+import { hash2 } from '../../core/textures.js';
+import { HOME_FLOOR } from './housing.js';
+
+// ── 면에 텍스처를 붙일 때의 타일 ───────────────────────────────────────────
+//
+// `facePlane` 은 다섯 번째 인자가 없으면 **UV 를 판 크기에 맞춘다.** 그러면
+// 54m x 0.9m 짜리 띠에 패널 텍스처 한 장이 통째로 늘어난다. `rectBox` 는
+// `PANEL_TILE` 스칼라를 받지만 `facePlane` 은 [가로m, 세로m] 쌍을 받으므로
+// 여기서 한 번만 짝지어 둔다 — 두 곳에서 따로 적으면 그게 결합 오류다.
+const TILE2 = [PANEL_TILE, PANEL_TILE];
 
 // 랜드마크가 차지하는 블록. towers.js 는 이 블록을 건너뛴다.
 //
@@ -104,6 +115,24 @@ export const LANDMARK_BLOCKS = [
   //   것이 일이므로, 번화가 두 덩어리 사이에서 보이는 편이 낫다.
   { ix: 8, iz: 6, kind: 'neon' },
   { ix: 10, iz: 5, kind: 'hall' },
+  // ── 주거에도 랜드마크가 필요하다 (사용자 지시) ──────────────────────────
+  // *"주택가에도 뭔가 랜드마크같은게 있을 순 없을까, 사이버펑크 2077의
+  //  메가타워같은거 말이야"*
+  //
+  // 주거는 34블록으로 도시에서 가장 넓은데 랜드마크가 없었다. 그리고 형태
+  // 원리가 "빨리, 똑같이" 라 **가장 심하게 길을 잃는 곳**이다.
+  //
+  // 주거는 두 덩이로 나뉜다.
+  //   서쪽  ix 1~5 · iz 0~3   20블록. 슬래브 단지가 끝없이 반복되는 벌판
+  //   중앙  ix 6~7 · iz 5~11  14블록. 두 칸 폭의 띠
+  //
+  // 서쪽에 둔다 — 넓고, 주변에 랜드마크가 하나도 없다 (중앙 띠는 기업·번화가
+  // 랜드마크 넷에 둘러싸여 있다).
+  //
+  // 자리는 (3,1). 시장 대문(3,4)이 보행 통로(3,3)를 지나 북쪽을 바라보는
+  // **축의 끝**이다. 대문에 서면 통로 너머로 이것이 보인다. 랜드마크는 아무
+  // 데나 크게 세우는 것이 아니라 **이미 있는 축을 끝맺을 때** 제일 세게 읽힌다.
+  { ix: 3, iz: 1, kind: 'mega' },
 ];
 
 // 지면을 뚫어야 하는 랜드마크.
@@ -680,7 +709,9 @@ function neonTower(b, cx, cz, mats, pools) {
   for (let i = 0; i < bands; i++) {
     const y = Y + 12 + i * 3.4;
     for (const side of SIDES) {
-      b.add(facePlane(shrink(body, -0.5), y, 2.5, side, null, 0),
+      // 셔터 칸에는 타일을 준다 — 발광판(neonSoft)은 텍스처가 없어 상관없지만
+      // 셔터는 텍스처라, 안 주면 22m x 2.5m 판에 골강판 무늬가 통째로 늘어난다
+      b.add(facePlane(shrink(body, -0.5), y, 2.5, side, TILE2, 0),
         i % 7 === 5 ? mats.shutterMat : neonSoft(HUES[i % HUES.length]));
       b.add(facePlane(shrink(body, -0.9), y - 0.45, 0.45, side, null, 0.03), mats.metalMat);
     }
@@ -890,6 +921,335 @@ function undergroundHall(b, cx, cz, mats, pools) {
   return Y - DEPTH + CONE + 2;
 }
 
+// ── 7) 주거 메가빌딩 ───────────────────────────────────────────────────────
+//
+// 사용자 지시: *"주택가에도 뭔가 랜드마크같은게 있을 순 없을까,
+// 사이버펑크 2077의 메가타워같은거 말이야"*
+//
+// ── 왜 주거에 랜드마크가 필요한가 ─────────────────────────────────────────
+// 주거는 34블록으로 도시에서 가장 넓은데 랜드마크가 하나도 없었다. 그리고
+// 이 구역은 형태 원리 자체가 "빨리, 똑같이" 라 **가장 심하게 길을 잃는 곳**
+// 이다. 슬래브 단지를 아무리 잘 만들어도 그 안에서는 다 같은 그림이다.
+//
+// ── 메가빌딩은 큰 아파트가 아니다 ─────────────────────────────────────────
+// 슬래브를 그냥 키우면 큰 슬래브다. 메가빌딩은 **동네 하나가 건물 한 채에
+// 들어간 것**이고, 그래서 형태가 이렇게 갈린다.
+//
+//   1) ㄷ자 매스와 **협곡 중정**. 24m 폭에 140m 높이의 골짜기가 도시 쪽으로
+//      열려 있다. 이 하나가 "안에 사람이 산다" 를 크기로 말한다.
+//      口자로 닫으면 밖에서 안이 안 보여서 그냥 큰 상자가 된다.
+//   2) **메가프레임** — 네 모서리의 굵은 코어와 10층마다 두른 트러스 띠.
+//      구조가 밖에 나와 있어야 "한 채" 로 읽힌다. 없으면 슬래브 확대판이다.
+//   3) 중정을 가로지르는 **연결 다리**. 동과 동 사이를 사람이 오간다.
+//   4) 거대한 식별 간판. 주소가 아니라 **이름**을 가진 건물이다.
+//
+// 파사드는 도시의 슬래브 스킨을 그대로 쓴다 (`applySkin` 의 `slab`).
+// 다른 텍스처를 쓰면 "같은 도시의 주거" 가 아니라 남의 건물이 된다 —
+// 갈려야 하는 것은 표면이 아니라 **규모와 구성**이다.
+//
+// ── 자리 ───────────────────────────────────────────────────────────────────
+// (3,1). 시장 대문(3,4)이 보행 통로(3,3)를 지나 북쪽으로 바라보는 **축의
+// 끝**이다. 대문에 서면 통로 너머로 이것이 보인다. 랜드마크는 아무 데나
+// 크게 세우는 것이 아니라 이미 있는 축을 끝맺을 때 제일 세게 읽힌다
+// (번화가 대문을 경계로 옮긴 것과 같은 논리다).
+function megaBuilding(b, cx, cz, mats, pools) {
+  const Y = CURB_HEIGHT;
+  const HALF = 27;      // 몸통 반폭 (fitsBlock 이 28 로 강제한다 — 코어가 1m 나온다)
+  const WING = 15;      // 동 깊이. 도시의 슬래브 띠(14m)와 같은 어휘다
+  const PODIUM = 13;    // 기단
+  const FL = HOME_FLOOR; // 주거 슬래브와 같은 층고여야 파사드 띠가 맞는다
+  const FLOORS = 44;
+  const BODY = FLOORS * FL;
+  const TOP = Y + PODIUM + BODY;
+
+  const at = (x0, x1, z0, z1) => ({ x0: cx + x0, x1: cx + x1, z0: cz + z0, z1: cz + z1 });
+
+  // ㄷ자 세 동. **+z 가 열린 쪽**이다 — 시장 대문이 그쪽에 있다.
+  // 북쪽 동의 x 끝은 양옆 동 **안쪽에 묻는다**. 면이 딱 맞으면 창 시트 두 장이
+  // 같은 평면에서 싸워 줄무늬가 생긴다.
+  const wings = (e) => [
+    at(-HALF - e, -HALF + WING + e, -HALF - e, HALF + e),                    // 서
+    at(HALF - WING - e, HALF + e, -HALF - e, HALF + e),                      // 동
+    // 북쪽 동의 x 는 **양옆 동을 따라간다.** 고정값으로 두면 위 단이 물러설 때
+    // 옆 동만 안으로 들어가서 그 사이에 1.2m 짜리 틈이 생긴다.
+    at(-HALF + WING + e - 0.6, HALF - WING - e + 0.6, -HALF - e, -HALF + WING + e),
+  ];
+
+  // ── 기단 ─────────────────────────────────────────────────────────────────
+  //
+  // 몸통과 **같은 ㄷ자**다. 기단을 통짜로 깔면 중정이 12m 위에서 시작해
+  // 길에서는 안 보인다 — 협곡이 협곡으로 읽히려면 바닥까지 뚫려야 한다.
+  for (const w of wings(1)) {
+    b.add(rectBox(w, Y, PODIUM, PANEL_TILE), mats.panelMat);
+    for (const side of SIDES) {
+      // ── 저층 공용부 — 로비·관리실·점포 ─────────────────────────────────
+      //
+      // 주거 구역에서 유일하게 밝은 1층이다. 다만 **칸마다 점등률**을 준다.
+      // 처음에 면마다 통짜 발광판 한 장을 세웠더니 둘레 200m 가 균일하게
+      // 새하얘져서, 정작 정문이 안 보였다. 기업 기단에서 고친 것과 같다
+      // (corpo.podiumBuilding) — 이 도시가 창에 쓰는 어휘이기도 하다.
+      const f = faceFrame(shrink(w, -0.16), side);
+      const n = Math.max(3, Math.round(f.w / 3.6));
+      for (let i = 0; i < n; i++) {
+        const [gx, gz] = f.at(-f.w / 2 + (f.w / n) * (i + 0.5), 0.06);
+        const [gw, gd] = f.size((f.w / n) * 0.94, 0.16);
+        const on = hash2(Math.round(gx) * 11 + i, Math.round(gz) * 5) < 0.5;
+        b.add(autoBox(gw, 4.2, gd, [gx, Y + 2.7, gz], 0.02),
+          on ? mats.lobbyLitMat : mats.vitrineGlassMat);
+      }
+      // 멀리온 — 없으면 통짜 발광판이다
+      for (let i = 0; i <= n; i++) {
+        const [mx, mz] = f.at(-f.w / 2 + (f.w * i) / n, 0.1);
+        const [mw, md] = f.size(0.2, 0.26);
+        b.box(mw, 4.6, md, [mx, Y + 2.9, mz], mats.frameMat);
+      }
+      // 굽도리와 중간틀. **이 둘이 크기를 알려준다** — 없으면 4.2m 짜리 판이
+      // 그냥 흰 사각형이고, 사람 키가 얼마인지 화면에서 읽을 수가 없다
+      // (shopfront.entranceBay 의 중간틀과 같은 이유다).
+      const [bx, bz] = f.at(0, 0.12);
+      const [bw, bd] = f.size(f.w, 0.3);
+      b.box(bw, 0.55, bd, [bx, Y + 0.28, bz], mats.panelMat);
+      b.box(bw, 0.12, bd, [bx, Y + 2.55, bz], mats.frameMat);
+      // 기단 상부 — 설비층. 창이 없고 루버만 있다
+      b.add(facePlane(shrink(w, -0.3), Y + 6.4, PODIUM - 7.2, side, null, 0.04), mats.grateMat);
+    }
+    // 기단 처마 — 이 선이 기단과 몸통을 가른다
+    b.add(rectBox(shrink(w, -1.4), Y + PODIUM - 0.9, 0.9, PANEL_TILE), mats.panelMat);
+    b.add(rectBox(shrink(w, -1.2), Y + PODIUM - 1.3, 0.35, PANEL_TILE), neonSoft(NEON.warm));
+  }
+
+  // ── 앞마당 ───────────────────────────────────────────────────────────────
+  //
+  // 중정 바닥. 여기가 이 건물의 현관이고 광장이다. 슬래브 단지의 마당과 같은
+  // 것이지만 규모가 다르다 — 동네 하나가 이 마당 하나를 쓴다.
+  b.add(upPlane(HALF * 2 - WING * 2, HALF * 2 - WING, [cx, Y + 0.04, cz + WING / 2], [3, 5]), mats.plazaMat);
+  pools.push({ kind: 'floor', x: cx, y: Y + 0.22, z: cz + 6, rx: 20, rz: 24, tint: rgb01(NEON.warm, 0.5) });
+
+  // 정문 — 북쪽 동의 마당 쪽 면. 기단 발광 띠보다 크고 높아야 '문' 이다
+  {
+    const zf = cz - HALF + WING + 1;
+    const GW = 16, GH = 7.4;
+    b.add(autoBox(GW, GH, 0.5, [cx, Y + GH / 2, zf + 0.2], 0.04), mats.lobbyLitMat);
+    for (let i = 0; i <= 5; i++) {
+      b.box(0.26, GH, 0.3, [cx - GW / 2 + (GW * i) / 5, Y + GH / 2, zf + 0.45], mats.frameMat);
+    }
+    // 차양 — 비 오는 도시라 입구에는 늘 있다
+    b.add(autoBox(GW + 5.5, 0.5, 4.2, [cx, Y + GH + 0.6, zf + 2.2], 0.05), mats.metalMat);
+    b.add(downPlane(GW + 4.6, 3.4, [cx, Y + GH + 0.3, zf + 2.2]), mats.deckUnderMat);
+    pools.push({ kind: 'floor', x: cx, y: Y + 0.24, z: zf + 4, rx: 12, rz: 8, tint: rgb01(NEON.cool, 0.55) });
+  }
+
+  // 마당등 — 슬래브 단지와 같은 등이다 (housing.estateYard)
+  for (const sx of [-1, 1]) {
+    for (const t of [0.34, 0.72]) {
+      const lx = cx + sx * (HALF - WING) * 0.62;
+      const lz = cz - HALF + WING + (HALF * 2 - WING) * t;
+      b.cylinder(0.08, 0.1, 5.0, [lx, Y + 2.5, lz], mats.pipeMat, 6);
+      b.box(0.6, 0.18, 0.6, [lx, Y + 5.1, lz], neonSoft(0xffd28a));
+      pools.push({ kind: 'floor', x: lx, y: Y + 0.22, z: lz, rx: 7.5, rz: 7.5, tint: [0.42, 0.34, 0.2] });
+    }
+  }
+
+  // ── 몸통 ─────────────────────────────────────────────────────────────────
+  //
+  // 위에서 두 번 물러선다. 140m 를 한 덩어리로 세우면 실루엣이 벽돌 하나다.
+  const stages = [
+    { e: 0, y: Y + PODIUM, top: Y + PODIUM + BODY * 0.62 },
+    { e: -1.8, y: Y + PODIUM + BODY * 0.62, top: Y + PODIUM + BODY * 0.86 },
+    { e: -3.6, y: Y + PODIUM + BODY * 0.86, top: TOP },
+  ];
+  for (const st of stages) {
+    for (const w of wings(st.e)) {
+      const h = st.top - st.y;
+      b.add(rectBox(w, st.y, h, PANEL_TILE), mats.panelMat);
+      // 도시의 주거 슬래브와 **같은 스킨**이다. 창 + 층마다 발코니 난간 띠
+      applySkin(b, w, st.y, h, 'slab', 0, mats);
+    }
+  }
+
+  // ── 사는 흔적 ────────────────────────────────────────────────────────────
+  //
+  // 사용자 지시: *"약간 서민군상을 느낄 수 있도록 단촐한 느낌이 있어야지"*
+  //
+  // 규모만으로는 그게 안 나온다. 오히려 크고 매끈하면 기업 건물이다.
+  // **서민은 크기가 아니라 벽에 걸린 물건으로 읽힌다** — 슬래브 단지에서
+  // 쓰는 것과 같은 것들이다 (housing.balcony): 실외기 · 빨래 · 판자로 막은 칸.
+  //
+  // 아래 열두 층만 만든다. 그 위는 눈에 안 들어오고, 40m 위에 달린 실외기는
+  // 화면에서 점 하나다 (`housing.roofClutter` 가 밀도를 쓰는 것과 같은 이유).
+  {
+    const LIVE = 12;
+    const st0 = stages[0];
+    for (const w of wings(st0.e)) {
+      for (const side of SIDES) {
+        const f = faceFrame(shrink(w, -0.44), side);   // 발코니 난간 띠 앞
+        const cells = Math.max(2, Math.round(f.w / 4.4));
+        for (let fl = 1; fl <= LIVE; fl++) {
+          const y = st0.y + fl * FL;
+          for (let i = 0; i < cells; i++) {
+            const u = -f.w / 2 + (f.w / cells) * (i + 0.5);
+            const [px, pz] = f.at(u, 0.1);
+            const pick = hash2(Math.round(px) * 3 + fl, Math.round(pz) * 7 + i);
+            if (pick < 0.34) {
+              // 실외기 — 가장 흔하다
+              const [aw, ad] = f.size(0.78, 0.5);
+              b.box(aw, 0.6, ad, [px, y + 0.5, pz], mats.ductMat);
+            } else if (pick < 0.52) {
+              // 판자로 막은 칸 — 발코니를 방으로 쓴다
+              const [ww, wd] = f.size((f.w / cells) * 0.84, 0.1);
+              b.box(ww, FL - 0.5, wd, [px, y + (FL - 0.5) / 2, pz], mats.shutterMat);
+            } else if (pick < 0.66) {
+              // 빨래 — 난간에 널었다
+              const n = 3;
+              for (let k = 0; k < n; k++) {
+                const t = (k + 0.5) / n - 0.5;
+                const [wx, wz] = f.at(u + (f.w / cells) * 0.7 * t, 0.14);
+                const [ww, wd] = f.size(0.34, 0.03);
+                b.box(ww, 0.62, wd, [wx, y + 0.75, wz],
+                  mats.laundryMats[(i + fl + k) % mats.laundryMats.length]);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ── 메가프레임 ───────────────────────────────────────────────────────────
+  //
+  // 네 모서리의 코어. 바닥부터 꼭대기까지 끊기지 않고, 파사드보다 1m 튀어나온다.
+  // 이 넷이 있어야 세 동이 **한 채**로 묶인다.
+  const CORE = 5.6;
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const x = cx + sx * (HALF - CORE / 2 + 1);
+      const z = cz + sz * (HALF - CORE / 2 + 1);
+      const r = { x0: x - CORE / 2, x1: x + CORE / 2, z0: z - CORE / 2, z1: z + CORE / 2 };
+      b.add(rectBox(r, Y, TOP - Y + 3.2, PANEL_TILE), mats.panelMat);
+      // 계단참 창 — 공용부라 아무도 안 끈다. 이 세로 점선이 높이를 읽게 한다
+      for (let f = 2; f < FLOORS + 4; f += 2) {
+        const gy = Y + f * FL;
+        if (gy > TOP - 2) break;
+        for (const side of SIDES) {
+          b.add(facePlane(shrink(r, -0.06), gy, 1.1, side, null, 0.02), mats.homeLitMat);
+        }
+      }
+    }
+  }
+
+  // 트러스 띠 — 10층마다. 구조가 밖에 나와 있는 건물이라는 신호다.
+  //
+  // **불을 안 켠다.** 처음에 띠마다 청록 네온을 그었더니 기업 타워의 어휘가
+  // 되어 버렸다 (사용자 지적: *"메가타워는 너무 화려해선 안돼"*). 여기 사는
+  // 사람은 건물을 꾸밀 돈이 없다. 구조재는 구조재로만 보여야 한다.
+  for (let f = 10; f < FLOORS; f += 10) {
+    const by = Y + PODIUM + f * FL;
+    const st = stages.find((s) => by >= s.y && by < s.top) ?? stages[0];
+    for (const w of wings(st.e + 0.5)) {
+      for (const side of SIDES) {
+        // **콘크리트다.** 금속으로 두니 반사가 세서 1.5m 짜리 띠가 둘레
+        // 200m 짜리 크롬 벨트가 됐다 — 네온을 뺀 자리를 금속이 대신 차지한
+        // 셈이라 여전히 화려했다. 재료가 곧 계급이다.
+        //
+        // 타일을 준다. 안 주면 54m x 0.9m 판 하나에 패널 텍스처가 통째로
+        // 늘어난다 (facePlane 은 tile 이 없으면 UV 를 판 크기에 맞춘다).
+        b.add(facePlane(w, by, 0.9, side, TILE2, 0.03), mats.panelMat);
+      }
+    }
+  }
+
+  // ── 연결 다리 ────────────────────────────────────────────────────────────
+  //
+  // 중정을 가로질러 동과 동을 잇는다. 높이를 달리해야 사다리처럼 안 보인다.
+  for (const [t, bh] of [[0.24, 4.4], [0.52, 3.8], [0.78, 3.4]]) {
+    const by = Y + PODIUM + BODY * t;
+    const zc = cz - HALF + WING + (HALF * 2 - WING) * (0.25 + t * 0.45);
+    const r = { x0: cx - HALF + WING - 0.5, x1: cx + HALF - WING + 0.5, z0: zc - 3.2, z1: zc + 3.2 };
+    b.add(rectBox(r, by, bh, PANEL_TILE), mats.panelMat);
+    for (const side of SIDES) {
+      // 복도창. 형광등이라 차다 — 사는 집(따뜻한 빛)과 공용부가 갈린다
+      b.add(facePlane(r, by + 0.9, bh - 1.9, side, null, 0.03), neonSoft(0xc8d4e0));
+    }
+  }
+
+  // ── 식별 — 광고가 아니라 **동 번호**다 ───────────────────────────────────
+  //
+  // 처음에 서쪽 면에 초대형 인물 광고를 걸었다. 그러면 이 건물이 광고를 팔
+  // 만한 건물이 되고, 사용자 지적대로 **너무 화려해진다.** 여기 사는 사람에게
+  // 파는 광고주는 없다 — 홀로그램 표에 이미 그렇게 적혀 있다
+  // (holo.SUBJECTS: *"주거 — 안내판 하나. 광고주가 없다"*).
+  //
+  // 대신 관리사무소가 벽에 칠한 **거대한 동 번호**를 놓는다. 도장 자국(면)과
+  // 그 아래 낡은 형광 명판 하나. 값싸고, 크고, 조용하다.
+  {
+    const w = 15, h = 34;
+    const x = cx - HALF - 0.7;
+    const zc = cz + 4;
+    const face = { x0: x - 0.3, x1: x, z0: zc - w / 2, z1: zc + w / 2 };
+    const y0 = Y + PODIUM + 22;
+    // 도장 면 — 벽보다 밝은 회색. 페인트를 칠했다는 것 이상은 아니다
+    b.add(facePlane(face, y0, h, 'nx', null, 0.02), mats.frameConcMat);
+    // 번호 자국 — 칠 위에 어두운 획 셋. 글자를 그리지 않고 자국만 남긴다
+    for (let i = 0; i < 3; i++) {
+      b.add(facePlane(
+        { ...face, z0: zc - w * 0.3 + w * 0.22 * i, z1: zc - w * 0.3 + w * 0.22 * i + w * 0.12 },
+        y0 + h * 0.24, h * 0.5, 'nx', TILE2, 0.05
+      ), mats.panelMat);
+    }
+    // 형광 명판 — 작다. 이게 이 건물의 유일한 '간판' 이다
+    b.add(facePlane(
+      { ...face, z0: zc - w * 0.34, z1: zc + w * 0.34 },
+      y0 - 3.4, 1.6, 'nx', null, 0.06
+    ), neonSoft(0xc8d4e0));
+  }
+  // 기단 위 띠 — 이름표가 아니라 **처마 밑 형광등**이다. 둘레를 두르되 좁고
+  // 차게. 앰버 네온으로 두르면 그 순간 상가 건물이 된다.
+  for (const w of wings(1.6)) {
+    for (const side of SIDES) {
+      b.add(facePlane(w, Y + PODIUM + 1.9, 0.5, side, null, 0.03), neonSoft(0xb9c6d2));
+    }
+  }
+
+  // ── 옥상 ─────────────────────────────────────────────────────────────────
+  for (const w of wings(stages[2].e)) {
+    b.add(rectBox(shrink(w, 0.3), TOP, 1.3, PANEL_TILE), mats.pipeMat);
+    const s = rectSize(w);
+    const c = { x: (w.x0 + w.x1) / 2, z: (w.z0 + w.z1) / 2 };
+    // 설비 옥탑
+    b.add(rectBox(shrink(w, Math.min(s.w, s.d) * 0.3), TOP, 5.4, PANEL_TILE), mats.panelMat);
+    // 냉각탑 줄 — 긴 축을 따라. 개수는 길이에서 나온다
+    const long = Math.max(s.w, s.d);
+    const n = Math.max(2, Math.round(long / 13));
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n - 0.5;
+      const x = c.x + (s.w >= s.d ? t * s.w * 0.7 : 0);
+      const z = c.z + (s.w >= s.d ? 0 : t * s.d * 0.7);
+      b.cylinder(1.9, 1.9, 3.4, [x, TOP + 7.1, z], mats.ductMat, 10);
+    }
+    // 안테나 숲 — 세대 수만큼 있는 것이 요점이다 (housing.roofClutter 와 같다)
+    const masts = Math.max(3, Math.round((s.w * s.d) / 120));
+    for (let i = 0; i < masts; i++) {
+      const t = (i + 0.5) / masts - 0.5;
+      const x = c.x + (s.w >= s.d ? t * s.w * 0.82 : (i % 2 ? 3.4 : -3.4));
+      const z = c.z + (s.w >= s.d ? (i % 2 ? 3.4 : -3.4) : t * s.d * 0.82);
+      const mh = 3 + (i % 4) * 1.8;
+      b.box(0.09, mh, 0.09, [x, TOP + 1.3 + mh / 2, z], mats.pipeMat);
+    }
+  }
+  // 항공장애등 — 네 모서리 코어 위. 안개에 잠겨도 이 넷이 보인다
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const x = cx + sx * (HALF - CORE / 2 + 1);
+      const z = cz + sz * (HALF - CORE / 2 + 1);
+      const mast = 16;
+      b.cylinder(0.22, 0.34, mast, [x, TOP + 3.2 + mast / 2, z], mats.metalMat, 6);
+      b.sphere(0.8, [x, TOP + 3.2 + mast, z], mats.beacons[1]);
+    }
+  }
+
+  return TOP + 3.2 + 16;
+}
+
 // 종류 -> 생성기. 표로 두면 **빠뜨린 종류가 즉시 터진다.**
 // 전에는 `kind === 'hq' ? hqTower : twinTower` 라 세 번째 종류를 더하는 순간
 // 조용히 쌍둥이 타워가 섰을 것이다 — `??` 로 값을 때우지 않는다는 규칙
@@ -901,6 +1261,7 @@ const BUILDERS = {
   gate: marketGate,
   neon: neonTower,
   hall: undergroundHall,
+  mega: megaBuilding,
 };
 
 // ── 랜드마크가 자기 블록에 들어가는가 ──────────────────────────────────────
@@ -923,9 +1284,12 @@ const FOOTPRINT = {
   gate: 33,    // 블록을 관통하는 홀이다. 지면을 직접 깐다
   neon: 18,    // 캐노피 포함 (half 11 + 7)
   hall: 33,    // 구덩이가 본체. 지면을 직접 깐다
+  mega: 28.5,  // 몸통 27 + 모서리 코어 1 + 식별 간판 틀 0.5
 };
-// 인도만 비켜나면 되는 것들 — 번화가는 대지를 꽉 채우는 것이 정체다
-const NO_PLAZA = new Set(['depot', 'gate', 'neon', 'hall']);
+// 인도만 비켜나면 되는 것들.
+// 번화가는 대지를 꽉 채우는 것이 정체이고, 주거는 1기 건물이라 땅이 아깝다 —
+// 광장은 기업 구역의 어휘다 (corpo.js 머리말).
+const NO_PLAZA = new Set(['depot', 'gate', 'neon', 'hall', 'mega']);
 
 function fitsBlock(kind, ix, iz) {
   const R = blockRect(ix, iz);

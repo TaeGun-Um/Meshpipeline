@@ -87,6 +87,20 @@ function floatPanel(b, x, y, z, yaw, w, h, hue, rng) {
   }
 }
 
+// 이 면을 건물의 **측벽**(짧은 끝면)으로 바꾼다. 바깥을 보는 방향은 지킨다 —
+// 길에 면했다고 판정된 쪽에서 그대로 90도만 돌리는 것이라, 판이 반대편
+// 뒷골목으로 넘어가지 않는다.
+//
+//   긴 축이 X   ->  끝면은 px / nx      pz->px  nz->nx
+//   긴 축이 Z   ->  끝면은 pz / nz      px->pz  nx->nz
+function endWallOf(side, s) {
+  const longIsX = s.w >= s.d;
+  const isEnd = longIsX ? (side === 'px' || side === 'nx') : (side === 'pz' || side === 'nz');
+  if (isEnd) return side;
+  const plus = side === 'px' || side === 'pz';
+  return longIsX ? (plus ? 'px' : 'nx') : (plus ? 'pz' : 'nz');
+}
+
 // ── 디지털 수목 ────────────────────────────────────────────────────────────
 //
 // 조경인데 식물이 아니다. 빛나는 선으로 나무 형상을 그린다.
@@ -502,9 +516,24 @@ export function createHolo(scene, rng, mats, anchors) {
       const outSign = side === 'px' || side === 'pz' ? 1 : -1;
       const yaw = alongX ? (outSign > 0 ? 0 : Math.PI) : (outSign > 0 ? Math.PI / 2 : -Math.PI / 2);
 
+      // ── 주거는 **측벽**에 건다 (사용자 지시) ──────────────────────────
+      //
+      // 주거 슬래브의 긴 면은 발코니와 편복도로 꽉 차 있다. 거기에 60m 짜리
+      // 판을 걸면 이 구역의 전부인 생활이 통째로 가려진다. 반대로 짧은 끝면은
+      // 세대가 없어 민짜다 — 실제로 배너가 걸리는 자리가 거기다.
+      //
+      // **면을 고르는 기준(길에 면했는가)은 그대로 두고 거는 자리만 바꾼다.**
+      // 면 자체를 건너뛰면 난수 소비가 달라져 도시가 통째로 다시 뽑힌다
+      // (난수 규율 3, generation.md).
+      const pSide = a.zone === '주거' ? endWallOf(side, s) : side;
+      const pAlongX = pSide === 'pz' || pSide === 'nz';
+      const pfw = pAlongX ? s.w : s.d;
+      const pOut = pSide === 'px' || pSide === 'pz' ? 1 : -1;
+      const pYaw = pAlongX ? (pOut > 0 ? 0 : Math.PI) : (pOut > 0 ? Math.PI / 2 : -Math.PI / 2);
+
       // 1) 부유 광고판 — 건물 앞에 크게. 이게 스케일의 폭력이다.
       if (rng.chance(0.34 * rate * det) && a.top > 14) {
-        const w = fw * rng.range(0.6, 1.1);
+        const w = pfw * rng.range(0.6, 1.1);
         const h = Math.min(a.top * 0.55, rng.range(8, 22));
         // ── 얼마나 앞에 뜨는가 ────────────────────────────────────────
         // 전에는 4~9m 로 뒀는데 인도가 3.2~7.5m 다. 그래서 홀로그램이
@@ -515,8 +544,8 @@ export function createHolo(scene, rng, mats, anchors) {
         // 사람 눈높이로 내려오면 홀로그램이 아니라 장애물이다.
         const D2 = districtNear(c.x, c.z);
         const dist = Math.min(rng.range(2.5, 6), (D2.sidewalk ?? 4.6) - 1.2);
-        const px = alongX ? c.x : (outSign > 0 ? a.rect.x1 + dist : a.rect.x0 - dist);
-        const pz = alongX ? (outSign > 0 ? a.rect.z1 + dist : a.rect.z0 - dist) : c.z;
+        const px = pAlongX ? c.x : (pOut > 0 ? a.rect.x1 + dist : a.rect.x0 - dist);
+        const pz = pAlongX ? (pOut > 0 ? a.rect.z1 + dist : a.rect.z0 - dist) : c.z;
         // 아래 끝이 6m 위 — 사람과 간판대를 비켜간다
         const minY = CURB_HEIGHT + 6 + h / 2;
         const py = Math.max(minY, CURB_HEIGHT + rng.range(a.top * 0.4, Math.max(a.top * 0.45, a.top - h * 0.6)));
@@ -525,8 +554,8 @@ export function createHolo(scene, rng, mats, anchors) {
         // axis 는 "건물 면에서 어느 쪽으로 나갔나" 다. 검사가 그 축만 본다 —
         // 정면을 따라 긴 판이 옆 교차로 위로 나가는 것은 다른 사건이다
         // (placecheck.js roadIntrusion).
-        b.mark('holo', `holoPanel#${panels}`, { zone: a.zone, axis: alongX ? 'z' : 'x' });
-        floatPanel(b, px, py, pz, yaw, w, h, hue, rng);
+        b.mark('holo', `holoPanel#${panels}`, { zone: a.zone, axis: pAlongX ? 'z' : 'x' });
+        floatPanel(b, px, py, pz, pYaw, w, h, hue, rng);
         panels++;
       }
 

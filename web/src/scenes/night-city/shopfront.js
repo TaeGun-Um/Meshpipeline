@@ -24,6 +24,10 @@ import { neon } from '../../shared/masters.js';
 import { onSceneReset } from '../../core/scenestate.js';
 export const ALCOVE = 1.3; // 벽감 깊이 (m)
 export const SHOP_H = 3.4; // 1층 층고
+// 출입구 차양이 벽 밖으로 나오는 깊이. **여기가 유일한 출처다** —
+// `entranceBay` 를 벽에 붙이는 쪽이 몸통을 얼마나 들여야 하는지 이 값으로 안다
+// (housing.BACK_OUT).
+export const CANOPY_D = 1.7;
 
 // 면 위의 지역 좌표계.
 //   u  면을 따라 -0.5 ~ 0.5
@@ -658,10 +662,13 @@ export function entranceBay(b, sub, side, y, rng, mats, upward = false, recess =
   b.box(f.alongZ ? 0.06 : W * 0.5, 0.3, f.alongZ ? W * 0.5 : 0.06,
     [nx, y + H + 0.62, nz], neon(NEON.cool));
 
-  // 작은 차양 — 비 오는 도시라 입구에는 늘 있다
-  const [ax, az] = f.at(0, 0.85);
+  // 작은 차양 — 비 오는 도시라 입구에는 늘 있다.
+  // 깊이는 `CANOPY_D` 하나다 — 이 문을 벽에 붙이는 쪽(housing 슬래브)이
+  // "얼마나 나오나" 를 알아야 몸통을 그만큼 안으로 들인다. 그 값을 저쪽에
+  // 다시 적었다가 **1.60m 씩 대지 밖으로 나가 건물 세 쌍이 겹쳤다.**
+  const [ax, az] = f.at(0, CANOPY_D / 2);
   b.add(
-    autoBox(f.alongZ ? 1.7 : W + 0.9, 0.16, f.alongZ ? W + 0.9 : 1.7, [ax, y + H + 0.5, az], 0.03),
+    autoBox(f.alongZ ? CANOPY_D : W + 0.9, 0.16, f.alongZ ? W + 0.9 : CANOPY_D, [ax, y + H + 0.5, az], 0.03),
     mats.metalMat
   );
   b.add(

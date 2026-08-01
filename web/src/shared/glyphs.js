@@ -206,9 +206,6 @@ export function pictAt(id, u, v, w = PICT_W) {
   if (d > w) return 0;
   return d < w * 0.40 ? 2 : 1;
 }
-export function glyphAt(id, fx, fy) {
-  return glyphInk(id, fx, fy);
-}
 export function latinAt(seed, u, v, cols) {
   return latinInk(seed, u, v, cols);
 }

@@ -395,6 +395,17 @@ window.__resets = () => sceneResetList();
 window.__shops = async () =>
   (await import('./scenes/night-city/shopfront.js')).shopTally();
 
+// 주거 동별 편차 분포. 네 종을 갈라 놓고 실제로는 둘만 나오는 것을 잡는다
+// (scenes/night-city/housing.js slabStyle).
+window.__houses = async () =>
+  (await import('./scenes/night-city/housing.js')).houseTally();
+
+// 재질이 몇 개 만들어졌고 몇 번 공유됐나 (core/material.js).
+// `materialReport` 는 이때까지 **아무도 못 부르는 곳에** 있었다 — 진단용은
+// 호출자가 없어도 남기지만, 그건 `window.__*` 로 닿을 수 있을 때 얘기다.
+window.__mats = async () =>
+  (await import('./core/material.js')).materialReport();
+
 window.__lock = async (prefix = '') => {
   const views = await fetch('/shots/views.json').then((r) => r.json());
   const set = views[SCENE.meta.id];

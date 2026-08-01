@@ -36,7 +36,7 @@
 import { autoBox, tubeBetween } from '../../core/profile.js';
 import {
   faceFrame,
-  SIDES,
+  facePlane,
   shrink,
   rectBox,
   rectCenter,
@@ -46,14 +46,72 @@ import { NEON } from '../../shared/neon.js';
 import { neonSoft } from '../../shared/masters.js';
 import { hash2 } from '../../core/textures.js';
 import { PANEL_TILE } from './layout.js';
-import { entranceBay } from './shopfront.js';
+import { entranceBay, CANOPY_D } from './shopfront.js';
 import { claim, TIER } from './siteplan.js';
+import { onSceneReset } from '../../core/scenestate.js';
 
 // 주거 층고. 사무실(3.6m)보다 낮다 — 천장고를 아끼는 것이 가장 쉬운 절감이다.
-const HOME_FLOOR = 2.9;
+//
+// **주거 메가빌딩(landmark.megaBuilding)도 이 값을 쓴다.** 거기에 2.9 를 다시
+// 적으면 그게 결합 오류다 — 둘은 같은 도시의 같은 시기 주거이므로 층고가
+// 갈릴 이유가 없고, 갈리면 파사드 띠가 어긋난다.
+export const HOME_FLOOR = 2.9;
 
-// 한 세대 폭. 이 값이 파사드의 리듬 전체를 정한다.
-const UNIT_W = 4.4;
+// 세대 폭은 **동마다 다르다** (`slabStyle.unit`, 4.0~5.1m). 이 한 값이
+// 파사드의 칸 수를 바꾸므로 멀리서 보면 동이 확실히 갈린다.
+// 전에 여기 `UNIT_W = 4.4` 상수가 있었는데, 동별로 뽑게 바꾸면서 아무도
+// 안 읽게 됐다 — 죽은 코드는 검증된 적이 없는 코드다.
+
+// ── 동마다 조금씩 다르다 ───────────────────────────────────────────────────
+//
+// 사용자 지적: *"아무리 빨리, 똑같이라곤 해도 다 똑같이 생겨서 뭔가 아쉬운
+// 느낌이 있네"*
+//
+// 맞다. **똑같이 지은 것과 40년 뒤에도 똑같은 것은 다르다.** 한날한시에 같은
+// 도면으로 올렸어도 도색을 다시 한 동이 생기고, 세대를 조금 넓게 뽑은 동이
+// 생기고, 발코니를 판자로 막은 집이 유난히 많은 동이 생긴다.
+//
+// **규칙성을 없애는 것이 아니라 규칙 위에 시간을 얹는 것이다.** 격자는 그대로
+// 두고 (그게 이 건물의 정체다) 격자를 채우는 값만 동마다 흔든다.
+//
+// 위치 해시로 뽑는다 — 난수가 아니다. 같은 자리의 동은 늘 같은 동이어야
+// 하고, 그래야 편차가 '노이즈' 가 아니라 '이 동은 이렇다' 가 된다 (규율 6).
+function slabStyle(rect, mats) {
+  const kx = Math.round((rect.x0 + rect.x1) / 2);
+  const kz = Math.round((rect.z0 + rect.z1) / 2);
+  const idx = (a, n) => Math.floor(hash2(kx * a, kz * (a + 3)) * n) % n;
+  const pick = (a, list) => list[idx(a, list.length)];
+  const st = {
+    body: pick(7, mats.homeBodyMats),
+    rail: pick(13, mats.homeRailMats),
+    // 세대 폭 — 파사드 칸 수를 바꾼다. 제일 크게 읽히는 편차다
+    unit: 4.0 + hash2(kx * 5, kz * 11) * 1.1,
+    // 발코니를 판자로 막은 비율. 동마다 8~34% — 관리가 잘 된 동과 아닌 동
+    board: 0.08 + hash2(kx * 17, kz * 23) * 0.26,
+    // 옥탑 증축 — 불법이지만 흔하다. 세 동에 하나꼴
+    penthouse: hash2(kx * 29, kz * 31) < 0.34,
+    // 측벽 처리. 짧은 끝면은 세대가 없어 민짜인데, 그 민짜를 뭐로 쓰는지가
+    // 동마다 다르다
+    endWall: idx(37, 3),
+  };
+  // **"갈랐다" 와 "화면에 다 나온다" 는 다르다.** 해시가 고르다는 것만으로는
+  // 실제 동 좌표에서 네 종이 다 뽑혔는지 모른다 — 번화가 유형에서 여섯 중
+  // 둘이 한 번도 안 나온 적이 있다 (market.marketSpots 머리말).
+  TALLY.body[idx(7, 4)]++;
+  TALLY.rail[idx(13, 4)]++;
+  TALLY.end[st.endWall]++;
+  if (st.penthouse) TALLY.penthouse++;
+  TALLY.n++;
+  return st;
+}
+
+let TALLY = { n: 0, body: [0, 0, 0, 0], rail: [0, 0, 0, 0], end: [0, 0, 0], penthouse: 0 };
+export function houseTally() {
+  return { ...TALLY, body: [...TALLY.body], rail: [...TALLY.rail], end: [...TALLY.end] };
+}
+onSceneReset('주거 동 표본', () => {
+  TALLY = { n: 0, body: [0, 0, 0, 0], rail: [0, 0, 0, 0], end: [0, 0, 0], penthouse: 0 };
+});
 
 // ── 단지 치수 ──────────────────────────────────────────────────────────────
 //
@@ -66,13 +124,20 @@ const SLAB_D = 14.0;
 //
 // 몸통을 이만큼 안으로 들여야 **붙은 것까지가 대지 안**이다. 여기에 하나라도
 // 빠지면 그만큼 옆 단지를 파고든다 — 실제로 차양을 빼먹고 1.60m 씩 나가서
-// 건물 세 쌍이 2.2m 겹쳤다. 값은 붙이는 쪽 코드에서 그대로 가져온다.
-const FRONT_OUT = 1.3;             // 발코니 바닥판 + 가림판 (balcony)
-const DECK_OUT = 1.5;              // 편복도 + 난간 (accessDeck)
-const CORE_OUT = 2.2;              // 계단실 몸통 (stairCore D)
-const CANOPY_OUT = 1.7;            // 현관 차양 (shopfront.entranceBay)
+// 건물 세 쌍이 2.2m 겹쳤다.
+//
+// **값을 여기서 새로 적지 않는다.** 그리는 쪽이 쓰는 깊이를 그대로 유도한다 —
+// 전에는 `BALCONY_D` 를 그리는 함수 안에 두고 여기에 1.3 을 또 적었다.
+// 두 곳에 있으면 한쪽만 바뀌고, 그게 바로 이 프로젝트의 1번 실패 패턴이다.
+const BALCONY_D = 1.15;            // 발코니 바닥판 깊이 (balcony)
+const DECK_D = 1.4;                // 편복도 깊이 (accessDeck)
+const CORE_D = 2.2;                // 계단실 몸통 깊이 (stairCore)
+
+const FRONT_OUT = BALCONY_D + 0.15;  // + 가림판 두께와 여유
+const DECK_OUT = DECK_D + 0.1;       // + 난간 기둥
 // 현관은 계단실 **바깥면**에 붙으므로 차양이 그 위로 또 나간다.
-const BACK_OUT = CORE_OUT + CANOPY_OUT;
+// 차양 깊이는 `shopfront.CANOPY_D` 가 유일한 출처다.
+const BACK_OUT = CORE_D + CANOPY_D;
 // 동간 거리 최소값. 이보다 좁으면 마당이 아니라 골목이고, 아래 마당 시설이
 // 들어갈 자리가 없다.
 const YARD_MIN = 11;
@@ -86,59 +151,63 @@ const CORE_PITCH = 24;
 //
 // 이 건물의 전부다. 세대마다 하나씩, 층마다 하나씩. 격자 자체는 완벽하게
 // 규칙적이고 **안에 든 것만 제각각**이다.
-function balcony(b, f, u, y, rng, mats, detail) {
-  const D = 1.15;
+function balcony(b, f, u, y, rng, mats, detail, st) {
+  const D = BALCONY_D;
+  const UW = st.unit;
   const [cx, cz] = f.at(u, D / 2);
-  const [sw, sd] = f.size(UNIT_W * 0.86, D);
+  const [sw, sd] = f.size(UW * 0.86, D);
 
   // 바닥판
   b.box(sw, 0.16, sd, [cx, y, cz], mats.panelMat);
   // 앞 가림판 — 난간이 아니라 판이다. 싸게 짓는 방식이고, 그래서 안이 안 보인다.
   const [px, pz] = f.at(u, D);
-  const [pw, pd] = f.size(UNIT_W * 0.86, 0.1);
-  b.box(pw, 1.05, pd, [px, y + 0.54, pz], mats.balconyMat);
+  const [pw, pd] = f.size(UW * 0.86, 0.1);
+  b.box(pw, 1.05, pd, [px, y + 0.54, pz], st.rail);
 
   // ── 여기부터가 생활 ──────────────────────────────────────────────────────
   // 넷 중 하나가 얹힌다. 확률이 다른 이유는 실제로 그렇기 때문이다 —
   // 실외기는 거의 모든 집에 있고, 판자로 막은 집은 드물다.
+  //
+  // **판자 비율만 동마다 다르다** (`slabStyle.board`). 관리가 잘 된 동과 아닌
+  // 동의 차이가 이것 하나로 파사드 전체에서 읽힌다.
   const pick = rng.next();
-  if (pick < 0.42) {
+  if (pick > 1 - st.board) {
+    // 판자로 막았다 — 발코니를 방으로 쓴다. 인상이 가장 강하다.
+    const [wx, wz] = f.at(u, D * 0.92);
+    const [ww, wd] = f.size(UW * 0.84, 0.08);
+    b.box(ww, HOME_FLOOR - 0.3, wd, [wx, y + (HOME_FLOOR - 0.3) / 2, wz], mats.shutterMat);
+    if (rng.chance(0.6)) {
+      b.box(ww * 0.34, 0.5, wd, [wx, y + 1.5, wz], neonSoft(NEON.warm));
+    }
+  } else if (pick < 0.42) {
     // 실외기 — 가장 흔하다
     const [ax, az] = f.at(u + rng.range(-1.0, 1.0), D * 0.55);
     const [aw, ad] = f.size(rng.range(0.6, 0.85), 0.55);
     b.box(aw, 0.6, ad, [ax, y + 0.38, az], mats.ductMat);
   } else if (pick < 0.66 && detail > 0.5) {
     // 빨래 — 줄과 옷가지. 근경에서만 만든다.
-    const [lx, lz] = f.at(u - UNIT_W * 0.34, D * 0.8);
-    const [ex, ez] = f.at(u + UNIT_W * 0.34, D * 0.8);
+    const [lx, lz] = f.at(u - UW * 0.34, D * 0.8);
+    const [ex, ez] = f.at(u + UW * 0.34, D * 0.8);
     b.add(tubeBetween([lx, y + 1.5, lz], [ex, y + 1.45, ez], 0.018, 4), mats.cableMat);
     const n = rng.int(2, 4);
     for (let i = 0; i < n; i++) {
       const t = (i + 0.5) / n - 0.5;
-      const [wx, wz] = f.at(u + UNIT_W * 0.68 * t, D * 0.8);
+      const [wx, wz] = f.at(u + UW * 0.68 * t, D * 0.8);
       const [ww, wd] = f.size(rng.range(0.3, 0.5), 0.03);
       b.box(ww, rng.range(0.4, 0.75), wd, [wx, y + 1.15, wz], mats.laundryMats[rng.int(0, mats.laundryMats.length - 1)]);
     }
-  } else if (pick < 0.84) {
+  } else {
     // 짐 — 상자와 잡동사니
     for (let i = 0; i < rng.int(1, 3); i++) {
       const [bx, bz] = f.at(u + rng.range(-1.2, 1.2), D * rng.range(0.35, 0.7));
       const [bw, bd] = f.size(rng.range(0.4, 0.7), rng.range(0.35, 0.5));
       b.box(bw, rng.range(0.3, 0.55), bd, [bx, y + 0.3, bz], rng.chance(0.5) ? mats.crateMat : mats.ductMat);
     }
-  } else {
-    // 판자로 막았다 — 발코니를 방으로 쓴다. 가장 드물지만 인상이 강하다.
-    const [wx, wz] = f.at(u, D * 0.92);
-    const [ww, wd] = f.size(UNIT_W * 0.84, 0.08);
-    b.box(ww, HOME_FLOOR - 0.3, wd, [wx, y + (HOME_FLOOR - 0.3) / 2, wz], mats.shutterMat);
-    if (rng.chance(0.6)) {
-      b.box(ww * 0.34, 0.5, wd, [wx, y + 1.5, wz], neonSoft(NEON.warm));
-    }
   }
 
   // 창 — 발코니 안쪽. 켜진 집과 꺼진 집.
   const [gx, gz] = f.at(u, 0.06);
-  const [gw, gd] = f.size(UNIT_W * 0.6, 0.08);
+  const [gw, gd] = f.size(UW * 0.6, 0.08);
   if (rng.chance(0.44)) {
     b.add(autoBox(gw, 1.3, gd, [gx, y + 1.1, gz], 0.02), mats.homeLitMat);
   } else {
@@ -156,7 +225,7 @@ function balcony(b, f, u, y, rng, mats, detail) {
 // 남는 것이 끝면뿐이었기 때문이다. 편복도는 세대 전부를 지나가야 하므로
 // 긴 뒷면에 붙는 것이 맞다 — 지금은 단지가 앞뒤를 직접 정해서 넘긴다.
 function accessDeck(b, f, y, rng, mats) {
-  const D = 1.4;
+  const D = DECK_D;
   const [cx, cz] = f.at(0, D / 2);
   const [sw, sd] = f.size(f.w, D);
   b.box(sw, 0.16, sd, [cx, y, cz], mats.grateMat);
@@ -190,7 +259,7 @@ function accessDeck(b, f, y, rng, mats) {
 // 벽에서 튀어나온 수직 덩어리라 멀리서도 슬래브가 몇 칸인지 세어진다.
 function stairCore(b, f, u, top, rng, mats, floors) {
   const W = 3.4;
-  const D = 2.2;
+  const D = CORE_D;
 
   // 몸통 — 복도 쪽으로 튀어나온다. 편복도(1.4m)보다 깊어야 복도를 **끊는다**.
   const [cx, cz] = f.at(u, D / 2);
@@ -228,10 +297,27 @@ function stairCore(b, f, u, top, rng, mats, floors) {
 // 2,568m² 옥상에 안테나 열 개가 놓였다 — 250m² 당 하나꼴이라 텅 비어 보였다.
 // 어제 기업 쇼케이스를 `min(3, …)` 으로 고정했다가 똑같이 틀렸다.
 // **개수를 쓰고 싶으면 먼저 밀도를 쓴다.**
-function roofClutter(b, r, top, rng, mats) {
+function roofClutter(b, r, top, rng, mats, st) {
   const c = rectCenter(r);
   const s = rectSize(r);
   const area = s.w * s.d;
+
+  // 옥탑 증축 — 불법이지만 흔하다. 세 동에 하나꼴로 있고, **있는 동과 없는
+  // 동의 실루엣이 갈린다.** 옥상은 멀리서 스카이라인으로 읽히는 면이다.
+  if (st.penthouse) {
+    const pw = Math.min(s.w * 0.42, 13), pd = Math.min(s.d * 0.62, 7.5);
+    const px = c.x + (s.w >= s.d ? s.w * 0.18 : 0);
+    const pz = c.z + (s.w >= s.d ? 0 : s.d * 0.18);
+    const ph = 2.6;
+    b.box(pw, ph, pd, [px, top + ph / 2, pz], st.body);
+    // 지붕은 골강판이다 — 본채와 다른 재료라는 것이 곧 나중에 얹은 증거다
+    b.box(pw + 0.6, 0.12, pd + 0.6, [px, top + ph + 0.06, pz], mats.shutterMat);
+    // 창 하나. 사람이 산다
+    const gw = Math.min(pw * 0.3, 2.2);
+    b.box(s.w >= s.d ? gw : 0.08, 1.0, s.w >= s.d ? 0.08 : gw,
+      [px + (s.w >= s.d ? 0 : pd / 2), top + 1.5, pz + (s.w >= s.d ? pd / 2 : 0)],
+      rng.chance(0.6) ? mats.homeLitMat : mats.homeDarkMat);
+  }
 
   // 물탱크 — 약 340m² 당 하나. 슬래브 하나(약 730m²)에 둘.
   const tanks = Math.max(1, Math.min(8, Math.round(area / 340)));
@@ -275,15 +361,17 @@ function roofClutter(b, r, top, rng, mats) {
 // 그 인상이 사라지고 그냥 섞인 건물 여럿이 된다.
 function slabBody(b, r, front, back, floors, rng, mats, detail, pools, slim = false) {
   const top = floors * HOME_FLOOR;
-  b.add(rectBox(r, 0, top, PANEL_TILE), mats.panelMat);
+  const st = slabStyle(r, mats);
+  // 몸통 색이 동마다 다르다 — 도색을 다시 한 동, 타일을 붙인 동, 손 안 댄 동
+  b.add(rectBox(r, 0, top, PANEL_TILE), st.body);
 
   // 앞면 — 발코니 격자. 이 건물의 전부다.
   const ff = faceFrame(r, front);
-  const units = Math.max(2, Math.floor(ff.w / UNIT_W));
+  const units = Math.max(2, Math.floor(ff.w / st.unit));
   const uw = ff.w / units;
   for (let fl = 0; fl < floors; fl++) {
     for (let i = 0; i < units; i++) {
-      balcony(b, ff, -ff.w / 2 + uw * (i + 0.5), fl * HOME_FLOOR, rng, mats, detail);
+      balcony(b, ff, -ff.w / 2 + uw * (i + 0.5), fl * HOME_FLOOR, rng, mats, detail, st);
     }
   }
 
@@ -291,8 +379,8 @@ function slabBody(b, r, front, back, floors, rng, mats, detail, pools, slim = fa
   const bf = faceFrame(r, back);
   for (let fl = 0; fl < floors; fl++) accessDeck(b, bf, fl * HOME_FLOOR, rng, mats);
 
-  // 짧은 끝면은 민짜다 — 세대가 없는 벽이라 실제로 그렇다.
-  // 대신 실외기 배관만 몇 줄 흐른다 (retrofit.js 가 따로 얹는다).
+  // 짧은 끝면 — 세대가 없어 민짜다. 그 민짜를 **뭐로 쓰는지가 동마다 다르다.**
+  endWall(b, r, front, back, top, floors, st, mats);
 
   // ── 계단실과 현관 ────────────────────────────────────────────────────────
   // 복도 쪽에 24m 간격. 그 아래가 현관이다.
@@ -319,8 +407,71 @@ function slabBody(b, r, front, back, floors, rng, mats, detail, pools, slim = fa
     });
   }
 
-  roofClutter(b, r, top, rng, mats);
+  roofClutter(b, r, top, rng, mats, st);
   return top;
+}
+
+// ── 측벽 ───────────────────────────────────────────────────────────────────
+//
+// 슬래브의 짧은 끝면. 세대가 없어 창도 발코니도 없는 **민짜 벽**이고, 높이가
+// 30~40m 나 되므로 도시에서 제일 큰 빈 면이다. 지금까지 여기가 진짜로 비어
+// 있어서, 단지를 옆에서 보면 잿빛 판이 늘어선 것으로 보였다.
+//
+// 실제로는 그 벽을 다들 뭔가에 쓴다. 셋으로 갈랐다 — 어느 것인지는 위치
+// 해시가 정한다 (`slabStyle.endWall`).
+function endWall(b, r, front, back, top, floors, st, mats) {
+  const ends = (front === 'pz' || front === 'nz') ? ['px', 'nx'] : ['pz', 'nz'];
+  for (const side of ends) {
+    const f = faceFrame(r, side);
+    if (f.w < 4) continue;
+
+    if (st.endWall === 0) {
+      // 0) 배관 — 오수관과 우수관이 벽을 타고 내려온다. 층마다 이음쇠.
+      for (const t of [-0.26, 0.3]) {
+        const [px, pz] = f.at(f.w * t, 0.18);
+        b.cylinder(0.16, 0.16, top, [px, top / 2, pz], mats.pipeMat, 6);
+        for (let fl = 1; fl < floors; fl++) {
+          const [jw, jd] = f.size(0.42, 0.42);
+          b.box(jw, 0.24, jd, [px, fl * HOME_FLOOR, pz], mats.metalMat);
+        }
+      }
+      // 벽걸이 실외기 몇 줄 — 세대가 없는 벽이라 여기로 뽑았다
+      for (let fl = 2; fl < floors; fl += 3) {
+        const [ax, az] = f.at(f.w * 0.06, 0.42);
+        const [aw, ad] = f.size(0.8, 0.62);
+        b.box(aw, 0.66, ad, [ax, fl * HOME_FLOOR + 1.2, az], mats.ductMat);
+      }
+    } else if (st.endWall === 1) {
+      // 1) 외부 비상계단 — 지그재그로 오르는 철제 계단. 실루엣이 가장 강하다.
+      const D = 1.5;
+      for (let fl = 1; fl <= floors; fl++) {
+        const y = fl * HOME_FLOOR;
+        const [lx, lz] = f.at(0, D / 2);
+        const [lw, ld] = f.size(Math.min(f.w * 0.72, 5.0), D);
+        b.box(lw, 0.12, ld, [lx, y, lz], mats.grateMat);       // 참
+        const [rx, rz] = f.at(0, D);
+        const [rw, rd] = f.size(Math.min(f.w * 0.72, 5.0), 0.05);
+        b.box(rw, 0.05, rd, [rx, y + 0.95, rz], mats.pipeMat); // 난간
+      }
+      for (const sg of [-1, 1]) {
+        const [cx2, cz2] = f.at(sg * Math.min(f.w * 0.34, 2.4), D);
+        b.cylinder(0.07, 0.07, top, [cx2, top / 2, cz2], mats.pipeMat, 6);
+      }
+    } else {
+      // 2) 도장 — 벽 하나를 통째로 칠했다. 관리사무소가 동 번호를 크게 쓰는
+      //    자리이기도 하다. 여기서는 색 면 + 위아래 띠로만 암시한다.
+      b.add(facePlane(r, top * 0.16, top * 0.62, side, null, 0.06), st.rail);
+      for (const y of [top * 0.16, top * 0.78]) {
+        b.add(facePlane(shrink(r, -0.1), y, 0.4, side, null, 0.08), mats.frameMat);
+      }
+      // 환기 그릴 — 칠한 벽에도 이건 남는다
+      for (let fl = 1; fl < floors; fl += 2) {
+        const [gx, gz] = f.at(f.w * 0.3, 0.16);
+        const [gw, gd] = f.size(0.7, 0.12);
+        b.box(gw, 0.5, gd, [gx, fl * HOME_FLOOR + 1.6, gz], mats.grateMat);
+      }
+    }
+  }
 }
 
 // ── 마당 ───────────────────────────────────────────────────────────────────
@@ -514,9 +665,12 @@ export function housingEstate(b, r, rng, mats, faces, detail, pools) {
   const front = alongX ? (flip ? 'nz' : 'pz') : (flip ? 'nx' : 'px');
   const back = alongX ? (flip ? 'pz' : 'nz') : (flip ? 'px' : 'nx');
 
-  // 층수는 단지 안에서 조금씩 다르다. 한꺼번에 지었어도 대지가 기울어 있으면
-  // 동마다 한두 층씩 어긋난다 — 완벽하게 같으면 오히려 인쇄물처럼 보인다.
-  const base = rng.int(6, 13);
+  // 층수. 단지마다 다르고 **단지 안에서도 동마다 다르다.**
+  //
+  // 전에는 `base ± 1` 이라 어느 단지를 봐도 지붕선이 한 줄이었다. 실제로는
+  // 같은 단지 안에서도 대지가 기울면 층수를 맞추고, 나중에 증축한 동은 더
+  // 올라간다. ±3 으로 벌리면 옆에서 봤을 때 지붕선이 계단처럼 끊긴다.
+  const base = rng.int(6, 14);
 
   // ── 붙는 것은 벽 밖으로 나간다 ───────────────────────────────────────────
   //
@@ -527,7 +681,9 @@ export function housingEstate(b, r, rng, mats, faces, detail, pools) {
   // 빼고(`slim`) 편복도만 남긴다 — 그래도 **들이는 것은 그대로 한다.**
   // 안 들이면 편복도와 발코니가 대지 밖으로 나가 옆 단지와 겹친다.
   const slim = depth < FRONT_OUT + BACK_OUT + 5;
-  const backOut = slim ? Math.max(DECK_OUT, CANOPY_OUT) + 0.1 : BACK_OUT;
+  // slim 이면 계단실이 없다. 그래도 편복도와 **현관 차양**은 나오므로 둘 중
+  // 깊은 쪽만큼은 들여야 한다.
+  const backOut = slim ? Math.max(DECK_OUT, CANOPY_D) + 0.1 : BACK_OUT;
   const inset = (band) => {
     // 정말 얕은 대지는 들일 수가 없다. 이때만 예전처럼 통짜로 둔다.
     if (depth - FRONT_OUT - backOut < 3) return band;
@@ -547,7 +703,7 @@ export function housingEstate(b, r, rng, mats, faces, detail, pools) {
     const band = alongX
       ? { x0: r.x0, x1: r.x1, z0: a, z1: a + depth }
       : { x0: a, x1: a + depth, z0: r.z0, z1: r.z1 };
-    const floors = Math.max(5, base + rng.int(-1, 1));
+    const floors = Math.max(4, base + rng.int(-3, 3));
     const t = slabBody(b, inset(band), front, back, floors, rng, mats, detail, pools, slim);
     // 앵커는 **띠 전체**다. 몸통만 주면 브릿지가 발코니 격자에 물린다.
     slabs.push({ rect: band, top: t, floors });

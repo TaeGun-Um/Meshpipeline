@@ -417,6 +417,37 @@ export function buildMaterials() {
       { color: 0x14161c, roughness: 0.24, envMapIntensity: 1.7 }, 'HomeDark'
     ),
 
+    // ── 동별 편차 ─────────────────────────────────────────────────────────
+    //
+    // 사용자 지적: *"아무리 빨리, 똑같이라곤 해도 다 똑같이 생겨서 뭔가 아쉬운
+    // 느낌이 있네. 약간씩은 바리에이션이 있었으면 좋겠어"*
+    //
+    // 맞다. **똑같이 지은 것과 40년 뒤에도 똑같은 것은 다르다.** 한날한시에
+    // 같은 도면으로 올렸어도 도색을 다시 한 동, 타일을 붙인 동, 아무도 손을
+    // 안 댄 동이 생긴다. 색을 가르는 것이 가장 싸고 멀리서 즉시 읽히는 편차다.
+    //
+    // **텍스처를 새로 굽지 않는다.** 처음에 패널 텍스처에 색을 곱하려 했는데
+    // `TexturedSurface` 는 `color` 를 안 받고, 색만 바꾼 세트를 새로 구우면
+    // 512² x 3장 x 3세트 = 약 9MB 다. 지금 217.7/220MB 라 그 자리에서 예산이
+    // 터진다. **이미 구운 마감 넷을 골라 쓰는 것으로 충분하다** — 어차피
+    // 실제로도 동마다 마감 재료가 다르지 색만 다른 게 아니다.
+    homeBodyMats: [
+      surf(panelSet, 0.85, {}),                                            // 손 안 댄 동
+      surf(tileSet, 0.80),                                                 // 타일을 붙인 동
+      surf(alleyWallSet, 0.6, { roughness: 0.9, envMapIntensity: 2.4 }),   // 때가 탄 동
+      // 도색한 동. **0x8d9298 로 시작했다가 낮췄다** — 밤에 그 밝기면 어두운
+      // 구역에서 혼자 새하얀 벽이 되어, 편차가 아니라 사고로 보였다.
+      // 편차는 눈에 띄되 구역의 밝기 위계를 깨면 안 된다.
+      SolidSurface.instance({ color: 0x5f646a, roughness: 0.93 }, 'HomePainted'),
+    ],
+    // 발코니 가림판. 동마다 다른 것을 썼다 — 이 색이 파사드 격자의 색이다.
+    homeRailMats: [
+      SolidSurface.instance({ color: 0x6a6a72, roughness: 0.88 }, 'Balcony'),
+      SolidSurface.instance({ color: 0x7d7466, roughness: 0.9 }, 'Balcony_Beige'),
+      SolidSurface.instance({ color: 0x4e5a62, roughness: 0.86 }, 'Balcony_Blue'),
+      SolidSurface.instance({ color: 0x7a5f52, roughness: 0.92 }, 'Balcony_Rust'),
+    ],
+
     // ── 공업 (factory.js) ────────────────────────────────────────────────
     //
     // 이 구역에 네온은 없다. 빛은 작업등(주황 나트륨)과 채광창으로 새는

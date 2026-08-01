@@ -159,11 +159,26 @@ function clutter(b, r, top, rng, mats) {
 
 // ── 크라운 ─────────────────────────────────────────────────────────────────
 
-// 평지붕 + 파라펫. 가장 흔한 형태.
+// 평지붕 + 파라펫. 가장 흔한 형태 — **였다.**
+//
+// ── 이 파일은 지금 한 번도 안 돌아간다 (코드리뷰 실측) ─────────────────────
+// `createCrown` 의 유일한 호출자는 `towers.js` 의 **공통 타워 경로**인데, 여섯
+// 구역이 전부 자기 생성기로 분기하며 `continue` 하므로 거기까지 내려오지
+// 않는다. 실측: `createCrown` 0회 · `parapet` 0회.
+//
+// `towers.podium()` 이 죽었다는 것은 이미 알고 있었다 (bazaar.js 452행).
+// **그 위로 한 칸 더 따라가지 않아서** 이 파일이 통째로 죽은 것을 못 봤다.
+// 죽은 경로를 찾으면 그 경로가 부르는 것까지 끝까지 따라가야 한다.
+//
+// 남길지 지울지는 설계 결정이라 여기서 정하지 않는다 — `city.md` 는 "공통
+// 생성기는 남긴다, 어디에도 속하지 않는 채움 건물에 쓴다" 고 적어 두었는데
+// 지금은 그런 건물이 하나도 없다. status.md 4장에 과제로 올려 둔다.
 function parapet(b, r, top, mats) {
   const p = shrink(r, 0.3);
   for (const side of SIDES) {
-    b.add(facePlane(p, top, 1.3, side, null, 0), mats.panelMat);
+    // 타일을 준다. 안 주면 폭 60m 짜리 파라펫 한 장에 패널 텍스처가 통째로
+    // 늘어난다 — `facePlane` 은 tile 이 없으면 UV 를 판 크기에 맞춘다.
+    b.add(facePlane(p, top, 1.3, side, [PANEL_TILE, PANEL_TILE], 0), mats.panelMat);
   }
 }
 
