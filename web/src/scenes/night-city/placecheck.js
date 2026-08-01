@@ -232,12 +232,29 @@ export function checkPlacement(scene) {
   //
   // 간판은 얇은 판이라 상자가 겹치면 그건 거의 확실히 **같은 자리에 두 장**
   // 이다. 문턱을 낮게 잡아도 거짓 양성이 잘 안 난다.
-  const signHits = overlappingPairs(signs, { min: 0.25, cell: 40, needY: true });
+  //
+  // ── 이 검사는 1년 내내 0 을 보고했고, 그게 거짓이었다 ─────────────────────
+  //
+  // "뭔가 다시 간판이 겹치기 시작한거같으니, 상세히 확인해"
+  //
+  // 손으로 세니 271 쌍이었다. 검사는 0 이었다. 검사 대상이 아니라 **판정이**
+  // 틀렸다 — 기본 `overlappingPairs` 는 x 와 z 를 둘 다 min 이상 요구하는데,
+  // 간판은 두께 0.14m 짜리 판이라 벽 법선 축이 min 을 넘을 수가 없다.
+  // 즉 **어떤 간판도 걸릴 수 없는 검사**였다 (placement.js 의 plate 주석).
+  //
+  // 검사가 0 을 보고할 때 물어야 할 것은 "깨끗하다" 가 아니라 **"이 검사가
+  // 걸릴 수는 있는 것인가"** 다. 그걸 안 물어서 사용자가 화면을 보고 먼저 알았다.
+  const signHits = overlappingPairs(signs, { min: 0.25, cell: 40, plate: true });
   if (signHits.length) {
     add(
       '간판끼리 겹침',
-      `간판 ${signHits.length}쌍이 겹친다 (최대 ${signHits[0].x.toFixed(1)}m)`,
-      signHits.slice(0, 12)
+      `간판 ${signHits.length}쌍이 겹친다 (최대 ${signHits[0].amount.toFixed(2)}m)`,
+      signHits.slice(0, 12).map((h) => ({
+        a: h.a.label, b: h.b.label,
+        종류: `${h.a.meta?.kind}/${h.b.meta?.kind}`,
+        면: h.a.meta?.side,
+        겹침: +h.amount.toFixed(2),
+      }))
     );
   }
 

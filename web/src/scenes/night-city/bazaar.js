@@ -53,6 +53,10 @@ const SHOP_FLOOR = 3.1;
 
 // 외부 복도 폭. 사람 둘이 지나갈 만큼만.
 const WALK_W = 1.5;
+// 난간 바깥면까지의 깊이. 복도가 파사드에서 차지하는 자리가 여기까지고,
+// 세로 간판의 팔도 **여기서** 시작한다 (그 앞은 비어 있다).
+// 두 곳이 이 값을 따로 알면 팔이 난간을 파고들거나 허공에서 시작한다.
+const RAIL_D = WALK_W + 0.2;
 
 // 면 위의 국소 좌표계. shopfront/retrofit 과 같은 발상 —
 // 면마다 부호를 손으로 쓰면 반드시 어딘가 틀린다.
@@ -89,63 +93,68 @@ function frameOf(r, side) {
 //   닫힘   **셔터.** 발광하지 않는다. 이 칸이 있어야 옆 칸이 읽힌다
 //
 // 레퍼런스의 밀도가 그렇다 — 빽빽하되 **어두운 자리가 사이사이에** 있다.
-function shopStrip(b, f, y, rng, mats, D, lit, shut, doorAt = -1, fl = 0, seed = 0) {
+//
+// ── 조각보를 걷어냈다 (사용자 지적으로 다시 씀) ────────────────────────────
+//
+// "번화가 건물 창문들 위에 저런 간판 리소스 없에고, 창문 자체를 키우던지 해서.
+//  아예 저 창문이 모델링이 번잡스러우니까 리모델링을 해야할거같은데"
+//
+// 맞았다. 칸마다 상자를 놓고 **칸마다 다른 텍스처**를 뽑아 붙이고 있었다.
+// 그래서 한 층이 초록·빨강·주황·초록 조각보가 됐고, 그 위에 배너 줄까지
+// 얹혀 두 겹으로 번잡했다. 창이 창으로 안 읽힌 이유가 이것이다.
+//
+// 창은 조각보가 아니다. **유리는 이어져 있고, 격자는 창틀이 만든다.**
+//
+//   유리 띠   면을 가로지르는 한 장. 재질은 층마다 **하나**
+//   멀리언    유리 앞 세로 창틀. 격자는 텍스처가 아니라 여기서 나온다
+//   셔터      닫힌 칸만 유리 **앞에** 덧댄다 — 다른 색 유리가 아니라 덧문이다
+//
+// 이건 upperFacade 가 이미 쓰던 문법이다 (한 층 한 장 + 셔터 칸). 새 체계를
+// 만들지 않고 거기에 맞춘다 — 같은 것을 두 문법으로 그리면 반드시 갈린다.
+const GLASS_H = 0.78;  // 층 높이 대비 유리 높이. 0.62 였다 — "키우라" 는 지시다
+const SILL = 0.11;     // 창 밑 턱
+
+function windowBand(b, f, y, rng, mats, D, lit, shut, doorAt = -1, fl = 0, seed = 0) {
   const n = Math.max(2, Math.round(f.w / 4.2));
   const bw = f.w / n;
+  const h = SHOP_FLOOR * GLASS_H;
+  const cy = y + SHOP_FLOOR * SILL + h / 2;
 
+  // 1) 유리 띠 — 면 하나에 한 장, 재질도 하나.
+  //    2층까지는 아직 가게고(적층 상가), 3층부터는 세입자 방이다.
+  const pool = fl <= 1 ? mats.shopfrontBrightMats : mats.tenantWinMats;
+  const gi = Math.floor(hash2(seed + fl * 313, seed + 7) * 997) % pool.length;
+  const [gx, gz] = f.at(0, 0.06);
+  const [gw, gd] = f.size(f.w * 0.985, 0.1);
+  b.add(autoBox(gw, h, gd, [gx, cy, gz], 0.02), pool[gi]);
+
+  // 2) 창틀 — 유리 앞에 세로 멀리언과 위아래 가로대.
+  //    이 격자가 있어야 "한 장 붙인 그림" 이 아니라 창으로 읽힌다.
+  for (let i = 0; i <= n; i++) {
+    const [px, pz] = f.at(-f.w / 2 + bw * i, 0.15);
+    const [pw, pd] = f.size(0.15, 0.2);
+    b.box(pw, h + 0.22, pd, [px, cy, pz], mats.frameMat);
+  }
+  for (const t of [-0.5, 0.5]) {
+    const [rx, rz] = f.at(0, 0.15);
+    const [rw, rd] = f.size(f.w, 0.2);
+    b.box(rw, 0.17, rd, [rx, cy + t * (h + 0.2), rz], mats.frameMat);
+  }
+
+  // 3) 칸 상태 — 난수는 칸마다 **똑같이 둘씩** 뽑는다. 건너뛰면 뒤의 도시가
+  //    통째로 다시 뽑힌다 (status.md 2.1 규칙 6. 이 파일에서만 네 번째다).
   for (let i = 0; i < n; i++) {
-    const u = -f.w / 2 + bw * (i + 0.5);
-
-    // ── 3층부터는 절반이 세입자다 (사용자 지적) ─────────────────────────
-    // "창문마다 간판과 똑같은 형태의 리소스가 쓰이고 있고, 이게 너무
-    //  복사 붙여넣기로 여기저기 쓰이고 있음"
-    //
-    // 층마다 가게라는 것이 적층 상가의 정체이긴 하지만, **모든 층의 모든
-    // 칸**에 점포 텍스처(간판 띠 + 모자이크)를 붙이니 5층짜리가 간판 스무
-    // 장이 됐다. 실제 잡거빌딩도 위로 갈수록 사무실과 살림집이 섞인다.
-    //
-    // 좌표 해시로 정한다 — 난수를 더 뽑으면 뒤의 도시가 다시 뽑힌다.
-    const tenant = fl >= 2 && hash2(seed + i * 37 + fl * 211, seed + 53) < 0.5;
-
-    // ── 난수는 여기서 전부 뽑는다. 아래는 그리기만 한다 ──────────────────
-    // 출입구 칸은 **그리지만 않을 뿐 난수는 똑같이 소비해야 한다.** 한 칸을
-    // 통째로 건너뛰었더니 뒤에 오는 모든 생성이 밀려서 도시 전체가 다시
-    // 뽑혔고, 픽셀 회귀 16장이 전부 "다름" 이 됐다. 문 몇 개를 더한 변경이
-    // 공장 뷰를 72% 바꿀 수는 없다 — 그 숫자가 곧 신호였다.
     const closed = rng.chance(shut);
-    const on = !closed && rng.chance(lit);
-    const face = closed ? mats.shutterMat
-      : tenant ? mats.tenantWinMats[(i + fl) % mats.tenantWinMats.length]
-      : on ? mats.shopfrontBrightMats[rng.int(0, mats.shopfrontBrightMats.length - 1)]
-           : mats.shopfrontMats[rng.int(0, mats.shopfrontMats.length - 1)];
-    // 닫힌 칸에는 간판도 안 단다. 여기서 걸러야 "꺼진 자리" 가 성립한다.
-    //
-    // **난수는 tenant 와 무관하게 뽑는다.** `!tenant && rng.chance(...)` 라고
-    // 쓰면 단축 평가로 뽑기를 건너뛰어 뒤의 도시가 밀린다 — 이 파일에서만
-    // 세 번째로 같은 함정이다 (status.md 2.1 규칙 6).
-    const bladeRoll = !closed && rng.chance(D.bladeChance * 0.8);
-    const hue = bladeRoll ? D.trim[rng.int(0, D.trim.length - 1)] : 0;
-    const blade = bladeRoll && !tenant; // 세입자 칸에는 안 단다 — 가게가 아니다
+    const dim = rng.chance(1 - lit);
+    if (i === doorAt || (!closed && !dim)) continue;
 
-    // 이 칸은 출입구다 — 위층 가게로 올라가는 계단이 여기 있다.
-    // 가게로 채우면 안 된다.
-    if (i === doorAt) continue;
-
-    const [ix, iz] = f.at(u, 0.06);
-    const [sw, sd] = f.size(bw * 0.88, 0.1);
-    b.add(autoBox(sw, SHOP_FLOOR * 0.62, sd, [ix, y + SHOP_FLOOR * 0.46, iz], 0.02), face);
-
-    // 가게 사이 기둥 — 이게 없으면 층 전체가 한 장의 띠로 보인다
-    const [px, pz] = f.at(u - bw / 2, 0.12);
-    const [pw, pd] = f.size(0.16, 0.26);
-    b.box(pw, SHOP_FLOOR, pd, [px, y + SHOP_FLOOR / 2, pz], mats.frameMat);
-
-    // 간판 — 층마다 있다. 여기가 다른 구역과 가장 크게 갈리는 지점이다.
-    if (blade) {
-      const [gx, gz] = f.at(u, 0.34);
-      const [gw, gd] = f.size(bw * 0.8, 0.12);
-      b.box(gw, 0.44, gd, [gx, y + SHOP_FLOOR - 0.42, gz], neonSoft(hue));
-    }
+    const u = -f.w / 2 + bw * (i + 0.5);
+    const [sx, sz] = f.at(u, 0.13);
+    const [sw, sd] = f.size(bw * 0.9, 0.08);
+    // 닫힌 칸은 셔터를 통째로, 흐린 칸은 블라인드를 위에서 절반쯤 내린다.
+    // 덧대는 것이라 유리와 색이 갈리지 않는다 — 조각보가 안 생긴다.
+    const sh = closed ? h : h * 0.45;
+    b.box(sw, sh, sd, [sx, cy + (h - sh) / 2, sz], closed ? mats.shutterMat : mats.frameMat);
   }
 }
 
@@ -538,8 +547,20 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
           b.add(autoBox(dx, SHOP_H, dz, [px, SHOP_H / 2, pz], 0.04), mats.tileWallMat);
         }
       } else {
-        shopStrip(b, f, y, rng, mats, D, litBase * (1 - fl * 0.1), shutBase + fl * 0.11, doorAt,
+        windowBand(b, f, y, rng, mats, D, litBase * (1 - fl * 0.1), shutBase + fl * 0.11, doorAt,
           fl, Math.round(r.x0) * 4 + SIDES.indexOf(side) + Math.round(r.z0));
+        // ── 창도 자리를 차지한다 (사용자 지적) ──────────────────────────
+        // "창문들 위에 저런 간판 리소스 없에고"
+        //
+        // 배너가 유리 한복판에 걸리고 있었다. 원인은 복도에서 겪은 것과
+        // **똑같다** — 대장에 없는 것은 없는 것이다. 창을 신고하면 규칙이
+        // 알아서 밀어내므로, 나중에 창 크기를 바꿔도 다시 안 겹친다.
+        // 지우는 대신 규칙으로 두는 이유가 이것이다.
+        signs.push({
+          block: true, rect: r, side,
+          y: y + SHOP_FLOOR * SILL, h: SHOP_FLOOR * GLASS_H, w: f.w,
+          depth: 0.28,   // 유리(0.1) + 앞에 붙은 창틀(0.15+0.1)
+        });
       }
       if (doorAt >= 0) {
         const sub = bayRect(r, side, doorAt, nBay, 0);
@@ -561,7 +582,9 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
         // 서로를 모르면 반드시 이렇게 된다 (지면에서 겪은 것과 같다).
         // 실제로 튀어나온 것만 잡는다 — 바닥판(0.16)과 난간(1.05).
         // 넉넉히 잡으면 층 사이 빈 띠가 사라져 간판이 갈 데가 없어진다.
-        signs.push({ block: true, rect: r, side, y: y - 0.15, h: 1.3, w: f.w });
+        // depth 를 같이 준다 — 안 주면 대장이 "벽에 붙은 것" 으로 보고, 복도
+        // 앞에 매단 세로 간판까지 이 예약에 걸려 통째로 버려진다.
+        signs.push({ block: true, rect: r, side, y: y - 0.15, h: 1.3, w: f.w, depth: RAIL_D });
       }
     }
 
@@ -614,12 +637,23 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
       const skip = rng.chance(0.22);
       const scheme = rng.int(0, 5);
       if (fl < 1 || skip) continue;
-      const by = fl * SHOP_FLOOR + 1.5; // 난간 위, 다음 층 바닥 아래
+      // ── 간판은 난간에 맨다 (사용자 지적으로 옮김) ──────────────────────
+      //
+      // "창문들 위에 저런 간판 리소스 없에고, 창문 자체를 키우던지 해서"
+      //
+      // 전에는 층 한복판(y+1.5)에 걸었는데, 거기가 곧 유리 한복판이었다.
+      // 창을 키운 지금은 층에 빈 띠 자체가 없다 — 복도 1.15m + 유리 2.4m 로
+      // 3.1m 가 다 찬다. 자리를 억지로 내면 다시 유리를 덮을 뿐이다.
+      //
+      // 그래서 벽을 떠나 **난간에 맨다.** 유리를 안 가리고, 아래에서 보면
+      // 층마다 색이 쌓인다. 실제 잡거빌딩의 복도 난간이 그렇게 생겼다.
+      const by = fl * SHOP_FLOOR + 0.12;
+      const rh = Math.min(bh, 0.86);        // 난간 높이(1.0)를 안 넘는다
       if (ticker) {
-        signs.push({ kind: 'strip', rect: r, side, y: by, w: 0, h: bh * 0.62, scheme });
+        signs.push({ kind: 'strip', rect: r, side, y: by, w: 0, h: rh * 0.62, scheme, standoff: RAIL_D });
       } else {
         for (let m = 0; m < perRow; m++) {
-          signs.push({ kind: 'banner', rect: r, side, y: by, w: 0, h: bh, scheme });
+          signs.push({ kind: 'banner', rect: r, side, y: by, w: 0, h: rh, scheme, standoff: RAIL_D });
         }
       }
     }
@@ -660,6 +694,8 @@ export function bazaarBlock(b, r, rng, mats, D, faces, detail, signs, pools = []
         // 있다. 벽에 붙여 매달면 복도와 난간을 관통한다. 실제 잡거빌딩도
         // 세로 간판은 복도보다 더 앞에 매단다 — 그래야 아래에서 보인다.
         standoff: floors >= 2 ? WALK_W + 0.8 : 0.15,
+        // 팔은 난간 바깥면에 문다. 벽에서 뽑으면 복도와 가로 간판을 가로지른다
+        armFrom: floors >= 2 ? RAIL_D : 0,
         scheme: rng.int(0, 5),
       });
     }

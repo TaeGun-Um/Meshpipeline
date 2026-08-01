@@ -208,7 +208,32 @@ export function overlapY(a, b) {
 //
 // min 은 이만큼 넘게 겹쳐야 보고한다는 뜻이다. 0 으로 두면 부동소수 오차와
 // "일부러 맞붙인 것"까지 전부 걸려서 목록이 쓸모없어진다.
-export function overlappingPairs(list, { min = 0.3, cell = 90, needY = true } = {}) {
+//
+// ── plate: 얇은 판은 이 판정으로 **절대 안 걸린다** (사용자 지적으로 발견) ──
+//
+// "뭔가 다시 간판이 겹치기 시작한거같으니, 상세히 확인해"
+//
+// 실측하니 겹친 쌍이 271 이었는데 검사는 0 을 보고하고 있었다. 원인은 검사
+// 대상이 아니라 **이 함수의 기본 판정**이다.
+//
+//   if (ov.x <= min || ov.z <= min) continue;      <- x 와 z 를 **둘 다** 요구
+//
+// 이 요구는 건물에는 맞다. 건물은 두 축이 다 크다. 그런데 간판은 두께
+// 0.14~0.3m 짜리 **판때기**다. 같은 벽에 붙은 두 장은 벽 법선 축 겹침이
+// 두께를 넘을 수가 없으므로, min 을 0.25 로 두는 순간 **구조적으로 통과**한다.
+// 문턱을 낮추는 문제가 아니다 — 낮추면 이번에는 벽 하나에 스치는 것이 전부
+// 걸린다. 애초에 재는 축이 틀렸다.
+//
+// 판에서 의미 있는 겹침은 **판이 놓인 평면 안**에서 잰 것이다. 그래서 세 축
+// 겹침 중 **가장 작은 것(= 두께 축)을 버리고** 나머지 둘로 판정한다.
+//
+//   같은 벽 두 장   x 0.35 · y 1.70 · z 0.14  ->  0.35, 1.70  걸린다 (맞다)
+//   모퉁이에서 만남 x 0.14 · y 3.00 · z 0.12  ->  0.14, 3.00  안 걸린다 (맞다)
+//
+// 이 프로젝트에서 스무 번 나온 결합 오류와 같은 뿌리다: 건물용으로 쓴 헬퍼를
+// 판에 그대로 붙이고, **그 판정이 판에서 무엇을 뜻하는지 안 물었다.**
+const CONTACT = 0.02; // 실제로 만나기는 하나 — 부동소수 여유
+export function overlappingPairs(list, { min = 0.3, cell = 90, needY = true, plate = false } = {}) {
   const grid = new Map();
   const keyOf = (x, z) => `${Math.floor(x / cell)},${Math.floor(z / cell)}`;
   for (const it of list) {
@@ -235,6 +260,15 @@ export function overlappingPairs(list, { min = 0.3, cell = 90, needY = true } = 
         seen.add(id);
 
         const ov = overlapXZ(a, bIt);
+        if (plate) {
+          // 판은 세 축이 **다** 만나야 한다. 그 다음 두께 축을 버리고 잰다.
+          const oy = overlapY(a, bIt);
+          if (ov.x <= CONTACT || ov.z <= CONTACT || oy <= CONTACT) continue;
+          const s = [ov.x, ov.z, oy].sort((p, q) => q - p);
+          if (s[1] <= min) continue;
+          out.push({ a, b: bIt, x: ov.x, y: oy, z: ov.z, amount: s[1] });
+          continue;
+        }
         if (ov.x <= min || ov.z <= min) continue;
         if (needY) {
           const oy = overlapY(a, bIt);
