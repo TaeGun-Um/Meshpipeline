@@ -144,11 +144,19 @@ function stall(b, x, z, w, d, rng, mats, lit) {
   // *"뭘 전시한건지 구분이 안되서, 뭐가 뭔지 잘 모르겠음"*
   //
   // 좌판은 전부 **같은 상자 더미**였다. 팔 물건이 없으니 가게가 아니라
-  // 짐이다. 좌판 위에 **매다는 작은 간판**을 하나 붙인다 — 도시의 다른
-  // 상가가 쓰는 픽토그램 시트를 그대로 쓰므로 업종이 하나씩 갈린다.
+  // 짐이다. 좌판 위에 **매다는 작은 간판**을 하나 붙인다 — 픽토그램이
+  // 있어야 업종이 하나씩 갈린다.
+  //
+  // ── 간판 자리에는 간판을 붙인다 (사용자 지시로 고침) ────────────────────
+  // 여기서 `shopfrontBrightMats` 를 쓰고 있었다. 그 텍스처가 간판 띠 + 유리를
+  // **한 장에 담고 있어서** 겸사겸사 쓸 수 있었던 것이다. 이제 그 띠를
+  // 걷어냈으므로(shops.shopfront) 여기는 유리만 나온다 — 간판이 아니다.
+  //
+  // 원래 이 일을 하는 리소스는 `signMats.banner` 다 (네온 테 + 픽토그램 +
+  // 표의문자, 4:1). 겸용하던 것을 제자리로 돌린다.
   //
   // `lit` 은 그대로 등의 유무다 (시장은 전부, 암거래는 드물게).
-  const sign = mats.shopfrontBrightMats[rng.int(0, mats.shopfrontBrightMats.length - 1)];
+  const sign = mats.signMats.banner[rng.int(0, mats.signMats.banner.length - 1)];
   const sw = Math.min(w, d) > 1.5 ? Math.max(w, d) * 0.8 : Math.max(w, d) * 0.9;
   const flat = w >= d;
   b.add(

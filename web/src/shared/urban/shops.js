@@ -237,13 +237,34 @@ export function shopTextures(S) {
     // 이제 간판과 **같은 어휘**를 쓴다 — 네온 튜브 테두리, 픽토그램,
     // 표의문자, 라틴 줄. 그리고 칸마다 색이 다르다. 전에는 텍스처 하나에
     // 색 하나여서 네 칸이 전부 같은 색이었다.
+    // ── 간판 띠를 걷어냈다 (사용자 지시) ──────────────────────────────────
+    //
+    // "텍스쳐인지 모델인지 모자이크 창문 위에 간판 저거를 없에고,
+    //  모자이크를 살리라고"
+    //
+    //   전            후
+    //   ─────────     ─────────
+    //   간판 간판     모자 모자
+    //   ─────────     이크 이크
+    //   모자 모자     패턴 패턴
+    //   이크 이크     ─────────
+    //   ─────────
+    //
+    // 이 텍스처는 **두 가지를 한 장에 담고 있었다** — 위 30%가 간판(픽토그램·
+    // 표의문자·네온 테), 아래가 점포 유리다. 그래서 이걸 붙인 자리마다 창 위에
+    // 간판이 따라 붙었다. 3D 배너를 아무리 치워도 남는 이유가 이것이었다.
+    //
+    // 둘을 갈랐다. **여기는 유리만 한다.** 간판이 필요한 곳은 간판을 붙인다
+    // (`signMats.banner` — 원래 그 일을 하는 리소스다).
+    //
+    // 모자이크는 그대로다. 사용자가 좋다고 한 것이 그 무늬이고, 이제 띠가
+    // 차지하던 30%까지 **모자이크가 채운다.**
     shopfront(seed, tintHex) {
       const base = rgb255(tintHex);
       const noise = tiledFbm(seed + 5, 22, 3);
       const BAYS = 4;
-      const PLINTH = 0.12;
-      const HEADER = 0.70;   // 간판 띠를 키웠다. 0.82 로는 그림이 안 들어간다
-      const AWNING = 0.66;   // 간판 아래 차양선
+      const PLINTH = 0.09;   // 아래 가로대
+      const CORNICE = 0.93;  // 위 가로대. 그 사이가 전부 유리다
 
       // 칸마다 다른 색. 기본 색조를 중심으로 이웃 네온으로 흔든다 —
       // 실제 상가는 가게마다 간판 색이 다르고, 그 불규칙이 번화가의 인상이다.
@@ -264,18 +285,8 @@ export function shopTextures(S) {
           const bi = Math.min(BAYS - 1, Math.floor(u * BAYS));
           const bu = u * BAYS - bi;          // 칸 안 가로 0..1
           const tint = bayHue(bi);
-          const sid = seed + bi * 977;
 
-          const ink = (col, lvl) => {
-            const k = lvl === 2 ? 1.0 : 0.68;
-            const wash = lvl === 2 ? 0.40 : 0;
-            o.c[0] = col[0] * 0.14; o.c[1] = col[1] * 0.14; o.c[2] = col[2] * 0.14;
-            o.r = 0.32; o.h = 0.86;
-            o.e[0] = clamp(col[0] * k + 255 * wash, 0, 255);
-            o.e[1] = clamp(col[1] * k + 255 * wash, 0, 255);
-            o.e[2] = clamp(col[2] * k + 255 * wash, 0, 255);
-          };
-
+          // 아래 가로대
           if (up < PLINTH) {
             const k = S.frame[0] * 1.3 + gn * 10;
             o.c[0] = k; o.c[1] = k; o.c[2] = k + 4;
@@ -283,56 +294,8 @@ export function shopTextures(S) {
             return;
           }
 
-          // ── 간판 띠 ─────────────────────────────────────────────────
-          if (up > HEADER) {
-            const hv = (up - HEADER) / (1 - HEADER); // 띠 안 세로 0..1
-            // 바탕 — 어둡다. 네온은 어두운 판 위에 있어야 네온이다
-            o.c[0] = tint[0] * 0.10; o.c[1] = tint[1] * 0.10; o.c[2] = tint[2] * 0.10;
-            o.r = 0.45; o.h = 0.72;
-            o.e[0] = tint[0] * 0.16; o.e[1] = tint[1] * 0.16; o.e[2] = tint[2] * 0.16;
-
-            // 칸을 가르는 세로 관 — 가게 경계
-            if (bu < 0.035 || bu > 0.965) { ink(tint, 1); return; }
-
-            // 테두리 관 (칸 안쪽)
-            const edge = Math.min(bu - 0.035, 0.965 - bu, hv * 0.42, (1 - hv) * 0.42);
-            if (edge < 0.030) { ink(tint, 2); return; }
-            if (Math.abs(edge - 0.062) < 0.013) { ink(tint, 1); return; }
-
-            // 픽토그램 — 무엇을 파는가. 왼쪽 3할
-            const pid = (hash2(sid, 77) * PICT_COUNT) | 0;
-            const pu = (bu - 0.10) / 0.24;
-            const pv = (hv - 0.12) / 0.76;
-            const pk = pictAt(pid, pu, pv, 0.075);
-            if (pk) { ink(tint, pk); return; }
-            if (pu >= 0 && pu <= 1 && pv >= 0 && pv <= 1) return;
-
-            // 라틴 줄 — 아래쪽
-            if (hv < 0.32) {
-              const lu = (bu - 0.38) / 0.54;
-              if (lu >= 0 && lu <= 1) {
-                if (latinAt(sid + 5, lu, (hv - 0.06) / 0.24, 7)) ink(tint, 1);
-              }
-              return;
-            }
-
-            // 표의문자 — 위쪽
-            const gu = (bu - 0.38) / 0.54;
-            const gv = (hv - 0.38) / 0.50;
-            if (gu < 0 || gu > 1 || gv < 0 || gv > 1) return;
-            const GC = 3;
-            const cx = Math.min(GC - 1, Math.floor(gu * GC));
-            const fx = (gu * GC - cx - 0.10) / 0.80;
-            const fy = (gv - 0.06) / 0.88;
-            if (fx < 0 || fx > 1 || fy < 0 || fy > 1) return;
-            const gid = (hash2(cx * 7 + sid, 913) * 4096) | 0;
-            if (glyphAt(gid, fx, fy)) ink(tint, 2);
-            return;
-          }
-
-          // ── 차양선 ──────────────────────────────────────────────────
-          // 간판과 유리 사이. 이 한 줄이 있으면 둘이 다른 물건으로 읽힌다
-          if (up > AWNING) {
+          // 위 가로대 — 옛 차양선을 맨 위로 올린 것. 유리를 위아래로 닫는다
+          if (up > CORNICE) {
             const k = S.frame[0] * 0.9;
             o.c[0] = k; o.c[1] = k; o.c[2] = k + 3;
             o.r = 0.7; o.h = 0.95;
@@ -349,7 +312,7 @@ export function shopTextures(S) {
           // 유리 — 실내 발광. 위가 밝고 아래로 어둡다 (천장 조명).
           // 0.42~0.92 로 잡았다가 되돌렸다. 점포 정면은 면적이 커서 그 밝기면
           // 블룸 임계값을 통째로 넘어 흰 상자가 된다.
-          const t = (up - PLINTH) / (AWNING - PLINTH);
+          const t = (up - PLINTH) / (CORNICE - PLINTH);
           let level = 0.26 + t * 0.3;
 
           // 실내 물체 실루엣. fbm 을 그대로 쓰면 "유리에 낀 무언가" 가 된다.
