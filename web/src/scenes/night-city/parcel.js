@@ -31,7 +31,7 @@ import { GRID, BLOCK_SIZE, blockCenter, blockIndexAt, roads, HIGHWAY_BAND } from
 import { districtAt } from './district.js';
 import { hash2 } from '../../core/textures.js';
 import { LANDMARK_BLOCKS, PROMENADE } from './landmark.js';
-import { inPlaza, plazaCells, plazaHits, clipToPlaza } from './plaza.js';
+import { inPrecinct, plazaCells, plazaHits, clipToPlaza } from './plaza.js';
 
 // 랜드마크가 선 칸은 병합하지 않는다. 손으로 지은 것이 있는 자리라
 // 남의 대지에 묶이면 그 블록을 통째로 잡아먹는다.
@@ -258,13 +258,13 @@ export function blockRect(ix, iz) {
 // t 는 그 도로를 따라간 위치(다른 축의 좌표).
 //
 // 두 칸이 같은 대지면 그 구간의 도로는 없다.
-// 광장 안이면 닫힌다. **여기 한 줄이 다섯 모듈을 한꺼번에 비운다** —
+// 보행 전용 범위 안이면 닫힌다. **여기 한 줄이 다섯 모듈을 한꺼번에 비운다** —
 // streets(포장·차선·가로등) · sidewalk(맨홀·물웅덩이) · parking(갓길) ·
 // streetlife(시설물) · crowd(사람) 가 이미 전부 이 함수를 묻고 있다.
 // 차(traffic)만 안 묻는다. 그쪽은 gridLines 를 직접 쓰므로 따로 손댔다.
 export function roadOpen(band, t) {
   const d = data();
-  if (inPlaza(roads()[band].mid, t)) return false;
+  if (inPrecinct(roads()[band].mid, t)) return false;
   // 바깥 경계 도로는 항상 열려 있다
   if (band <= 0 || band >= GRID) return true;
   const j = blockIndexAt(t);
@@ -276,7 +276,7 @@ export function roadOpen(band, t) {
 // 같은 판정을 축 반대로. 도로가 X 를 따라 뻗을 때 쓴다.
 export function roadOpenZ(band, t) {
   const d = data();
-  if (inPlaza(t, roads()[band].mid)) return false;
+  if (inPrecinct(t, roads()[band].mid)) return false;
   if (band <= 0 || band >= GRID) return true;
   const i = blockIndexAt(t);
   const a = d.owner[(band - 1) * GRID + i];

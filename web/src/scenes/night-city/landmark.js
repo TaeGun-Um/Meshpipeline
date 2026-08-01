@@ -477,7 +477,9 @@ function depot(b, cx, cz, mats, pools) {
 // 처음에는 홀 폭 + 벽(37) 이면 되는 줄 알았다. 아니었다 — 양 끝의 문이
 // 홀보다 넓고, 그 위 처마가 문보다 또 넓다. **제일 넓은 것**을 재야 한다.
 // 37 로 잡았더니 처마가 5.65m 씩 광장 상가를 파고들었다.
-export const GATE_WID = 26;                        // 홀 폭
+// 폭 26 → 34 (사용자 지시: "입구 크기(폭)을 늘리고"). 홀 하나만 고치면
+// 문·처마·광장의 남북 팔이 전부 따라온다 — 그러라고 여기 하나에 둔 것이다.
+export const GATE_WID = 34;                        // 홀 폭
 export const GATE_WALL = 5.5;                      // 양옆 벽 두께
 export const GATE_PORTAL = GATE_WID + 13;          // 문 기둥 사이
 export const GATE_SPAN = GATE_PORTAL + 8;          // 처마 — 문이 실제로 먹는 폭

@@ -17,7 +17,7 @@ import { Lane } from '../../shared/movers.js';
 import { NEON } from '../../shared/neon.js';
 import { neon } from '../../shared/masters.js';
 import { CITY_HALF, gridLines } from './layout.js';
-import { PLAZA } from './plaza.js';
+import { PRECINCT } from './plaza.js';
 
 const COUNT = 96;
 const ROAD_Y = 0.02;
@@ -45,8 +45,8 @@ const KINDS = [
 // 간판 차양에서 한 번 했다 — 16/16 뷰가 어긋났다).
 function detour(alongX, cross, lines, lane) {
   // alongX 면 X 를 달리므로 막히는 것은 Z 좌표, 아니면 그 반대다
-  const lo = alongX ? PLAZA.z0 : PLAZA.x0;
-  const hi = alongX ? PLAZA.z1 : PLAZA.x1;
+  const lo = alongX ? PRECINCT.z0 : PRECINCT.x0;
+  const hi = alongX ? PRECINCT.z1 : PRECINCT.x1;
   if (cross < lo || cross > hi) return cross;
   let best = cross;
   let bd = Infinity;

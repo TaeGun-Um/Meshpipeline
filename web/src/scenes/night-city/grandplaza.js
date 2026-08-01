@@ -28,7 +28,9 @@
 import { autoBox, lathe } from '../../core/profile.js';
 import { upPlane, rectSize } from '../../core/boxfaces.js';
 import { CURB_HEIGHT } from './layout.js';
-import { PLAZA, INNER, ARMS, CROSSING, arcadeBars, PLAZA_IX, PLAZA_IZ } from './plaza.js';
+import {
+  PLAZA, INNER, ARMS, CROSSING, arcadeBars, emptyRoadRects, PLAZA_IX, PLAZA_IZ,
+} from './plaza.js';
 import { districtAt } from './district.js';
 import { bazaarBlock } from './bazaar.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
@@ -391,6 +393,76 @@ function planting(b, rng, mats, pools) {
   }
 }
 
+// ── 지운 도로 자리의 쉼터 ─────────────────────────────────────────────────
+//
+// 사용자 지시: *"2번 4번같은 공간은 조그마한 휴식 공간같이 만들고"*
+//
+// 도로를 닫으면 그 자리에 **아무것도 안 남는다.** 포장도 차선도 가로등도 전부
+// `roadOpen` 을 묻고 나서 그리기 때문이다. 그래서 상가 사이에 검은 사각형이
+// 생긴다 — 광장을 넓힌 대가로 도시에 구멍을 낸 셈이다.
+//
+// 광장 같은 목적지가 아니라 **지나다 앉는 자리**다. 그래서 문법이 다르다:
+// 가운데를 비우고, 짧은 쪽 벽에 붙여 앉을 것을 놓고, 등 하나로 끝낸다.
+function restArea(b, rng, mats, pools, r) {
+  const w = r.x1 - r.x0;
+  const d = r.z1 - r.z0;
+  const cx = (r.x0 + r.x1) / 2;
+  const cz = (r.z0 + r.z1) / 2;
+  const alongX = r.axis === 'x'; // 띠가 X 로 길다
+
+  // 포장 — 차도가 아니라는 것을 바닥이 먼저 말한다
+  b.add(upPlane(w - 1.0, d - 1.0, [cx, Y + 0.03, cz], [(w - 1) / 2.6, (d - 1) / 2.6]),
+    mats.plazaMat);
+
+  // 앉을 것과 심을 것을 **긴 축을 따라** 번갈아 놓는다.
+  //
+  // 넓으면 양쪽 벽에 붙이고 가운데를 비운다 (여기는 지나가는 자리이기도 하다).
+  // 좁으면 한 줄로 세운다 — 8m 짜리 골목에 양쪽으로 화분을 놓으면 화분끼리
+  // 붙어서 길이 막힌다.
+  const len = alongX ? w : d;
+  const wide = (alongX ? d : w) >= 13;
+  const N = Math.max(2, Math.round(len / (wide ? 13 : 9)));
+  const side = wide ? (alongX ? d : w) / 2 - 2.2 : 0;
+  for (let i = 0; i < N; i++) {
+    const t = (alongX ? r.x0 : r.z0) + (len / N) * (i + 0.5);
+    for (const s of (wide ? [-1, 1] : [0])) {
+      const px = alongX ? t : cx + s * side;
+      const pz = alongX ? cz + s * side : t;
+      if (i % 2 === 0) {
+        planter(b, rng, mats, px, pz, alongX ? 3.0 : 2.2, alongX ? 2.2 : 3.0, i % 4 === 0);
+      } else {
+        // 벤치 — 등받이 없는 콘크리트 덩이. 이 도시의 공공 가구는 부수기 어렵다
+        const [bw, bd] = alongX ? [2.6, 0.7] : [0.7, 2.6];
+        b.add(autoBox(bw, 0.44, bd, [px, Y + 0.22, pz], 0.04), mats.frameConcMat);
+        b.box(bw - 0.4, 0.05, bd - 0.4, [px, Y + 0.44, pz], neonSoft(NEON.warm));
+      }
+    }
+  }
+
+  // 등 — 도로를 닫으면서 없앤 가로등을 대신한다. 좁은 자리는 가구가 이미
+  // 가운데를 쓰므로 한쪽 끝으로 비켜 세운다
+  const L = Math.max(1, Math.round(len / 22));
+  const off = wide ? 0 : (alongX ? d : w) / 2 - 1.4;
+  for (let i = 0; i < L; i++) {
+    const t = (alongX ? r.x0 : r.z0) + (len / L) * (i + 0.5);
+    lamp(b, mats, pools, alongX ? t : cx + off, alongX ? cz + off : t);
+  }
+  pools.push({
+    kind: 'floor', x: cx, y: Y + 0.04, z: cz,
+    rx: w * 0.5, rz: d * 0.5, tint: rgb01(NEON.warm, 0.2),
+  });
+}
+
+function restAreas(b, rng, mats, pools) {
+  let n = 0;
+  for (const r of emptyRoadRects()) {
+    b.mark('fixture', `plaza:rest${n}`, {});
+    restArea(b, rng, mats, pools, r);
+    n++;
+  }
+  return n;
+}
+
 // ── 상가 (광장의 벽) ──────────────────────────────────────────────────────
 //
 // 토막의 긴 두 면은 늘 열린 곳을 마주 본다 — 안쪽은 광장, 바깥쪽은 도시다.
@@ -512,5 +584,8 @@ export function grandPlaza(b, rng, mats, signs, pools) {
   // 뜬다. 실제로 5.25 로 떠서 발견했다 — 지표가 틀린 게 아니라 세는 곳이
   // 빠져 있었다 (towers.js 의 count++ 머리말과 같은 사고).
   const buildings = arcadeShops(b, rng, mats, signs, pools);
-  return { rect: PLAZA, court: inner.rect, buildings };
+  // 광장 밖에서 도로를 지운 자리. 광장 다음에 와야 한다 — 광장이 이미 깐
+  // 자리를 빼고 남은 것만 채우기 때문이다 (plaza.emptyRoadRects).
+  const rests = restAreas(b, rng, mats, pools);
+  return { rect: PLAZA, court: inner.rect, buildings, rests };
 }

@@ -47,7 +47,7 @@
 //
 // 마지막 둘이 요점이다. 광장이 블록 경계를 **넘어서** 잘라 들어가고, 잘린
 // 대지는 광장에 앞면을 내준다. 블록에 맞췄다면 절대 생기지 않을 관계다.
-import { BLOCK_SIZE, GRID, blockCenter, blockRect } from './layout.js';
+import { BLOCK_SIZE, GRID, blockCenter, blockRect, roads } from './layout.js';
 import { LANDMARK_BLOCKS, GATE_SPAN } from './landmark.js';
 
 // 광장 절반 폭. **이 파일에서 유일한 자유 숫자다.**
@@ -170,6 +170,79 @@ export function arcadeBars() {
     out.push({ x0, x1, z0: ARMS.ew.z1, z1: P.z1 - A - CORNER, side, half: 'n' });
   }
   return out;
+}
+
+// ── 차가 안 들어오는 범위 ─────────────────────────────────────────────────
+//
+// 사용자 지시: *"광장이 들어서면 도로가 생기면 안되지"* / *"도로만 지우라고"*
+//
+// 광장 사각형만 닫으면 **광장 벽 바로 밖에 차도가 붙어 있다.** 광장은 안이
+// 조용한데 한 걸음 나가면 차가 지나간다 — 그건 광장이 아니라 화단이다.
+//
+// 그래서 도로를 닫는 범위를 광장보다 한 칸씩 넓게 잡는다. **딱 그것만 한다** —
+// 필지도 건물도 안 건드린다. 여기가 하는 일은 `roadOpen` 이 거짓을 돌려주는
+// 범위를 정하는 것뿐이다.
+//
+//   X  광장 바깥 첫 도로까지 (양쪽)
+//   Z  대문 블록 남쪽 연석부터 광장 북단까지 — 대문 옆 도로도 같이 지운다
+//      (3번 지시: "옆에 도로는 지우는걸로")
+export const PRECINCT = (() => {
+  const rs = roads();
+  const r = {
+    x0: rs[AXIS_IX - 1].lo,          // 광장 서쪽 바깥 도로
+    x1: rs[AXIS_IX + 2].hi,          // 광장 동쪽 바깥 도로
+    z0: blockRect(AXIS_IX, GATE.iz).z0, // 대문 블록 남쪽 연석
+    z1: PLAZA.z1,
+  };
+  r.w = r.x1 - r.x0;
+  r.d = r.z1 - r.z0;
+  return r;
+})();
+
+export function inPrecinct(x, z) {
+  return x >= PRECINCT.x0 && x <= PRECINCT.x1 && z >= PRECINCT.z0 && z <= PRECINCT.z1;
+}
+
+export function precinctHits(rect) {
+  return rect.x1 > PRECINCT.x0 && rect.x0 < PRECINCT.x1
+    && rect.z1 > PRECINCT.z0 && rect.z0 < PRECINCT.z1;
+}
+
+// ── 지운 도로 자리 ────────────────────────────────────────────────────────
+//
+// 도로를 닫으면 그 자리에 **아무것도 안 남는다.** 포장도 차선도 가로등도
+// 전부 `roadOpen` 을 묻고 나서 그리기 때문이다. 그래서 검은 사각형이 생긴다
+// (사용자 지시 2·4번).
+//
+// 여기서 그 사각형들의 목록을 만든다. 광장 안쪽은 광장이 이미 깔았으므로 뺀다.
+export function emptyRoadRects() {
+  const rs = roads();
+  const out = [];
+  const MIN = 5; // 이보다 좁으면 앉을 자리가 아니라 그냥 틈이다
+  for (let i = 0; i < GRID; i++) {
+    const lo = blockCenter(i) - BLOCK_SIZE / 2;
+    const hi = blockCenter(i) + BLOCK_SIZE / 2;
+    for (let b = 0; b < rs.length; b++) {
+      take({ x0: rs[b].lo, x1: rs[b].hi, z0: lo, z1: hi }, 'z'); // 남북 도로
+      take({ x0: lo, x1: hi, z0: rs[b].lo, z1: rs[b].hi }, 'x'); // 동서 도로
+    }
+  }
+  return out;
+
+  // 사각형 **전체**가 범위 안에 있어야 한다. 걸치기만 한 것에 쉼터를 놓으면
+  // 절반이 살아 있는 차도 위에 선다.
+  //
+  // 광장에 물린 것은 버리지 않고 **잘라 낸다.** 버리면 광장 모서리에 닿은
+  // 도로가 통째로 빠져서 그 자리가 검은 채로 남는다 — 처음에 그렇게 했다가
+  // 광장 사방에 어두운 띠가 생겼다.
+  function take(r, axis) {
+    if (r.x0 < PRECINCT.x0 || r.x1 > PRECINCT.x1) return;
+    if (r.z0 < PRECINCT.z0 || r.z1 > PRECINCT.z1) return;
+    const c = clipToPlaza(r);
+    if (!c) return;
+    if (c.x1 - c.x0 < MIN || c.z1 - c.z0 < MIN) return;
+    out.push({ ...c, axis });
+  }
 }
 
 // ── 판정 ──────────────────────────────────────────────────────────────────
