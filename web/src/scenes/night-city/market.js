@@ -146,22 +146,61 @@ function arcade(b, r, rng, mats, signs, pools) {
     }
   }
 
-  // 지붕 — 반투명 채광 슬릿이 번갈아. 이것이 아케이드의 정체성이다
+  // ── 지붕 (사용자 지적으로 다시 만듦) ────────────────────────────────────
+  //
+  // *"1은 무슨 의도의 건축물인지 전혀 모르겠음"*
+  //
+  // 맞다. `metalMat` 과 `tarpMat` 을 번갈아 깔았는데 **둘 다 불투명하고 둘 다
+  // 어둡다.** 그래서 위에서 보면 줄무늬 뚜껑 하나고, 안에 시장이 있다는 신호가
+  // 밖으로 한 조각도 안 나갔다. "반투명 채광 슬릿" 이라고 주석에 써 놓고
+  // 실제로는 안 빛나는 판을 깐 것이다 — `vitrineGlassMat` 때와 같은 착각이다
+  // (docs/status.md 2.1 규칙 7: 재질을 이름으로 믿지 않는다).
+  //
+  // 채광창은 **아래가 밝을 때 위에서 빛난다.** 그것이 이 지붕의 전부다.
+  // 뼈대(불투명)와 채광판(발광)을 번갈아 놓으면, 위에서는 빛나는 줄무늬가
+  // 되고 옆에서는 처마 밑으로 새는 빛이 된다.
   const bays = Math.max(4, Math.round(len / 4.0));
+  const glow = neonSoft([NEON.warm, NEON.amber][Math.round(hash2(r.x0, r.z0))]);
   for (let i = 0; i < bays; i++) {
     const t = -len / 2 + (len / bays) * (i + 0.5);
     const px = alongX ? c.x + t : c.x;
     const pz = alongX ? c.z : c.z + t;
-    const slat = i % 2 === 0;
+    const rib = i % 2 === 0;
+    // 뼈대는 도톰하고 채광판은 얇다. 두께 차이가 골함석 같은 결을 만든다
     b.add(
-      autoBox(alongX ? len / bays - 0.2 : wid, 0.34, alongX ? wid : len / bays - 0.2,
-        [px, Y + H, pz], 0.04),
-      slat ? mats.metalMat : mats.tarpMat
+      autoBox(alongX ? len / bays - 0.2 : wid, rib ? 0.34 : 0.16,
+        alongX ? wid : len / bays - 0.2,
+        [px, Y + H + (rib ? 0 : 0.06), pz], 0.04),
+      rib ? mats.metalMat : glow
     );
   }
   // 지붕 밑면 — 안이 밝아야 '들어갈 곳' 이 된다
   b.add(downPlane(alongX ? len * 0.96 : wid * 0.9, alongX ? wid * 0.9 : len * 0.96,
     [c.x, Y + H - 0.2, c.z]), mats.deckUnderMat);
+
+  // ── 양 끝의 문틀 ────────────────────────────────────────────────────────
+  //
+  // 아케이드는 **관통하는 홀**이라 양 끝이 문이다. 그런데 그 문에 아무 표시가
+  // 없어서, 밖에서 보면 그냥 벽 두 장 사이의 틈이었다. 틀을 두르고 문지방에
+  // 빛줄을 깔면 "여기로 들어간다" 가 한눈에 읽힌다.
+  for (const sg of [-1, 1]) {
+    const ex = alongX ? c.x + sg * len / 2 : c.x;
+    const ez = alongX ? c.z : c.z + sg * len / 2;
+    // 인방 — 지붕 밑에 가로지른 두꺼운 보
+    b.add(autoBox(alongX ? 0.9 : wid + 0.6, 1.5, alongX ? wid + 0.6 : 0.9,
+      [ex, Y + H - 0.9, ez], 0.05), mats.frameConcMat);
+    b.box(alongX ? 0.34 : wid - 1.2, 0.5, alongX ? wid - 1.2 : 0.34,
+      [ex, Y + H - 1.7, ez], glow);
+    // 문지방 — 바닥에 그은 줄. 이 한 줄이 안과 밖을 가른다
+    b.box(alongX ? 0.5 : wid - 1.0, 0.06, alongX ? wid - 1.0 : 0.5,
+      [ex, Y + 0.09, ez], neon(NEON.amber));
+    pools.push({
+      kind: 'floor', x: ex + (alongX ? sg * 3.5 : 0), y: Y + 0.05,
+      z: ez + (alongX ? 0 : sg * 3.5),
+      rx: alongX ? 5 : wid * 0.6, rz: alongX ? wid * 0.6 : 5,
+      tint: rgb01(NEON.amber, 0.45),
+    });
+  }
 
   // 매달린 등 — 통로를 따라. 시장의 인상은 이 줄에서 온다
   const lamps = Math.max(3, Math.round(len / 6));
@@ -409,65 +448,68 @@ function blackMarket(b, r, rng, mats, signs, pools) {
   const Y = CURB_HEIGHT;
   const c = rectCenter(r);
   const s = rectSize(r);
-  const alongX = s.w >= s.d;
-  const len = alongX ? s.w : s.d;
-  const wid = alongX ? s.d : s.w;
-  const H = 3.4; // 사람 키보다 조금 높을 뿐이다
-
   b.add(upPlane(s.w, s.d, [c.x, Y + 0.03, c.z], [5, 5]), mats.alleyFloorMat);
 
-  // 양옆 가림막 — 함석과 합판을 섞는다. 규격이 없어야 임시로 읽힌다
-  const panels = Math.max(4, Math.round(len / 2.6));
-  for (let i = 0; i < panels; i++) {
-    const t = -len / 2 + (len / panels) * (i + 0.5);
-    for (const sg of [-1, 1]) {
-      const h = rng.range(2.6, 4.2);
-      const px = alongX ? c.x + t : c.x + sg * (wid / 2 - 0.3);
-      const pz = alongX ? c.z + sg * (wid / 2 - 0.3) : c.z + t;
-      b.add(
-        autoBox(alongX ? len / panels - 0.15 : 0.2, h, alongX ? 0.2 : len / panels - 0.15,
-          [px, Y + h / 2, pz], 0.02),
-        rng.chance(0.45) ? mats.rustMat : mats.plywoodMat
-      );
-      // 셔터 — 닫힌 가게가 절반이다. 이 시각에 여는 곳이 따로 있다
-      if (rng.chance(0.3)) {
-        b.add(
-          autoBox(alongX ? len / panels - 0.6 : 0.1, 2.1, alongX ? 0.1 : len / panels - 0.6,
-            [px, Y + 1.05, pz], 0.02),
-          mats.shutterMat
-        );
+  // ── 한 채가 아니라 **소규모 단지**다 (사용자 재지적) ─────────────────────
+  //
+  // *"암시장인지도 모르겠음. 내 말은 단지 안에 소규모 단지로 해서 암시장을
+  //  형성하라고 했던건데"*
+  //
+  // 처음에는 양옆에 가림막을 세우고 천막을 덮은 **긴 통로 한 채**로 지었다.
+  // 그건 시장 아케이드의 형태를 어둡게 칠한 것일 뿐이고, 그래서 무엇인지
+  // 안 읽혔다. 암시장은 **설계된 건물이 아니다** — 남의 땅 틈에 판잣집이
+  // 하나씩 붙어 생긴 덩어리다.
+  //
+  // 그러니 형태도 그렇게 만든다: 작은 칸을 **불규칙한 격자**로 앉히고 그
+  // 사이를 좁은 틈으로 남긴다. 칸마다 크기·높이·재질이 다르고, 천막도
+  // 칸 단위로 따로 덮인다. 통로가 아니라 **미로**가 정체다.
+  const CELL = 5.2;   // 칸 하나의 기준 크기
+  const LANE = 1.7;   // 칸 사이 틈. 사람 하나가 겨우 지난다
+  const nx = Math.max(2, Math.floor((s.w + LANE) / (CELL + LANE)));
+  const nz = Math.max(2, Math.floor((s.d + LANE) / (CELL + LANE)));
+  const cw = (s.w - LANE * (nx - 1)) / nx;
+  const cd = (s.d - LANE * (nz - 1)) / nz;
+
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < nz; j++) {
+      // 난수를 **먼저 다 뽑는다.** 조건부로 건너뛰면 소비량이 갈려서 도시
+      // 전체가 다시 뽑힌다 (docs/status.md 2.1 규칙 6)
+      const skip = rng.chance(0.16); // 빈 자리 — 다 차 있으면 계획된 것으로 보인다
+      const h = rng.range(2.4, 3.9);
+      const shrinkW = rng.range(0.3, 1.1);
+      const shrinkD = rng.range(0.3, 1.1);
+      const sag = rng.range(-0.3, 0.2);
+      const lit = rng.chance(0.22);
+      const shut = rng.chance(0.34);
+      const skew = rng.range(-0.5, 0.5);
+      const px = r.x0 + cw / 2 + (cw + LANE) * i + skew;
+      const pz = r.z0 + cd / 2 + (cd + LANE) * j + skew;
+      const w2 = cw - shrinkW;
+      const d2 = cd - shrinkD;
+      if (skip || w2 < 2 || d2 < 2) continue;
+
+      // 벽 — 세 면만. 한 면은 틈을 향해 열려 있어야 가게가 된다
+      const open = (i + j) % 4;
+      const walls = [[0, -1], [1, 0], [0, 1], [-1, 0]].filter((_, k) => k !== open);
+      for (const [dx, dz] of walls) {
+        const T = 0.22;
+        b.add(autoBox(dx ? T : w2, h, dz ? T : d2,
+          [px + dx * (w2 / 2), Y + h / 2, pz + dz * (d2 / 2)], 0.02),
+        rng.chance(0.45) ? mats.rustMat : mats.plywoodMat);
       }
+      // 셔터 — 닫힌 가게가 절반이다. 이 시각에 여는 곳이 따로 있다
+      if (shut) {
+        const [dx, dz] = [[0, -1], [1, 0], [0, 1], [-1, 0]][open];
+        b.add(autoBox(dx ? 0.1 : w2 - 0.5, 2.1, dz ? 0.1 : d2 - 0.5,
+          [px + dx * (w2 / 2), Y + 1.05, pz + dz * (d2 / 2)], 0.02), mats.shutterMat);
+      }
+      // 천막 — **칸마다 따로.** 하나로 덮으면 다시 건물이 된다
+      b.add(autoBox(w2 + 0.7, 0.1, d2 + 0.7, [px, Y + h + sag, pz], 0.02), mats.tarpMat);
+      b.add(tubeBetween([px + w2 / 2, Y + h + sag, pz], [px + w2 / 2, Y + 4.4, pz],
+        0.02, 4), mats.cableMat);
+      // 좌판 — 불이 거의 안 켜져 있다. 시장(전부 켜짐)과의 결정적 차이
+      stall(b, px, pz, Math.min(1.9, w2 * 0.6), Math.min(1.9, d2 * 0.6), rng, mats, lit);
     }
-  }
-
-  // 천막 지붕 — 이어 붙인 조각들. 높이가 제각각이라 물이 고인다
-  const tarps = Math.max(3, Math.round(len / 4.4));
-  for (let i = 0; i < tarps; i++) {
-    const t = -len / 2 + (len / tarps) * (i + 0.5);
-    const px = alongX ? c.x + t : c.x;
-    const pz = alongX ? c.z : c.z + t;
-    const sag = rng.range(-0.35, 0.25);
-    b.add(
-      autoBox(alongX ? len / tarps + 0.3 : wid * 0.94, 0.1, alongX ? wid * 0.94 : len / tarps + 0.3,
-        [px, Y + H + sag, pz], 0.02),
-      mats.tarpMat
-    );
-    // 천막을 매다는 줄
-    for (const sg of [-1, 1]) {
-      const ax = alongX ? px : c.x + sg * wid * 0.46;
-      const az = alongX ? c.z + sg * wid * 0.46 : pz;
-      b.add(tubeBetween([ax, Y + H + sag, az], [ax, Y + 4.4, az], 0.02, 4), mats.cableMat);
-    }
-  }
-
-  // 좌판 — 불이 거의 안 켜져 있다. 시장(전부 켜짐)과의 결정적 차이
-  const rows = Math.max(2, Math.round(len / 4.2));
-  for (let i = 0; i < rows; i++) {
-    const t = -len / 2 + (len / rows) * (i + 0.5);
-    const sg = rng.chance(0.5) ? 1 : -1;
-    const sx = alongX ? c.x + t : c.x + sg * wid * 0.22;
-    const sz = alongX ? c.z + sg * wid * 0.22 : c.z + t;
-    stall(b, sx, sz, alongX ? 1.8 : 1.1, alongX ? 1.1 : 1.8, rng, mats, rng.chance(0.25));
   }
 
   // 등 하나. **딱 하나다** — 여러 개면 그냥 어두운 시장이다
@@ -563,8 +605,21 @@ function underpass(b, r, rng, mats, signs, pools) {
     rx: 8, rz: 8, tint: rgb01(NEON.cool, 0.5),
   });
 
+  // ── 입구가 어느 쪽인가 ──────────────────────────────────────────────────
+  // 계단은 `-ML/2` 에서 시작해 `+ML/2` 로 내려간다. 그러니 사람이 들어오는
+  // 곳은 **-쪽 끝**이고, 캐노피와 간판도 거기 붙는다.
+  const ent = alongX ? 'nx' : 'nz';
+
   // 난간 — 구멍 둘레. 없으면 사람이 빠진다 (그리고 구멍으로 안 읽힌다)
+  //
+  // ── 입구까지 막고 있었다 (사용자 지적) ─────────────────────────────────
+  // *"지하상가인데 왜 출입구가 막혀있는건지?"*
+  //
+  // `SIDES` 네 변을 다 둘렀다. 계단은 멀쩡히 내려가는데 그 앞을 난간이
+  // 가로막고 있었으니, 들어갈 수 없는 지하상가였다. 난간은 **빠지지 말라고**
+  // 있는 것이지 못 들어가게 하려고 있는 것이 아니다.
   for (const side of SIDES) {
+    if (side === ent) continue; // 여기가 문이다
     const f = faceFrame(pit, side);
     if (f.w < 2) continue;
     const n = Math.max(2, Math.round(f.w / 1.6));
@@ -595,7 +650,6 @@ function underpass(b, r, rng, mats, signs, pools) {
   // 입구 간판 — 지하상가는 이름을 크게 건다. 안 보이는 곳이라 그래야 한다.
   // 그리고 **아래에 무엇이 있는지 목록**이 붙는다. 안 보이는 가게를
   // 알리는 방법이 그것뿐이라, 실제 지하상가 입구는 늘 간판투성이다.
-  const ent = alongX ? 'nx' : 'nz';
   signs.push({
     kind: 'banner', rect: pit, side: ent,
     y: Y + 3.9, w: (alongX ? cd : cw) * 0.8, h: 1.5, scheme: rng.int(0, 5),
@@ -710,7 +764,11 @@ export function corpoDistance(ix, iz) {
 //   명품관         26~34m  마당을 두고 물러선다
 //   적층상가       20~30m  기준
 //   유흥가         13~19m  좁고 높다. 신주쿠의 그 형태
-//   암거래         10~15m  가장 좁다. 틈에 낀 것처럼
+//   암거래         16~26m  판잣집 여러 칸이 들어갈 만큼. **한 채가 아니다**
+//
+// 암거래만 나중에 넓혔다. 10~15m 로는 칸이 한 줄밖에 안 들어가 결국 통로
+// 하나가 되고, 그러면 시장 아케이드를 어둡게 칠한 것과 같아진다
+// (blackMarket 머리말 — 사용자 재지적).
 //
 // 폭이 5배 차이 나면 멀리서도 다르다. 그리고 띠를 **조각의 긴 축을 따라**
 // 늘어놓으므로 모든 유형이 긴 변으로 길이나 보행로를 마주 본다 —
@@ -721,7 +779,7 @@ const BAND = {
   vitrine:   [26, 34],
   bazaar:    [20, 30],
   nightlife: [13, 19],
-  black:     [10, 15],
+  black:     [16, 26],
 };
 
 // 그 자리에 무엇이 어울리나. 가중치를 주고 뽑는다.
@@ -731,13 +789,23 @@ const BAND = {
 function weights(side, near) {
   const close = Math.max(0, 1 - near / 4); // 1 = 기업 코앞, 0 = 멀다
   if (side === 'inner') {
+    // ── 안쪽에는 셋이 **아예 안 나온다** (사용자 재지적) ──────────────────
+    // *"지하상가 관련은 모두 북쪽 번화가로 옮기라고 말했고"*
+    // *"3도 마찬가지로 북쪽 번화가로 옮기라고 했는데"*
+    //
+    // 위 지시를 처음 옮길 때 유흥가 0.06 · 암거래 0.04 · 지하상가 0.10 으로
+    // **낮은 확률**을 줬다. "북쪽 위주" 로 읽은 것인데, 지시는 위주가 아니라
+    // **어느 쪽인가**였다. 확률이 낮아도 32칸을 돌리면 결국 안쪽에 선다.
+    //
+    // 자리가 성격을 정한다는 것이 이 표의 요점이므로, 성격이 섞이면 표가
+    // 하는 일이 없다. 0 으로 둔다.
     return {
       bazaar: 1.0,
       arcade: 0.42,
       vitrine: 0.10 + close * 0.55, // 기업에 붙을수록 명품관
-      nightlife: 0.06,
-      black: 0.04 + (1 - close) * 0.10,
-      underpass: 0.10,
+      nightlife: 0,
+      black: 0,
+      underpass: 0,
     };
   }
   return {
@@ -751,7 +819,10 @@ function weights(side, near) {
 }
 
 function pick(rng, w, room) {
-  const ok = Object.keys(w).filter((k) => BAND[k][0] <= room);
+  // 가중치 0 은 **후보에서 뺀다.** 안 빼면 마지막 폴백(`ok[ok.length-1]`)이
+  // 그것을 돌려줄 수 있다 — 실제로 키 순서상 마지막이 지하상가라, 안쪽 번화가에
+  // 가중치를 0 으로 줘도 폴백으로 계속 서고 있었다.
+  const ok = Object.keys(w).filter((k) => w[k] > 0 && BAND[k][0] <= room);
   if (!ok.length) return 'bazaar';
   let sum = 0;
   for (const k of ok) sum += w[k];
