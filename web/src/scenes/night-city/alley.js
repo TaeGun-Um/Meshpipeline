@@ -29,6 +29,8 @@ import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon, neonSoft } from '../../shared/masters.js';
 import { CURB_HEIGHT, ALLEY_WIDTH } from './layout.js';
 import { claim, TIER } from './siteplan.js';
+import { byZone } from './district.js';
+import { hash2 } from '../../core/textures.js';
 
 // 골목 전용 벽의 높이.
 //
@@ -250,10 +252,23 @@ function serviceDoor(b, x, z, rot, rng, mats, pools) {
   const [sx2, sz2] = at(0.42);
   b.box(W + 0.3, 0.12, 0.7, [sx2, y + 0.06, sz2], mats.wetConcreteMat);
 
-  // 갓 달린 전구 — 갓이 있어야 빛이 아래로 떨어지는 것으로 읽힌다
-  const [gx, gz] = at(0.34);
-  b.add(lathe([[0.02, 0], [0.22, 0.16], [0.24, 0.18]], 8, [gx, y + H + 0.46, gz]), mats.metalMat);
-  b.sphere(0.075, [gx, y + H + 0.34, gz], neon(NEON.warm));
+  // 문 위 전구 — **철망을 씌운다.** 갓등은 산업·레트로 계열이라 이 도시의
+  // 골목과 안 맞는다 (alleyLamp 머리말). 서비스 도어 위에 실제로 붙는 것도
+  // 갓이 아니라 파손 방지 철망을 두른 알전구다.
+  const [gx, gz] = at(0.30);
+  const [mx, mz] = at(0.10);
+  const gy = y + H + 0.34;
+  b.add(autoBox(0.2, 0.2, 0.2, [mx, gy, mz], 0.02), mats.ductMat);
+  b.sphere(0.085, [gx, gy, gz], neon(NEON.warm));
+  for (let i = 0; i < 4; i++) {
+    const a2 = (i / 4) * Math.PI * 2 + 0.4;
+    const ox = Math.cos(a2) * 0.14;
+    const oy = Math.sin(a2) * 0.14;
+    b.add(tubeBetween(
+      [mx + ox * sin, gy + oy, mz - ox * cos],
+      [gx + ox * sin * 0.35, gy + oy * 0.35, gz - ox * cos * 0.35], 0.011, 4), mats.pipeMat);
+  }
+  b.cylinder(0.15, 0.15, 0.018, [gx, gy, gz], mats.pipeMat, 10);
 
   pools.push({
     kind: 'floor', x: x + cos * 1.1, y: CURB_HEIGHT + 0.02, z: z + sin * 1.1,
@@ -334,33 +349,143 @@ function overhead(b, a, rng, mats, halfW = ALLEY_WIDTH / 2) {
 // 잡동사니 배치와 **별도 루프**로 돈다. 같은 루프에 섞으면 확률에 밀려
 // 조명이 안 걸리는 구간이 생기고, 그 구간은 통째로 안 보이게 된다.
 
-// 갓 달린 벽등 — 골목 조명의 기본. 브래킷이 있어야 벽에 매단 것으로 읽힌다.
-function wallLamp(b, x, z, rot, rng, mats, pools) {
-  const y = CURB_HEIGHT + rng.range(2.9, 3.8);
+// ── 골목 조명 네 종 (사용자 지적으로 다시 만듦) ────────────────────────────
+//
+// "갓달린 등이라는게 사이버펑크에 어울림?"
+//
+// 안 어울린다. 갓등(cone shade)은 산업·레트로 계열이고, 무엇보다 **이 도시의
+// 설정과 안 맞는다.** 골목은 3기에 계획이 터지면서 생긴 틈이다. 관리되는
+// 통로가 아니라 새어 나온 공간인데, 단정한 갓등이 일정 간격으로 달려 있으면
+// 앞뒤가 안 맞는다 (슬럼에는 이미 훔친 전기가 벽을 타고 내려온다).
+//
+// 그리고 진짜 문제는 종류보다 **한 종류만 반복된다**는 것이었다. 같은 등이
+// 같은 높이로 줄줄이 서 있으니 골목이 정돈돼 보였다.
+//
+//   형광등 스트립  가로 튜브. 몇 개는 죽어 있다. 골목 조명의 기본
+//   철망 알전구    뒷문 위. 알을 철망으로 감쌌다
+//   보안등         사각 플러드, 차가운 색. 아래를 비춘다
+//   매단 알전구    훔친 배선에 그냥 매달았다. 기구가 없다
+//
+// 구역이 무엇을 쓰는지는 표가 정한다 — 스칼라 확률로 섞으면 어느 골목에
+// 가도 같은 것이 나온다 (holo.RATE 에서 같은 실수를 했다).
+const ALLEY_LAMP = byZone('골목 조명', {
+  상업: ['tube', 'tube', 'cage', 'hung'],
+  주거: ['tube', 'cage', 'cage', 'hung'],
+  기업: ['security', 'security', 'tube'],   // 관리되는 곳이라 보안등이다
+  공업: ['security', 'cage', 'security'],
+  슬럼: ['hung', 'hung', 'cage'],           // 훔친 전기. 기구가 없다
+  부둣가: ['security', 'cage'],
+});
+
+// 형광등 스트립 — 벽에 가로로 붙은 튜브. 몇 개는 죽어 있어야 나머지가 산다.
+function tubeLamp(b, x, z, rot, y, mats, pools, dead) {
   const cos = Math.cos(rot);
   const sin = Math.sin(rot);
-  // 벽에서 뻗어나온 팔
-  b.add(tubeBetween([x, y, z], [x + cos * 0.42, y + 0.06, z + sin * 0.42], 0.028, 5), mats.pipeMat);
-  // 갓
-  const shade = lathe(
-    [[0.02, 0.16], [0.26, 0.0], [0.27, -0.02]], 10,
-    [x + cos * 0.44, y, z + sin * 0.44]
-  );
-  b.add(shade, mats.metalMat);
-  b.sphere(0.085, [x + cos * 0.44, y - 0.08, z + sin * 0.44], neon(NEON.warm));
+  const L = 1.5;
+  const ax = Math.abs(cos) > 0.5; // 벽이 Z 축을 따라 눕는가
+  const [w, d] = ax ? [0.16, L] : [L, 0.16];
+  // 기구 — 죽었든 살았든 이건 있다
+  b.add(autoBox(w, 0.18, d, [x + cos * 0.09, y, z + sin * 0.09], 0.02), mats.ductMat);
+  if (dead) return; // 나간 등. 웅덩이도 없다
+  const [tw, td] = ax ? [0.07, L - 0.18] : [L - 0.18, 0.07];
+  b.box(tw, 0.1, td, [x + cos * 0.2, y, z + sin * 0.2], neon(NEON.cool));
+  pools.push({
+    kind: 'floor', x: x + cos * 1.1, y: CURB_HEIGHT + 0.02, z: z + sin * 1.1,
+    rx: ax ? 3.0 : 4.6, rz: ax ? 4.6 : 3.0, tint: rgb01(NEON.cool, 0.3),
+  });
+  pools.push({
+    kind: 'wall', x: x + cos * 0.06, y: y - 0.9, z: z + sin * 0.06,
+    w: 3.0, h: 2.2, yaw: rot, tint: rgb01(NEON.cool, 0.32),
+  });
+}
 
-  // 바닥 웅덩이. 골목이 좁아 rz 를 길게 늘여 빛이 통로를 따라 번지게 한다.
+// 철망 씌운 알전구 — 뒷문 위에 붙는 것. 철망이 있어야 '보호구' 로 읽힌다.
+function cageLamp(b, x, z, rot, y, mats, pools) {
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  const cx = x + cos * 0.22;
+  const cz = z + sin * 0.22;
+  // 벽 받침
+  b.add(autoBox(0.24, 0.24, 0.24, [x + cos * 0.06, y, z + sin * 0.06], 0.02), mats.ductMat);
+  b.sphere(0.1, [cx, y, cz], neon(NEON.warm));
+  // 철망 — 살 넷과 테 하나
+  for (let i = 0; i < 4; i++) {
+    const a2 = (i / 4) * Math.PI * 2 + 0.4;
+    const ox = Math.cos(a2) * 0.16;
+    const oy = Math.sin(a2) * 0.16;
+    b.add(tubeBetween(
+      [x + cos * 0.08 + ox * sin, y + oy, z + sin * 0.08 - ox * cos],
+      [cx + ox * sin * 0.4, y + oy * 0.4, cz - ox * cos * 0.4], 0.012, 4), mats.pipeMat);
+  }
+  b.cylinder(0.17, 0.17, 0.02, [cx, y, cz], mats.pipeMat, 10);
   pools.push({
-    kind: 'floor',
-    x: x + cos * 1.0, y: CURB_HEIGHT + 0.02, z: z + sin * 1.0,
-    rx: 3.6, rz: 3.6,
-    tint: rgb01(NEON.warm, 0.34),
+    kind: 'floor', x: x + cos * 0.9, y: CURB_HEIGHT + 0.02, z: z + sin * 0.9,
+    rx: 3.0, rz: 3.0, tint: rgb01(NEON.warm, 0.3),
   });
-  // 벽에 걸리는 빛 — 바닥만 밝으면 벽이 허공에 떠 보인다
   pools.push({
-    kind: 'wall', x: x + cos * 0.06, y: y - 1.1, z: z + sin * 0.06,
-    w: 2.4, h: 2.6, yaw: rot, tint: rgb01(NEON.warm, 0.34),
+    kind: 'wall', x: x + cos * 0.06, y: y - 1.0, z: z + sin * 0.06,
+    w: 2.0, h: 2.4, yaw: rot, tint: rgb01(NEON.warm, 0.3),
   });
+}
+
+// 보안등 — 사각 플러드. 아래를 비춘다. 관리되는 구역의 것이라 차갑다.
+function securityLamp(b, x, z, rot, y, mats, pools) {
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  const ax = Math.abs(cos) > 0.5;
+  b.add(tubeBetween([x, y, z], [x + cos * 0.3, y + 0.1, z + sin * 0.3], 0.03, 5), mats.metalMat);
+  const hx = x + cos * 0.42;
+  const hz = z + sin * 0.42;
+  const [w, d] = ax ? [0.34, 0.5] : [0.5, 0.34];
+  b.add(autoBox(w, 0.2, d, [hx, y, hz], 0.03), mats.metalMat);
+  // 발광면은 아래를 향한다
+  b.add(downPlane(ax ? 0.26 : 0.42, ax ? 0.42 : 0.26, [hx, y - 0.11, hz]), neon(NEON.cool));
+  pools.push({
+    kind: 'floor', x: hx + cos * 0.5, y: CURB_HEIGHT + 0.02, z: hz + sin * 0.5,
+    rx: 3.4, rz: 3.4, tint: rgb01(NEON.cool, 0.4),
+  });
+}
+
+// 매단 알전구 — 훔친 배선. **기구가 없는 것**이 요점이다.
+function hungBulb(b, x, z, rot, y, mats, pools) {
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  const wx = x + cos * 0.05;
+  const wz = z + sin * 0.05;
+  // 벽을 타고 내려온 선 — 위에서 비스듬히
+  b.add(tubeBetween([wx, y + 2.2, wz], [wx + cos * 0.5, y + 0.1, wz + sin * 0.5], 0.02, 4),
+    mats.cableMat);
+  const bx = wx + cos * 0.5;
+  const bz = wz + sin * 0.5;
+  b.sphere(0.11, [bx, y, bz], neon(NEON.warm));
+  // 소켓 — 이게 없으면 구슬이 떠 있는 것으로 보인다
+  b.cylinder(0.045, 0.055, 0.1, [bx, y + 0.13, bz], mats.ductMat, 6);
+  pools.push({
+    kind: 'floor', x: bx, y: CURB_HEIGHT + 0.02, z: bz,
+    rx: 2.6, rz: 2.6, tint: rgb01(NEON.warm, 0.34),
+  });
+}
+
+// 종류 -> 형태. 표로 두면 새 종류를 빠뜨렸을 때 터진다.
+const LAMP_SHAPE = { tube: tubeLamp, cage: cageLamp, security: securityLamp, hung: hungBulb };
+
+// 어느 등을 놓을지는 **좌표 해시**가 정한다. 난수를 쓰면 뒤의 도시가 다시
+// 뽑히고, 무엇보다 같은 자리는 늘 같은 등이어야 한다.
+// 높이만 난수로 뽑는다 — 옛 갓등과 소비량을 맞춘다.
+function alleyLamp(b, x, z, rot, rng, mats, pools, zone) {
+  const y = CURB_HEIGHT + rng.range(2.9, 3.8);
+  const kinds = ALLEY_LAMP[zone] ?? ALLEY_LAMP['상업'];
+  if (!kinds.length) return;
+  const h = hash2(Math.round(x), Math.round(z));
+  const kind = kinds[Math.floor(h * kinds.length) % kinds.length];
+  const make = LAMP_SHAPE[kind];
+  if (!make) throw new Error(`골목 조명 '${kind}' 의 형태가 LAMP_SHAPE 에 없다`);
+  if (kind === 'tube') {
+    // 다섯에 하나는 나가 있다. 죽은 등이 있어야 산 등이 읽힌다
+    tubeLamp(b, x, z, rot, y, mats, pools, hash2(Math.round(z), Math.round(x)) < 0.22);
+    return;
+  }
+  make(b, x, z, rot, y, mats, pools);
 }
 
 // 뒷문 간판 — 골목에서 유일하게 색을 갖는 것.
@@ -649,7 +774,9 @@ export function createAlleys(scene, rng, mats, alleys, anchors = []) {
     let lside = rng.chance(0.5) ? 1 : -1;
     while (lt < long - 2) {
       const along = -long / 2 + lt;
-      const wallU = (ALLEY_WIDTH / 2) * lside;
+      // 등도 벽에 붙는다. 전역 ALLEY_WIDTH 를 쓰고 있었는데, 그건 틈 폭도
+      // 아니고 그냥 기본값이라 등이 벽에서 떨어져 떴다 (wallDistance 머리말).
+      const wallU = (wallDistance(a, lside, solids) ?? halfW) * lside;
       const lx = a.alongX ? c.x + along : c.x + wallU;
       const lz = a.alongX ? c.z + wallU : c.z + along;
       const lrot = a.alongX
@@ -660,7 +787,7 @@ export function createAlleys(scene, rng, mats, alleys, anchors = []) {
       // 통째로 안 보이게 되므로, 쓰레기통을 밀어내는 편이 낫다.
       if (claim(lx, lz, 1.0, TIER.LIGHT, 'alleyLamp')) {
         if (rng.chance(0.24)) backDoorSign(b, lx, lz, lrot, rng, mats, pools);
-        else wallLamp(b, lx, lz, lrot, rng, mats, pools);
+        else alleyLamp(b, lx, lz, lrot, rng, mats, pools, a.zone);
       }
 
       lt += rng.range(6.5, 10.5);
