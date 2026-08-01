@@ -142,7 +142,10 @@ function shelter({ b, x, z, rot, rng, mats, pools }) {
   const ad = put(W / 2 - 0.6, -D / 2 + 0.1);
   b.add(
     autoBox(1.1, 1.7, 0.1, [ad[0], Y + 1.15, ad[2]], 0.02),
-    mats.signMats.billboard[rng.int(0, 5)]
+    // 배색 수를 여기서 다시 알면 안 된다. materials 가 종류마다 다르게
+    // 굽고 (mega 를 넷으로 늘린 몫을 billboard 배색 둘로 냈다), `rng.int(0, 5)`
+    // 로 못 박아 두었더니 **없는 색인이 나와 빌드가 죽었다.**
+    mats.signMats.billboard[rng.int(0, mats.signMats.billboard.length - 1)]
   );
   // 벤치
   const bench = put(0, -D / 2 + 0.45);

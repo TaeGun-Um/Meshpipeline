@@ -232,7 +232,10 @@ function plaza(b, cx, cz, rng, mats, pools, r) {
   b.box(0.5, 4, 0.5, [sx, Y + 2, sz], mats.metalMat);
   b.add(
     autoBox(SW, SH, 0.4, [sx, Y + 4 + SH / 2, sz], 0.06),
-    mats.signMats.billboard[rng.int(0, 5)]
+    // 배색 수를 여기서 다시 알면 안 된다. materials 가 종류마다 다르게
+    // 굽고 (mega 를 넷으로 늘린 몫을 billboard 배색 둘로 냈다), `rng.int(0, 5)`
+    // 로 못 박아 두었더니 **없는 색인이 나와 빌드가 죽었다.**
+    mats.signMats.billboard[rng.int(0, mats.signMats.billboard.length - 1)]
   );
 }
 

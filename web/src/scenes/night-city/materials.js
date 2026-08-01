@@ -14,6 +14,7 @@ import {
   boxTextures,
   clothTextures,
   SIGN_STYLES,
+  MEGA_KINDS,
 } from '../../shared/glyphs.js';
 import {
   TexturedSurface,
@@ -59,15 +60,18 @@ import { SURFACE } from './palette.js';
 // 그리고 `mega` 를 6 -> 3 으로 줄였다. 512x1024 짜리 여섯 장이 혼자 64MB 인데
 // 도시에 열몇 장 걸리는 것이고, 인물은 얼굴 자체가 시드마다 다르다.
 const SIGN_KINDS = [
-  { kind: 'banner', seed: 9100, make: bannerTextures, styled: true, schemes: 3 },
-  { kind: 'blade', seed: 9300, make: bladeTextures, styled: true, schemes: 3 },
-  { kind: 'billboard', seed: 9500, make: billboardTextures },
+  { kind: 'banner', seed: 9100, make: bannerTextures, variants: SIGN_STYLES, schemes: 3 },
+  { kind: 'blade', seed: 9300, make: bladeTextures, variants: SIGN_STYLES, schemes: 3 },
+  // 광고판은 배색 넷. 여섯으로 두면 512x512 여섯 장이라 mega 를 넷으로
+  // 늘린 몫을 예산이 못 받는다 (실측 224.4 > 220). 멀리 있는 것이라 색이
+  // 둘 줄어든 것은 안 읽히고, mega 종류가 넷이 된 것은 크게 읽힌다.
+  { kind: 'billboard', seed: 9500, make: billboardTextures, schemes: 4 },
   // 새 유형 셋 — 비율부터 다르다. 비율이 같으면 결국 같은 판이다
-  { kind: 'strip', seed: 9900, make: stripTextures, styled: true, schemes: 3 },
-  { kind: 'box', seed: 9950, make: boxTextures, styled: true, schemes: 3 },
+  { kind: 'strip', seed: 9900, make: stripTextures, variants: SIGN_STYLES, schemes: 3 },
+  { kind: 'box', seed: 9950, make: boxTextures, variants: SIGN_STYLES, schemes: 3 },
   { kind: 'cloth', seed: 9980, make: clothTextures },
   // 초대형 인물 광고판 — 타워 한 면을 20~60m 덮는다
-  { kind: 'mega', seed: 9700, make: portraitTextures, schemes: 3 },
+  { kind: 'mega', seed: 9700, make: portraitTextures, variants: MEGA_KINDS, schemes: 1 },
 ];
 
 // 점포 정면 색온도. 순서가 곧 인덱스이고, SHOP_WASH(towers.js)와 짝을 이룬다.
@@ -167,9 +171,9 @@ export function buildMaterials() {
   // 그게 곧 결합 오류다 (같은 값을 두 곳에서 계산한다).
   const signMats = {};
   const signVariants = {};
-  for (const { kind, seed, make, styled, schemes } of SIGN_KINDS) {
+  for (const { kind, seed, make, variants, schemes } of SIGN_KINDS) {
     const cols = SIGN_SCHEMES.slice(0, schemes ?? SIGN_SCHEMES.length);
-    const styles = styled ? SIGN_STYLES : [undefined];
+    const styles = variants ?? [undefined];
     signVariants[kind] = { styles: styles.length, schemes: cols.length };
     signMats[kind] = styles.flatMap((style, s) =>
       cols.map((scheme, i) =>

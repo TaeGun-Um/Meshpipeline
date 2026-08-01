@@ -553,7 +553,28 @@ function ellipse(u, v, cx, cy, rx, ry) {
   return dx * dx + dy * dy; // <1 이면 안쪽
 }
 
-export function portraitTextures(seed, scheme) {
+// ── 광고는 얼굴만이 아니다 (사용자 지적) ───────────────────────────────────
+//
+// "사람 배너로 다는 광고도 만들었다며, 뭐 색깔놀이만 하고 저 뭔지도 모르게
+//  생긴 디자인의 얼굴 띄워놓고 끝내면 안되지 / 이것도 종류 늘려봐"
+//
+// 맞았다. 초대형 광고판이 **전부 얼굴 하나**였다. 배색만 셋이라 도시 스카이라인
+// 열몇 장이 같은 가면을 색만 바꿔 걸고 있었다.
+//
+// 레퍼런스의 대형 광고를 다시 보면 얼굴은 그중 하나일 뿐이다.
+//
+//   face      인물. 어깨까지 나오고 머리카락이 한쪽으로 흐른다
+//   product   물건 하나를 크게. 캔·병. 라벨 띠와 하이라이트가 전부다
+//   wordmark  글자만. 표의문자 두 자를 화면 가득. 기업 광고의 문법
+//   cyber     의수 광고. 마디진 팔과 회로선 — 이 도시에서만 나오는 것
+//
+// ── 메모리 (감사가 정했다) ─────────────────────────────────────────────────
+// 512x1024 짜리라 한 장이 비싸다. 종류 넷 x 배색 셋으로 구우면 128MB 다.
+// 그래서 **종류마다 배색 하나**만 굽는다 — 종류가 다르면 이미 다르게 보이고,
+// 같은 얼굴을 색만 바꿔 세 장 굽던 것이 애초에 낭비였다.
+export const MEGA_KINDS = ['face', 'product', 'wordmark', 'cyber'];
+
+export function portraitTextures(seed, scheme, kind = 'face') {
   const glyph = rgb255(scheme.glyph);
   const edge = rgb255(scheme.edge);
   const ground = rgb255(scheme.ground);
@@ -565,6 +586,8 @@ export function portraitTextures(seed, scheme) {
   const faceY = 0.64 + (hash2(seed, 11) - 0.5) * 0.04;
   const faceR = 0.24 + (hash2(seed, 23) - 0.5) * 0.05;
   const hairSpread = 1.16 + hash2(seed, 37) * 0.22;
+  // 머리카락이 흐르는 쪽. 좌우 대칭이면 사람이 아니라 도안이다
+  const sway = hash2(seed, 53) < 0.5 ? -1 : 1;
 
   return bake(
     [W, H],
@@ -625,53 +648,182 @@ export function portraitTextures(seed, scheme) {
       // 세로로 긴 판이라 위쪽 좌표를 얼굴 영역(0.12~1.0)으로 다시 정규화한다
       const fv = (up - 0.12) / 0.88;
 
-      const head = ellipse(u, fv, 0.5, faceY, faceR, faceR * 1.15);
-      const hair = ellipse(u, fv, 0.5, faceY + faceR * 0.2, faceR * hairSpread, faceR * 1.4);
+      // ── 판이 1:2 라 세로를 그대로 쓰면 얼굴이 소시지가 된다 ───────────────
+      //
+      // 실제로 그랬다. `ellipse(u, fv, …, faceR, faceR * 1.15)` 는 정규좌표에서
+      // 1.15배 높은 타원인데, 판이 512x1024 이므로 픽셀로는 **2.3배** 높다.
+      // 창문에서 겪은 것과 **같은 종류의 실수**다 (status.md 3.11) — 정규좌표에
+      // 모양을 적어 놓고 판의 비율을 안 봤다.
+      //
+      // 그래서 얼굴 안의 좌표는 전부 **얼굴 반지름 배수**로 적고, 세로만 AR 로
+      // 눌러 준다. 이러면 `E(0, 0, 1, 1.15)` 가 "폭의 1.15배 높은 얼굴" 이 된다.
+      const AR = W / (H * 0.88);
+      const E = (ox, oy, rx, ry) =>
+        ellipse(u, fv, 0.5 + ox * faceR, faceY + oy * faceR * AR, rx * faceR, ry * faceR * AR);
+
+      const head = E(0, 0, 1, 1.15);
+      const hair = E(0, 0.20, hairSpread, 1.42);
       // 어깨 — 아래쪽에서 넓게 퍼지는 타원
-      const body = ellipse(u, fv, 0.5, faceY - faceR * 1.75, faceR * 2.2, faceR * 1.5);
+      const body = E(0, -1.75, 2.2, 1.5);
 
       let level = 0;
       let tint = ground;
 
-      if (head < 1) {
-        // 얼굴: 가장자리로 갈수록 어두워지는 명암 (구면 음영 흉내)
-        tint = glyph;
-        level = 0.98 - Math.sqrt(head) * 0.34;
-        // 눈썹 — 눈 위 어두운 띠. 이게 있으면 얼굴이 훨씬 사람처럼 읽힌다.
-        const by = faceY + faceR * 0.3;
-        for (const s of [-1, 1]) {
-          if (ellipse(u, fv, 0.5 + s * faceR * 0.38, by, faceR * 0.3, faceR * 0.05) < 1) {
-            level *= 0.45;
+      if (kind === 'face') {
+        // ── 인물 ────────────────────────────────────────────────────────
+        //
+        // 전에는 얼굴 타원 하나에 눈·코·입을 어둡게 파는 것이 전부였다.
+        // 그래서 **가면**이 됐다. 사람으로 읽히려면 셋이 더 있어야 한다.
+        //   · 머리카락이 **한쪽으로 흐른다** (좌우 대칭이면 도안이다)
+        //   · 눈에 **흰자와 홍채**가 있다 (까만 슬릿은 마스크의 눈구멍이다)
+        //   · 어깨와 목이 아래를 받친다 (얼굴만 있으면 공중에 뜬 머리다)
+        if (head < 1) {
+          tint = glyph;
+          level = 0.98 - Math.sqrt(head) * 0.30;
+          // 광대에서 턱으로 내려가는 그늘 — 얼굴에 깊이를 준다
+          if (E(0, -0.95, 0.72, 0.45) < 1) level *= 0.86;
+          // 눈썹
+          for (const s of [-1, 1]) {
+            if (E(s * 0.40, 0.34, 0.30, 0.09) < 1) level *= 0.4;
           }
-        }
-        // 눈 — 가로로 긴 타원 둘. 새카맣게 두면 마스크처럼 보여서 0.3 으로 남긴다.
-        const ey = faceY + faceR * 0.12;
-        for (const s of [-1, 1]) {
-          if (ellipse(u, fv, 0.5 + s * faceR * 0.38, ey, faceR * 0.26, faceR * 0.1) < 1) {
-            level *= 0.3;
+          // 눈 — 흰자 위에 홍채, 그 안에 동공. 세 단이라야 눈으로 읽힌다
+          for (const s of [-1, 1]) {
+            // 단 사이가 벌어져야 한다. 흰자 1.25 / 홍채 0.62 로 뒀더니
+            // 하프톤 점 크기가 1.29 대 0.91 이라 **둘 다 꽉 찬 칸**이 되어
+            // 눈이 통째로 한 덩어리로 보였다. 점 크기는 밝기의 제곱근이라,
+            // 값이 두 배 달라도 점은 1.4배밖에 안 커진다.
+            if (E(s * 0.40, 0.14, 0.30, 0.19) < 1) {
+              level = 1.3;                                         // 흰자
+              if (E(s * 0.40, 0.14, 0.18, 0.17) < 1) level = 0.30; // 홍채
+              if (E(s * 0.40, 0.14, 0.08, 0.09) < 1) level = 0.04; // 동공
+              // 위 눈꺼풀 — 선이 있어야 눈이 닫힌다. 위 4분의 1만
+              if (fv > faceY + faceR * AR * 0.26) level = 0.18;
+            }
           }
+          // 코 — 콧등은 밝고 옆은 어둡다
+          if (E(0, -0.24, 0.075, 0.46) < 1) level = Math.min(1.18, level * 1.22);
+          else if (E(0, -0.22, 0.20, 0.46) < 1) level *= 0.80;
+          // 입 — 윗입술과 아랫입술 두 덩이. 한 덩이면 벌어진 구멍이다
+          if (E(0, -0.62, 0.28, 0.09) < 1) level *= 0.42;
+          else if (E(0, -0.74, 0.24, 0.10) < 1) level *= 0.66;
+        } else if (hair < 1) {
+          // 머리카락 — 한쪽으로 흘러내린다. 흐르는 쪽이 더 길다
+          tint = edge;
+          const flow = E(sway * 0.75, -0.55, 0.75, 1.7);
+          level = 0.58 - Math.sqrt(hair) * 0.26;
+          if (flow < 1) level = 0.48 - Math.sqrt(flow) * 0.18;
+          level *= 0.68 + 0.32 * Math.abs(Math.sin(u * Math.PI * 38 + fv * 9 + sway * 2));
+        } else if (body < 1) {
+          // 어깨 — 목에서 이어진다. 옷깃 선 하나로 옷이 읽힌다
+          tint = edge;
+          level = 0.36 - Math.sqrt(body) * 0.15;
+          const collar = Math.abs(u - 0.5) * 2.6 + (faceY - faceR * AR * 1.35 - fv) * 3.4;
+          if (collar > 0.86 && collar < 1.04) level *= 1.9;
+        } else {
+          tint = ground;
+          level = 0.25 + fv * 0.5;
         }
-        // 코 그림자 — 세로로 가는 띠
-        if (ellipse(u, fv, 0.5, faceY - faceR * 0.2, faceR * 0.09, faceR * 0.3) < 1) {
-          level *= 0.82;
+      } else if (kind === 'product') {
+        // ── 물건 하나 ───────────────────────────────────────────────────
+        //
+        // 광고의 절반은 사람이 아니라 물건이다. 캔 하나를 화면 가득 세운다 —
+        // 원통 몸통 + 위아래 테 + 라벨 띠 + 세로 하이라이트. 그 넷이면
+        // "마시는 것" 으로 읽힌다.
+        const y0 = 0.16, y1 = 0.86;            // 캔 위아래
+        // ── 실루엣이 캔을 만든다 (실측으로 고침) ──────────────────────────
+        // 곧은 사각형으로 두었더니 라벨 띠가 붙은 **판때기**로 보였다.
+        // 캔은 위가 좁아지고(목) 아래가 둥글다. 그 두 곳만 좁혀도 옆모습이
+        // 캔이 된다 — 색과 띠는 그 다음 이야기다.
+        const neck = fv > 0.79 ? 1 - ((fv - 0.79) / 0.07) ** 1.6 * 0.42 : 1;
+        const base = fv < 0.225 ? 1 - ((0.225 - fv) / 0.065) ** 1.7 * 0.34 : 1;
+        const cw = 0.30 * Math.min(neck, base);   // 그 높이에서의 캔 반폭
+        const du2 = (u - 0.5) / cw;               // -1..1
+        if (Math.abs(du2) < 1 && fv > y0 && fv < y1) {
+          tint = glyph;
+          // 원통 음영 — 가운데가 밝고 가장자리로 급히 어두워진다
+          level = 1.05 - Math.abs(du2) * Math.abs(du2) * 0.95;
+          // 세로 하이라이트 — 금속의 표시
+          if (Math.abs(du2 + 0.42) < 0.07) level = 1.3;
+          // 위아래 테
+          if (fv > y1 - 0.045 || fv < y0 + 0.045) { tint = edge; level = 0.9; }
+          // 라벨 띠 — 캔 가운데. 여기만 색이 반전된다
+          else if (fv > 0.42 && fv < 0.62) {
+            tint = edge;
+            level = 1.0 - Math.abs(du2) * 0.5;
+            // 띠 위 표의문자 한 자
+            const lu = (u - 0.34) / 0.32;
+            const lv2 = (fv - 0.45) / 0.14;
+            if (lu > 0 && lu < 1 && lv2 > 0 && lv2 < 1
+              && glyphInk((hash2(seed, 91) * 4096) | 0, lu, lv2)) {
+              tint = ground; level = 0.12;
+            }
+          }
+        } else {
+          tint = ground;
+          // 배경 — 물건 뒤에서 퍼지는 후광. 물건이 떠 보이지 않게
+          const halo = Math.hypot((u - 0.5) / 0.62, (fv - 0.52) / 0.62);
+          level = 0.55 - halo * 0.36;
         }
-        // 입
-        if (ellipse(u, fv, 0.5, faceY - faceR * 0.58, faceR * 0.3, faceR * 0.08) < 1) {
-          level *= 0.5;
-        }
-      } else if (hair < 1) {
-        // 머리카락: 얼굴보다 어둡고 채도가 다른 색
-        tint = edge;
-        level = 0.62 - Math.sqrt(hair) * 0.3;
-        // 머리카락 결 — 세로 줄무늬
-        level *= 0.7 + 0.3 * Math.abs(Math.sin(u * Math.PI * 46 + fv * 6));
-      } else if (body < 1) {
-        tint = edge;
-        level = 0.34 - Math.sqrt(body) * 0.14;
-      } else {
-        // 배경: 위쪽이 밝은 그라디언트
+      } else if (kind === 'wordmark') {
+        // ── 글자만 ──────────────────────────────────────────────────────
+        //
+        // 기업 광고의 문법이다. 그림이 없고 **이름만** 화면을 채운다.
+        // 표의문자 두 자를 세로로 놓고 아래에 라틴 줄. 이것이 제일 크게
+        // 읽히는 유형이라, 멀리 있는 타워일수록 이쪽이 어울린다.
         tint = ground;
-        level = 0.25 + fv * 0.5;
+        level = 0.22 + (1 - fv) * 0.34;
+        // 대각 줄무늬 배경 — 통짜 색면이 되지 않게
+        if (((u * 26 + fv * 34) | 0) % 4 === 0) level *= 1.35;
+        const GB = [0.10, 0.30, 0.80, 0.58];   // x, y, w, h
+        const lu = (u - GB[0]) / GB[2];
+        const lv2 = (fv - GB[1]) / GB[3];
+        if (lu > 0 && lu < 1 && lv2 > 0 && lv2 < 1) {
+          const row = lv2 > 0.5 ? 0 : 1;
+          const fy2 = (lv2 - (row ? 0.04 : 0.54)) / 0.42;
+          if (fy2 > 0 && fy2 < 1) {
+            const id = (hash2(seed + row * 37, 113) * 4096) | 0;
+            if (glyphInk(id, lu, fy2)) { tint = glyph; level = 1.15; }
+          }
+        }
+        // 아래 라틴 줄
+        if (fv > 0.17 && fv < 0.25 && u > 0.14 && u < 0.86) {
+          if (latinInk(seed + 3, (u - 0.14) / 0.72, (fv - 0.17) / 0.08, 16)) {
+            tint = edge; level = 1.0;
+          }
+        }
+      } else {
+        // ── 의수 ────────────────────────────────────────────────────────
+        //
+        // 이 도시에만 있는 광고다. 마디진 팔과 손, 관절 이음매, 그 위를
+        // 지나는 회로선. 리퍼닥과 기업이 파는 것이 결국 이것이라
+        // (docs/city.md), 스카이라인에 하나쯤은 이게 걸려야 한다.
+        const ax = 0.5 + Math.sin(fv * 3.1) * 0.06;   // 팔이 살짝 휜다
+        const aw = 0.16 + (1 - fv) * 0.05;            // 아래로 갈수록 굵다
+        const da = (u - ax) / aw;
+        const hand = ellipse(u, fv, ax + 0.02, 0.80, 0.20, 0.13);
+        if (Math.abs(da) < 1 && fv < 0.80) {
+          tint = glyph;
+          level = 1.02 - da * da * 0.8;
+          if (Math.abs(da + 0.5) < 0.08) level = 1.3;   // 금속 하이라이트
+          // 관절 마디 — 가로로 파인 이음매. 이게 없으면 그냥 기둥이다
+          const seg = (fv * 9) % 1;
+          if (seg < 0.10) level *= 0.35;
+          // 회로선 — 팔을 따라 흐르는 가는 줄
+          if (Math.abs(da - 0.25) < 0.035 && ((fv * 40) | 0) % 3 !== 0) {
+            tint = edge; level = 1.25;
+          }
+        } else if (hand < 1) {
+          // 손 — 뭉툭한 덩이에 손가락 셋
+          tint = glyph;
+          level = 0.95 - Math.sqrt(hand) * 0.3;
+          const fu = (u - ax + 0.16) / 0.32;
+          if (fv > 0.84 && fu > 0 && fu < 1 && ((fu * 4) % 1) < 0.22) level *= 0.4;
+        } else {
+          tint = ground;
+          level = 0.20 + fv * 0.42;
+          // 배경 격자 — 의료·기술 광고의 표시
+          if (((u * 18) | 0) % 6 === 0 || ((fv * 30) | 0) % 6 === 0) level *= 1.5;
+        }
       }
 
       // ── 하프톤 ──
