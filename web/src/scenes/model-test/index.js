@@ -19,6 +19,7 @@ import { Scene } from '../../core/scene.js';
 import { createSkyDome } from '../../shared/sky.js';
 import { TexturedSurface, SolidSurface } from '../../core/material.js';
 import { SKY_STOPS, woodTextures } from './textures.js';
+import { createCharacter } from './character.js';
 
 // 상자 한 변 (미터). 스케일 기준이므로 딱 떨어지는 값이어야 한다.
 export const CRATE = 1.0;
@@ -88,7 +89,8 @@ function createCrate(scene) {
   const box = new THREE.Mesh(new THREE.BoxGeometry(CRATE, CRATE, CRATE), mat);
   // 바닥에 **앉힌다.** 중심을 원점에 두면 절반이 지면 아래로 들어가고,
   // 지면 평면은 그 아래를 통째로 가린다.
-  box.position.set(0, CRATE / 2, 0);
+  // 캐릭터가 원점에 서므로 상자는 옆으로 비킨다. 여전히 1m 자다.
+  box.position.set(0.95, CRATE / 2, -0.15);
   box.castShadow = true;
   box.receiveShadow = true;
   box.name = 'crateBox';
@@ -138,13 +140,29 @@ class ModelTest extends Scene {
     // (야간 씬은 씬 전체를 구워야 한다. core/scene.js 주석 참고.)
     this.bakeEnvironment(scene, renderer, { source: 'sky', sky: dome, far: SKY_R * 2 });
 
-    built.ground = await step('바닥', 55, () => createGround(scene));
-    built.crate = await step('나무 상자', 90, () => createCrate(scene));
+    built.ground = await step('바닥', 40, () => createGround(scene));
+    built.crate = await step('나무 상자', 55, () => createCrate(scene));
+    built.character = await step('캐릭터', 92, () => createCharacter(scene));
+
+    let tri = 0;
+    built.character.traverse((o) => {
+      if (o.isMesh) tri += (o.geometry.index ? o.geometry.index.count : 0) / 3;
+    });
+
+    const springs = built.character.userData.springs || [];
 
     return {
       built,
-      stats: [`나무 상자 1개 (${CRATE}m)`],
+      stats: [
+        `캐릭터 삼각형 ${Math.round(tri).toLocaleString('ko-KR')}`,
+        `머리카락 스프링 ${springs.length}줄`,
+      ],
       counts: { crate: 1 },
+      // dt=0 (스크린샷 하네스) 에서는 스프링이 안 움직인다 — 기준선이
+      // 흔들린 상태로 찍히면 회귀 검증이 매번 다르게 나온다.
+      tick(t, dt) {
+        for (const s of springs) s.update(dt);
+      },
     };
   }
 }
