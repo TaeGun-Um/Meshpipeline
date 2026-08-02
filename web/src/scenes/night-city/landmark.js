@@ -13,10 +13,10 @@
 import * as THREE from 'three';
 import { MeshBuilder } from '../../core/builder.js';
 import {
-  SIDES, shrink, rectBox, facePlane, upPlane, downPlane, rectSize, faceFrame,
+  SIDES, shrink, rectBox, facePlane, upPlane, downPlane, rectSize, rectCenter, faceFrame,
 } from '../../core/boxfaces.js';
 import { applySkin } from './facade.js';
-import { lathe, autoBox, tubeBetween } from '../../core/profile.js';
+import { lathe, autoBox, tubeBetween, yawBox } from '../../core/profile.js';
 import { NEON, rgb01 } from '../../shared/neon.js';
 import { neon, neonSoft } from '../../shared/masters.js';
 import {
@@ -28,6 +28,7 @@ import {
 } from './layout.js';
 import { districtAt } from './district.js';
 import { hash2 } from '../../core/textures.js';
+import { SHORE } from './port.js';
 import { HOME_FLOOR } from './housing.js';
 
 // ── 면에 텍스처를 붙일 때의 타일 ───────────────────────────────────────────
@@ -133,6 +134,27 @@ export const LANDMARK_BLOCKS = [
   // **축의 끝**이다. 대문에 서면 통로 너머로 이것이 보인다. 랜드마크는 아무
   // 데나 크게 세우는 것이 아니라 **이미 있는 축을 끝맺을 때** 제일 세게 읽힌다.
   { ix: 3, iz: 1, kind: 'mega' },
+  // ── 판자촌에도 하나 (사용자 지시) ───────────────────────────────────────
+  // *"판자촌도 랜드마크 하나 짓자. 버려진 백화점/전자상가 복합단지 큰거 하나"*
+  //
+  // 슬럼은 "짓다 만 것" 의 구역인데, **다 지어졌다가 죽은 것**이 하나쯤 있어야
+  // 그 몰락이 사건으로 읽힌다. 골조는 "시작을 못 했다" 를 말하고 백화점은
+  // "성공했다가 무너졌다" 를 말한다.
+  //
+  // (10,9) — 슬럼이 **번화가와 맞닿은 행**이다. 백화점이 죽은 이유가 거기
+  // 있다: 길 하나 건너에 살아 있는 시장이 있고 이쪽은 비었다. 두 구역에서
+  // 동시에 보이므로 양쪽의 이정표가 된다.
+  { ix: 10, iz: 9, kind: 'mall' },
+  // ── 공업과 부둣가에도 하나씩 (사용자 지시) ─────────────────────────────
+  // *"공장 랜드마크는 거대한 네오콜라 제조공장"* /
+  // *"부둣가는 배 만드는 곳이랑 커다란 (…) 배, 위에 화물 실어져있고"*
+  //
+  // (3,9) 공업 한복판. 주변이 전부 "간판 없는 공장" 이라 **자기 이름을 단
+  // 공장 하나**가 그대로 이정표가 된다 (colaPlant 머리말).
+  { ix: 3, iz: 9, kind: 'cola' },
+  // (0,7) 부둣가의 물가 쪽. **컨테이너 부두(z>=200) 아래**여야 한다 —
+  // 거기는 안벽이 x=-545 라 배가 바로 옆에 뜨고, 크레인 야드와도 안 겹친다.
+  { ix: 0, iz: 7, kind: 'yard' },
 ];
 
 // 지면을 뚫어야 하는 랜드마크.
@@ -313,29 +335,6 @@ function twinTower(b, cx, cz, mats) {
   return H + 36;
 }
 
-// 회전한 상자.
-//
-// `autoBox` 는 축 정렬 상자만 다룬다 (모따기와 평면 투영 UV가 축을 전제한다).
-// 원형 구덩이의 벽처럼 **한 바퀴 돌아가며 앉는 조각**은 회전이 필요하다.
-// 회전을 조각마다 손으로 삼각함수로 쓰면 반드시 어딘가 틀리므로 (이 프로젝트
-// 에서 이미 두 번 틀렸다 — slum.js 머리말) 여기 하나만 둔다.
-//
-// ── 축이 어디로 가는지 (한 번 틀렸다) ─────────────────────────────────────
-// 각도 a0 자리의 조각에 `yaw = -a0` 을 걸면
-//
-//   w (지역 X) -> **반지름 방향**   (cos a0, 0, sin a0)
-//   d (지역 Z) -> **접선 방향**     (-sin a0, 0, cos a0)
-//
-// 처음에 반대로 알고 호(弧) 길이를 w 에 넣었다. 그러면 벽 조각이 폭 0.6m 짜리
-// 살이 되어 **바깥으로 삐죽 뻗고 벽 사이가 전부 뚫린다** — 구덩이가 통째로
-// 검은 구멍이 됐고, 안에 지은 지하 상가 세 층이 하나도 안 보였다.
-// 즉 **w 는 반지름 방향 두께, d 는 호 길이**다.
-function yawBox(w, h, d, at, yaw) {
-  const g = new THREE.BoxGeometry(w, h, d);
-  g.rotateY(yaw);
-  g.translate(at[0], at[1], at[2]);
-  return g;
-}
 
 // ── 3) 명품 백화점 ─────────────────────────────────────────────────────────
 //
@@ -1250,6 +1249,679 @@ function megaBuilding(b, cx, cz, mats, pools) {
   return TOP + 3.2 + 16;
 }
 
+// ── 8) 버려진 백화점·전자상가 복합단지 ─────────────────────────────────────
+//
+// 사용자 지시: *"판자촌도 랜드마크 하나 짓자. 버려진 백화점/전자상가 복합단지
+// 큰거 하나"*
+//
+// ── 왜 여기 있는가 ─────────────────────────────────────────────────────────
+// 슬럼은 2기 개발이 3기에 멈춘 자리다. 그런데 **다 지어졌다가 죽은 것**도
+// 하나쯤 있어야 그 몰락이 사건으로 읽힌다. 골조는 "시작을 못 했다" 를 말하고
+// 이것은 "성공했다가 무너졌다" 를 말한다 — 후자가 더 무섭다.
+//
+// 자리는 (10,9). 슬럼이 **번화가와 맞닿은 행**이다. 백화점이 죽은 이유가
+// 거기 있다 — 길 하나 건너에 살아 있는 시장이 있고, 이쪽은 비었다.
+// 두 구역에서 동시에 보이므로 양쪽의 이정표가 된다.
+//
+// ── 백화점은 타워가 아니다 ─────────────────────────────────────────────────
+//   · 낮고 넓다.     판매층을 겹쳐 쌓은 것이라 블록을 거의 다 채운다
+//   · **창이 없다.** 진열에 벽이 필요하다. 그래서 거대한 민짜 벽이고,
+//                    남은 것은 간판 자국과 광고 프레임뿐이다
+//   · 가운데가 뚫렸다. 에스컬레이터 아트리움. 지붕 유리는 깨졌다
+//   · 옥상에 간판 철골. 글자판은 떨어져 나가고 뼈대만 남았다
+//   · 나선 주차 램프가 밖에 붙어 있다. 백화점의 상징이다
+//
+// 그리고 지금은 사람이 산다 — 1층 셔터 몇 칸에 불이 켜지고, 옥상에 판자촌이
+// 얹혀 있고, 벽에 방수포가 매달렸다.
+function mall(b, cx, cz, mats, pools) {
+  const Y = CURB_HEIGHT;
+  // 슬럼 인도는 2.6m 라 블록 반폭 33 에서 **30.4m** 까지 쓸 수 있다.
+  // 아케이드 차양이 1.6m 나가므로 몸통은 28.4 다 (아래 fitsBlock 가 강제한다).
+  const HALF = 28.4;
+  const FL = 4.6;         // 판매층. 사무실보다 높다 — 층고가 곧 매장의 격이다
+  const FLOORS = 7;
+  const TOP = Y + FLOORS * FL;
+  const ATRIUM = 13;      // 아트리움 반폭
+
+  const R = { x0: cx - HALF, x1: cx + HALF, z0: cz - HALF, z1: cz + HALF };
+
+  // ── 몸통 — 가운데가 뚫린 口자 ────────────────────────────────────────────
+  // 네 변을 따로 세운다. 통짜로 세우고 구멍을 파는 방법이 없기 때문이다
+  // (이 프로젝트는 CSG 를 안 쓴다 — concepts.md).
+  //
+  // 그리고 **모서리 한 곳을 비운다.** 나선 주차 램프가 들어갈 자리다 —
+  // 처음에 램프를 몸통 바깥에 붙였더니 블록을 42m 넘어 도로를 밟았다.
+  // 백화점 램프는 실제로도 건물 모서리를 파고 그 안에 들어앉는다.
+  const bands = [
+    { x0: R.x0, x1: R.x1, z0: R.z0, z1: cz - ATRIUM },
+    { x0: cx - ATRIUM, x1: R.x1, z0: cz + ATRIUM, z1: R.z1 },  // 좌하 모서리를 비웠다
+    { x0: R.x0, x1: cx - ATRIUM, z0: cz - ATRIUM, z1: cz + ATRIUM },
+    { x0: cx + ATRIUM, x1: R.x1, z0: cz - ATRIUM, z1: cz + ATRIUM },
+  ];
+  for (const w of bands) b.add(rectBox(w, Y, FLOORS * FL, PANEL_TILE), mats.tileWallMat);
+
+  // ── 무창 파사드 ──────────────────────────────────────────────────────────
+  //
+  // 백화점 벽에는 창이 없다. 대신 **띠**가 있다 — 층 사이를 두르는 돌림띠와,
+  // 그 위에 붙어 있던 광고판의 빈 프레임. 창을 뚫으면 그 순간 사무소가 된다.
+  for (let f = 1; f < FLOORS; f++) {
+    const y = Y + f * FL;
+    for (const side of SIDES) {
+      b.add(facePlane(shrink(R, -0.35), y - 0.5, 0.9, side, TILE2, 0.02), mats.frameConcMat);
+    }
+  }
+  // 광고 프레임 — 판은 떨어져 나갔고 철골만 남았다. 면마다 둘
+  for (const side of SIDES) {
+    const f = faceFrame(R, side);
+    for (const t of [-0.26, 0.26]) {
+      const [ax, az] = f.at(f.w * t, 0.5);
+      const [fw, fd] = f.size(f.w * 0.3, 0.3);
+      const h = FL * 3.2;
+      const y0 = Y + FL * 2.2;
+      // 테두리만 — 위아래 가로대와 좌우 세로대
+      for (const yy of [y0, y0 + h]) b.box(fw, 0.34, fd, [ax, yy, az], mats.metalMat);
+      for (const sg of [-1, 1]) {
+        const [px, pz] = f.at(f.w * t + sg * f.w * 0.15, 0.5);
+        const [pw, pd] = f.size(0.34, 0.3);
+        b.box(pw, h, pd, [px, y0 + h / 2, pz], mats.metalMat);
+      }
+      // 가로대 하나가 떨어져 비스듬히 걸렸다 — 이 하나가 '버려짐' 을 말한다
+      const [dx2, dz2] = f.at(f.w * t, 0.9);
+      const [dw, dd] = f.size(fw > 0 ? f.w * 0.22 : 0.3, 0.24);
+      b.box(dw, 0.24, dd, [dx2, y0 + h * 0.42, dz2], mats.rustMat);
+    }
+  }
+
+  // ── 1층 전자상가 아케이드 ────────────────────────────────────────────────
+  //
+  // 셔터가 줄줄이 내려가 있고 **몇 칸만** 불이 켜진다. 그 몇 칸이 지금 여기
+  // 사는 사람들의 가게다 — 백화점은 죽었는데 상가는 안 죽었다.
+  for (const side of SIDES) {
+    const f = faceFrame(R, side);
+    const n = Math.max(6, Math.round(f.w / 4.2));
+    for (let i = 0; i < n; i++) {
+      const u = -f.w / 2 + (f.w / n) * (i + 0.5);
+      const [sx, sz] = f.at(u, 0.12);
+      const [sw, sd] = f.size((f.w / n) * 0.9, 0.2);
+      const on = hash2(Math.round(sx) * 5 + i, Math.round(sz) * 9) < 0.22;
+      if (on) {
+        b.add(autoBox(sw, 3.0, sd, [sx, Y + 1.5, sz], 0.03), mats.shopfrontMats[i % mats.shopfrontMats.length]);
+      } else {
+        b.box(sw, 3.4, sd, [sx, Y + 1.7, sz], mats.shutterMat);
+      }
+      // 셔터 사이 기둥
+      const [mx, mz] = f.at(-f.w / 2 + (f.w / n) * i, 0.16);
+      const [mw, md] = f.size(0.3, 0.3);
+      b.box(mw, 3.9, md, [mx, Y + 1.95, mz], mats.tileWallMat);
+    }
+    // 아케이드 차양 — 인도 위로 뻗는다. 백화점 정면의 표식이다
+    const [cxx, czz] = f.at(0, 0.8);
+    const [cw2, cd2] = f.size(f.w, 1.6);
+    b.add(autoBox(cw2, 0.4, cd2, [cxx, Y + 4.3, czz], 0.05), mats.metalMat);
+    // ── `downPlane` 은 **늘 X 폭·Z 깊이**를 받는다 ───────────────────────
+    //
+    // 면을 도는 반복문 안에서 그걸 잊고 `f.w` 를 그대로 첫 인자에 넣었더니,
+    // px·nx 면의 차양 밑판이 **X 축으로 53m 짜리 판**이 되어 건물 밖으로
+    // 44m 나갔다. 면 좌표를 세계 좌표로 바꾸는 일은 `f.size` 가 한다 —
+    // 축이 도는 자리에서 손으로 쓰면 반드시 어딘가 틀린다 (yawBox 머리말).
+    const [dpw, dpd] = f.size(f.w * 0.94, 1.3);
+    b.add(downPlane(dpw, dpd, [cxx, Y + 4.06, czz]), mats.deckUnderMat);
+  }
+
+  // ── 아트리움 ─────────────────────────────────────────────────────────────
+  //
+  // 가운데가 바닥부터 지붕까지 뚫려 있다. 에스컬레이터가 지그재그로 오르고,
+  // 지붕 유리는 깨져서 뼈대만 남았다. 위에서 내려다보면 큰 구멍이다.
+  {
+    const at = { x0: cx - ATRIUM, x1: cx + ATRIUM, z0: cz - ATRIUM, z1: cz + ATRIUM };
+    // 바닥 — 아트리움 광장. 지금은 여기가 슬럼의 마당이다
+    b.add(upPlane(ATRIUM * 2, ATRIUM * 2, [cx, Y + 0.04, cz], [3, 3]), mats.wetConcreteMat);
+    pools.push({ kind: 'floor', x: cx, y: Y + 0.2, z: cz, rx: 12, rz: 12, tint: rgb01(NEON.amber, 0.42) });
+    // 층마다 난간 — 이 반복이 아트리움을 아트리움으로 만든다
+    for (let f = 1; f < FLOORS; f++) {
+      const y = Y + f * FL;
+      b.add(rectBox(shrink(at, -0.9), y - 0.34, 0.34, PANEL_TILE), mats.frameConcMat);
+      for (const side of SIDES) {
+        b.add(facePlane(shrink(at, -0.9), y, 0.9, side, null, 0.02), mats.pipeMat);
+      }
+    }
+    // 에스컬레이터 — 층마다 방향을 바꿔 오른다. 비스듬한 판이 이것뿐이라
+    // 아트리움 안에서 제일 먼저 눈에 든다
+    for (let f = 0; f < FLOORS - 1; f++) {
+      const dir = f % 2 ? 1 : -1;
+      const g = new THREE.BoxGeometry(ATRIUM * 1.3, 0.5, 3.0);
+      g.rotateZ(dir * 0.52);
+      g.translate(cx + dir * ATRIUM * 0.28, Y + f * FL + FL / 2, cz + (f % 4 < 2 ? -5 : 5));
+      b.add(g, mats.metalMat);
+    }
+    // 지붕 뼈대 — 유리는 없다. 살만 남았다
+    for (let i = 0; i <= 7; i++) {
+      const x = cx - ATRIUM + (ATRIUM * 2 * i) / 7;
+      b.box(0.22, 0.3, ATRIUM * 2, [x, TOP + 0.9, cz], mats.metalMat);
+    }
+    // 깨진 유리 몇 장만 남았다
+    for (let i = 0; i < 4; i++) {
+      const x = cx - ATRIUM + (ATRIUM * 2 * (i * 2 + 1)) / 8;
+      b.add(upPlane(ATRIUM * 0.24, ATRIUM * 0.7,
+        [x, TOP + 1.05, cz + (i % 2 ? 4 : -4)], null), mats.vitrineGlassMat);
+    }
+  }
+
+  // ── 나선 주차 램프 ───────────────────────────────────────────────────────
+  //
+  // 백화점의 상징. 밖에 붙은 원통 안을 경사로가 감고 올라간다.
+  // 차는 없고 지금은 사람들이 거기 산다.
+  {
+    // 비워 둔 좌하 모서리 한가운데. 반지름 + 난간이 그 칸 안에 들어간다
+    const rx = (R.x0 + (cx - ATRIUM)) / 2;
+    const rz = ((cz + ATRIUM) + R.z1) / 2;
+    const RAD = 5.8;
+    // 기둥
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      b.cylinder(0.34, 0.34, TOP - Y, [rx + Math.cos(a) * RAD, Y + (TOP - Y) / 2, rz + Math.sin(a) * RAD], mats.frameConcMat, 8);
+    }
+    // 경사로 — 열두 조각으로 한 바퀴 반. 조각마다 조금씩 올라간다
+    const SEG = 26;
+    for (let i = 0; i < SEG; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      const y = Y + 1.2 + ((TOP - Y - 2) * i) / SEG;
+      const arc = (RAD * 2 * Math.PI) / 12;
+      b.add(yawBox(3.6, 0.32, arc * 1.06,
+        [rx + Math.cos(a) * RAD, y, rz + Math.sin(a) * RAD], -a), mats.frameConcMat);
+      // 바깥 난간
+      b.add(yawBox(0.16, 1.0, arc * 1.06,
+        [rx + Math.cos(a) * (RAD + 1.7), y + 0.66, rz + Math.sin(a) * (RAD + 1.7)], -a), mats.pipeMat);
+    }
+    // 램프 안에 사는 흔적 — 방수포와 불
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 + 0.4;
+      const y = Y + 3 + ((TOP - Y - 8) * i) / 5;
+      b.box(2.2, 1.7, 2.0, [rx + Math.cos(a) * RAD, y + 0.85, rz + Math.sin(a) * RAD], mats.tarpMat);
+      b.sphere(0.22, [rx + Math.cos(a) * (RAD - 1.4), y + 1.2, rz + Math.sin(a) * (RAD - 1.4)], neonSoft(NEON.warm));
+    }
+  }
+
+  // ── 벽에 매달린 것 ───────────────────────────────────────────────────────
+  // 창이 없는 벽이라 사람이 **밖에 붙었다.** 방수포와 판자와 케이블.
+  for (const side of SIDES) {
+    const f = faceFrame(R, side);
+    const n = Math.max(4, Math.round(f.w / 9));
+    for (let i = 0; i < n; i++) {
+      for (let fl = 1; fl < FLOORS; fl++) {
+        const u = -f.w / 2 + (f.w / n) * (i + 0.5);
+        if (hash2(Math.round(u) * 7 + fl, Math.round(f.w) * 3 + i) > 0.34) continue;
+        const [px, pz] = f.at(u, 0.9);
+        const [pw, pd] = f.size(3.0, 1.8);
+        b.box(pw, 2.2, pd, [px, Y + fl * FL + 1.1, pz], mats.tarpMat);
+        b.box(pw * 0.4, 0.4, pd * 0.2, [px, Y + fl * FL + 1.4, pz], neonSoft(NEON.warm));
+      }
+    }
+  }
+
+  // ── 옥상 ─────────────────────────────────────────────────────────────────
+  //
+  // 거대한 간판 철골 — 글자판은 떨어져 나가고 뼈대만 남았다. 이것이 이
+  // 건물의 얼굴이고, 멀리서 이 실루엣 하나로 여기가 어디인지 안다.
+  b.add(rectBox(shrink(R, 0.4), TOP, 1.2, PANEL_TILE), mats.frameConcMat);
+  {
+    const SW = HALF * 1.25;
+    const SH = 17;
+    const zs = cz - HALF * 0.55;
+    for (const sg of [-1, 1]) {
+      b.box(0.6, SH, 0.6, [cx + sg * SW / 2, TOP + 1.2 + SH / 2, zs], mats.metalMat);
+      // 뒤로 받치는 버팀대 — 간판 철골은 늘 이렇게 서 있다
+      b.add(tubeBetween(
+        [cx + sg * SW / 2, TOP + 1.2 + SH * 0.9, zs],
+        [cx + sg * SW / 2, TOP + 1.4, zs + 9], 0.22, 5), mats.metalMat);
+    }
+    for (const t of [0.06, 0.5, 0.94]) {
+      b.box(SW, 0.4, 0.4, [cx, TOP + 1.2 + SH * t, zs], mats.metalMat);
+    }
+    // 글자판이 있던 자리 — 몇 장만 남아 덜렁거린다
+    for (let i = 0; i < 5; i++) {
+      if (i % 2) continue;
+      const x = cx - SW * 0.4 + (SW * 0.8 * i) / 4;
+      b.add(autoBox(SW * 0.13, SH * 0.5, 0.22, [x, TOP + 1.2 + SH * 0.5, zs - 0.2], 0.03), mats.rustMat);
+    }
+  }
+  // 옥상 판자촌 — 백화점 위에 마을이 얹혔다
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2;
+    const px = cx + Math.cos(a) * HALF * 0.66;
+    const pz = cz + Math.sin(a) * HALF * 0.66;
+    if (Math.abs(px - cx) < ATRIUM + 3 && Math.abs(pz - cz) < ATRIUM + 3) continue;
+    const h = 2.4;
+    b.box(5.0, h, 4.2, [px, TOP + 1.2 + h / 2, pz], mats.crateMat);
+    b.box(5.6, 0.12, 4.8, [px, TOP + 1.2 + h + 0.06, pz], mats.shutterMat);
+    b.box(1.0, 0.7, 0.08, [px, TOP + 1.2 + h * 0.55, pz + 2.1],
+      i % 2 ? neonSoft(NEON.warm) : mats.homeDarkMat);
+  }
+  // 물탱크 몇
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.7;
+    b.cylinder(1.2, 1.2, 2.0, [cx + Math.cos(a) * HALF * 0.82, TOP + 2.2, cz + Math.sin(a) * HALF * 0.82], mats.rustMat, 10);
+  }
+
+  return TOP + 1.2 + 17;
+}
+
+// ── 9) 네오콜라 제조공장 ───────────────────────────────────────────────────
+//
+// 사용자 지시: *"공장 랜드마크는 거대한 네오콜라 제조공장(생산, 창고, 물류까지
+// 있는 커다란 공장)"*
+//
+// ── 이 공장이 다른 공장과 다른 이유 ────────────────────────────────────────
+// 공업 구역의 규칙은 *"간판이 없다. 팔 것이 없으므로 호객할 이유가 없다"*
+// 였다 (factory.js 머리말). 부품과 강재를 만드는 곳이니 맞는 말이다.
+//
+// **그런데 이 공장은 소비재를 만든다.** 여기서 나온 것이 번화가 자판기에
+// 들어가고 슬럼 좌판에 놓인다. 그러니 이 공장만은 **자기 이름을 크게 단다** —
+// 공업 구역에서 유일하게 간판이 있는 건물이고, 그 하나로 랜드마크가 된다.
+//
+// 생산 -> 창고 -> 물류가 **한 줄로 읽혀야** 한다. 공장은 라인이 직선이라
+// 건물도 직선이고, 그 순서가 곧 이 건물의 평면이다.
+//
+//   시럽 탱크 -> 생산동(병입) -> 창고 -> 트럭 도크
+//
+// 그리고 옥상에 **거대한 병**. 로고 텍스처를 굽는 대신 형태로 말한다 —
+// 멀리서 실루엣만 봐도 무엇을 만드는 공장인지 안다.
+function colaPlant(b, cx, cz, mats, pools) {
+  const Y = CURB_HEIGHT;
+  const HALF = 29;
+  const R = { x0: cx - HALF, x1: cx + HALF, z0: cz - HALF, z1: cz + HALF };
+  // 브랜드 색 — 이 구역에서 유일하게 채도가 있는 것
+  const BRAND = 0xff3a2a;
+
+  // 라인은 X 축을 따라 흐른다. 네 구간으로 나눈다
+  const seg = (t0, t1) => ({ x0: cx - HALF + HALF * 2 * t0, x1: cx - HALF + HALF * 2 * t1, z0: R.z0, z1: R.z1 });
+  const tankZone = seg(0, 0.22);
+  const prodZone = seg(0.22, 0.56);
+  const wareZone = seg(0.56, 0.82);
+  const dockZone = seg(0.82, 1);
+
+  // ── 1) 시럽 탱크 ─────────────────────────────────────────────────────────
+  // 원료가 들어오는 쪽. 탱크에 브랜드 띠가 둘려 있다
+  {
+    const s = rectSize(tankZone);
+    const c = rectCenter(tankZone);
+    const n = 4;
+    for (let i = 0; i < n; i++) {
+      const tz = c.z - s.d * 0.36 + (s.d * 0.72 * i) / (n - 1);
+      const rad = 4.6;
+      const h = 16;
+      b.cylinder(rad, rad, h, [c.x, Y + h / 2, tz], mats.metalMat, 18);
+      b.add(lathe([[rad * 1.03, 0], [rad * 0.55, 1.2], [0, 1.7]], 18, [c.x, Y + h, tz]), mats.metalMat);
+      // 브랜드 띠 — 탱크마다 한 줄
+      b.cylinder(rad * 1.02, rad * 1.02, 2.2, [c.x, Y + h * 0.6, tz], neonSoft(BRAND), 18);
+      // 사다리와 배관
+      b.add(tubeBetween([c.x + rad + 0.14, Y + 0.4, tz], [c.x + rad + 0.14, Y + h - 0.4, tz], 0.06, 4), mats.pipeMat);
+      b.add(tubeBetween([c.x + rad, Y + 3.0, tz], [c.x + 16, Y + 3.0, tz], 0.2, 6), mats.pipeMat);
+    }
+    // 탱크를 잇는 상부 배관
+    b.add(tubeBetween([c.x, Y + 17.6, c.z - s.d * 0.4], [c.x, Y + 17.6, c.z + s.d * 0.4], 0.24, 6), mats.pipeMat);
+  }
+
+  // ── 2) 생산동 — 병입 라인 ────────────────────────────────────────────────
+  //
+  // 이 도시의 공장은 창이 없는데 **여기만 유리 띠가 있다.** 24시간 도는
+  // 라인이 밖에서 보이고, 그 컨베이어 불빛이 이 건물을 살아 있게 한다.
+  {
+    const s = rectSize(prodZone);
+    const c = rectCenter(prodZone);
+    const H = 19;
+    b.add(rectBox(prodZone, Y, H, PANEL_TILE), mats.panelMat);
+    for (const side of SIDES) {
+      const f = faceFrame(prodZone, side);
+      if (f.w < 6) continue;
+      // 라인 유리 띠 — 두 층. 밝기가 다르면 층이 갈린다
+      for (const [gy, gh, lit] of [[4.2, 3.0, true], [9.6, 2.2, false]]) {
+        const [gw, gd] = f.size(f.w * 0.92, 0.16);
+        const [gx, gz] = f.at(0, 0.1);
+        b.add(autoBox(gw, gh, gd, [gx, Y + gy, gz], 0.03),
+          lit ? mats.factoryLitMat : mats.factoryDarkMat);
+      }
+      // 브랜드 허리띠 — 건물을 두른다
+      b.add(facePlane(shrink(prodZone, -0.3), Y + 13.4, 1.1, side, null, 0.03), neonSoft(BRAND));
+    }
+    // 지붕 설비 — 증기 배출관 줄
+    const n = Math.max(3, Math.round(s.w / 7));
+    for (let i = 0; i < n; i++) {
+      const px = c.x - s.w * 0.4 + (s.w * 0.8 * i) / (n - 1);
+      b.cylinder(0.7, 0.7, 3.4, [px, Y + H + 1.7, c.z - s.d * 0.2], mats.ductMat, 10);
+      b.cylinder(0.9, 0.7, 0.4, [px, Y + H + 3.6, c.z - s.d * 0.2], mats.metalMat, 10);
+    }
+    // 굴뚝 하나 — 보일러
+    b.add(lathe([[1.7, 0], [1.4, 24], [1.3, 34]], 12, [c.x + s.w * 0.34, Y, c.z + s.d * 0.3]), mats.rustMat);
+    for (let i = 0; i < 2; i++) {
+      b.cylinder(1.42, 1.42, 1.2, [c.x + s.w * 0.34, Y + 26 + i * 3, c.z + s.d * 0.3], mats.hazardMat, 12);
+    }
+  }
+
+  // ── 3) 창고 — 원통 볼트 ──────────────────────────────────────────────────
+  {
+    const s = rectSize(wareZone);
+    const c = rectCenter(wareZone);
+    const H = 12;
+    b.add(rectBox(wareZone, Y, H, PANEL_TILE), mats.shutterMat);
+    const rad = s.d / 2;
+    const g = new THREE.CylinderGeometry(rad, rad, s.w, 18, 1, false, 0, Math.PI);
+    g.rotateZ(-Math.PI / 2);
+    g.translate(c.x, Y + H, c.z);
+    b.add(g, mats.rustMat);
+    for (const sg of [-1, 1]) {
+      const g2 = new THREE.CylinderGeometry(rad * 0.99, rad * 0.99, 0.4, 18, 1, false, 0, Math.PI);
+      g2.rotateZ(-Math.PI / 2);
+      g2.translate(c.x + sg * s.w / 2, Y + H, c.z);
+      b.add(g2, mats.panelMat);
+    }
+    // 용마루 채광
+    b.add(autoBox(s.w * 0.9, 0.3, 1.0, [c.x, Y + H + rad - 0.1, c.z], 0.02), mats.factoryLitMat);
+  }
+
+  // ── 4) 물류 — 트럭 도크와 야드 ───────────────────────────────────────────
+  //
+  // 공장이 '커다란' 이유의 절반은 여기다. 만든 것을 실어 내는 자리가
+  // 만드는 자리만큼 넓다.
+  {
+    const s = rectSize(dockZone);
+    const c = rectCenter(dockZone);
+    b.add(upPlane(s.w, s.d, [c.x, Y + 0.05, c.z], [4, 4]), mats.lotMat);
+    // 도크 — 창고 쪽 벽에 줄줄이
+    const n = Math.max(4, Math.round(s.d / 7));
+    for (let i = 0; i < n; i++) {
+      const dz = c.z - s.d * 0.44 + (s.d * 0.88 * i) / (n - 1);
+      b.box(0.4, 5.0, 4.4, [dockZone.x0, Y + 2.5, dz], mats.shutterMat);
+      b.box(1.6, 1.1, 4.0, [dockZone.x0 + 0.9, Y + 0.55, dz], mats.wetConcreteMat);
+      b.add(autoBox(0.5, 0.14, 3.0, [dockZone.x0 + 0.4, Y + 5.3, dz], 0.01), neonSoft(0xff9a3c));
+      // 대기 트럭 — 절반쯤
+      if (i % 2 === 0) {
+        b.box(12.0, 3.2, 2.5, [dockZone.x0 + 9, Y + 1.9, dz], mats.crateAltMat);
+        b.box(3.0, 2.6, 2.4, [dockZone.x0 + 16.5, Y + 1.6, dz], mats.carBodyMat);
+      }
+    }
+    // 조명탑
+    for (const sg of [-1, 1]) {
+      const lx = c.x + s.w * 0.3;
+      const lz = c.z + sg * s.d * 0.36;
+      b.cylinder(0.2, 0.26, 16, [lx, Y + 8, lz], mats.metalMat, 6);
+      b.box(3.0, 0.5, 1.0, [lx, Y + 16.3, lz], mats.metalMat);
+      b.add(downPlane(2.6, 0.9, [lx, Y + 16.0, lz]), neonSoft(0xffd9a0));
+      pools.push({ kind: 'floor', x: lx, y: Y + 0.22, z: lz, rx: 18, rz: 18, tint: rgb01(0xffd9a0, 0.4) });
+    }
+  }
+
+  // ── 5) 거대한 병 — 이 공장의 얼굴 ────────────────────────────────────────
+  //
+  // 로고 텍스처를 굽지 않는다 (예산도 없고, 글자는 멀리서 안 읽힌다).
+  // **형태로 말한다** — 병 실루엣 하나면 무엇을 만드는 곳인지 즉시 안다.
+  {
+    const bx = cx - HALF * 0.1;
+    const bz = cz;
+    const base = Y + 19 + 1.0;
+    const H = 26;
+    const rad = 5.2;
+    // 몸통 -> 어깨 -> 목 -> 뚜껑
+    b.add(lathe([
+      [0, 0], [rad, 0], [rad, H * 0.52], [rad * 0.92, H * 0.6],
+      [rad * 0.42, H * 0.76], [rad * 0.36, H * 0.94], [rad * 0.42, H * 0.97], [0, H],
+    ], 20, [bx, base, bz]), neonSoft(BRAND));
+    // 라벨 — 몸통 가운데를 두르는 밝은 띠
+    b.cylinder(rad * 1.02, rad * 1.02, H * 0.26, [bx, base + H * 0.28, bz], neon(0xfff0d0), 20);
+    // 받침 철골 — 없으면 병이 지붕에 떠 있다
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + 0.4;
+      b.add(tubeBetween(
+        [bx + Math.cos(a) * rad * 0.9, base, bz + Math.sin(a) * rad * 0.9],
+        [bx + Math.cos(a) * rad * 1.9, Y + 19, bz + Math.sin(a) * rad * 1.9], 0.22, 5), mats.metalMat);
+    }
+    b.sphere(0.3, [bx, base + H + 1.2, bz], neon(0xff2a2a));
+    pools.push({ kind: 'floor', x: bx, y: Y + 0.24, z: bz, rx: 26, rz: 26, tint: rgb01(BRAND, 0.3) });
+  }
+
+  return Y + 19 + 1.0 + 26 + 1.2;
+}
+
+// ── 10) 조선소와 화물선 ────────────────────────────────────────────────────
+//
+// 사용자 지시: *"부둣가는 배 만드는 곳이랑 커다란 사이버펑크 2077에서 나올법한
+// 배, 위에 화물 실어져있고"*
+//
+// ── 배가 왜 이 도시의 랜드마크인가 ─────────────────────────────────────────
+// 이 도시는 삼면이 바다인 곶이고 물자는 배로만 온다 (city.md 지리).
+// 그런데 지금까지 **배가 한 척도 없었다** — 크레인은 있는데 집을 것이 없었다.
+// 항구의 크레인이 "여기가 항구다" 를 말한다면, 배는 "그래서 무엇이 오는가" 를
+// 말한다. 그게 이 도시가 존재하는 이유다.
+//
+// ── 파야 할 것 같으면 반대로 올린다 ────────────────────────────────────────
+// 조선소의 상징은 드라이독인데, y=0 아래는 지면 평면(3000m)이 덮어 안 보인다.
+// 그래서 **선체를 반목 위에 올린다** — 실제로도 건조 중인 배는 받침대 위에
+// 올라가 있고, 그 편이 실루엣도 훨씬 강하다.
+function shipyard(b, cx, cz, mats, pools) {
+  const Y = CURB_HEIGHT;
+  const HALF = 30;
+
+  // ── 1) 조립 공장동 + 강재 야드 ───────────────────────────────────────────
+  {
+    const r = { x0: cx - HALF, x1: cx + HALF * 0.1, z0: cz - HALF, z1: cz + HALF };
+    const H = 26;
+    b.add(rectBox(r, Y, H, PANEL_TILE), mats.shutterMat);
+    // 대형 개구부 — 선체 블록이 나가는 문. 이 크기가 이 건물의 정체다
+    const f = faceFrame(r, 'px');
+    const [gw, gd] = f.size(f.w * 0.5, 0.3);
+    const [gx, gz] = f.at(0, 0.1);
+    b.box(gw, 18, gd, [gx, Y + 9, gz], mats.factoryDarkMat);
+    b.box(gw + 1.4, 1.0, gd, [gx, Y + 18.6, gz], mats.metalMat);
+    // 실내 작업등이 새는 상부 띠
+    for (const side of SIDES) {
+      const f2 = faceFrame(r, side);
+      if (f2.w < 6) continue;
+      const [lw, ld] = f2.size(f2.w * 0.9, 0.14);
+      const [lx, lz] = f2.at(0, 0.08);
+      b.add(autoBox(lw, 1.6, ld, [lx, Y + H - 3.0, lz], 0.02), mats.factoryLitMat);
+    }
+    // 강재 야드 — 후판이 세워져 있다
+    for (let i = 0; i < 7; i++) {
+      const px = cx + HALF * 0.2 + (i % 4) * 3.4;
+      const pz = cz - HALF * 0.7 + Math.floor(i / 4) * 12;
+      b.box(0.4, 6.0, 10.0, [px, Y + 3.0, pz], mats.rustMat);
+    }
+  }
+
+  // ── 물 위와 부두 앞마당의 것은 **따로 표시한다** ─────────────────────────
+  //
+  // 배치 원장은 항목마다 **상자 하나**다. 그런데 조선소는 블록 위의 공장동과
+  // 300m 떨어진 물 위의 배가 한 항목이라, 상자가 240m x 336m 로 부풀어
+  // 이웃 블록의 건물 다섯을 "겹친다" 고 신고했다 (최대 44.1m). 실제로는
+  // 아무것도 안 겹친다 — **상자 하나로는 "넓은 부분이 저쪽에 있다" 를 표현
+  // 못 한다** (placecheck 의 lowBox 주석이 같은 말을 한다).
+  //
+  // 종류만 바꾸면 **억제**지 해결이 아니다 — 검사에서 빠질 뿐 상자는 여전히
+  // 부푼다. 흩어진 것은 **흩어진 채로 표시한다.** 조각마다 표시를 새로 걸면
+  // 상자가 각각 자기 크기가 되고, 검사도 그대로 받는다.
+  b.mark('crane', 'shipyard:goliath');
+
+  // ── 2) 골리앗 크레인 — 블록을 가로지른다 ────────────────────────────────
+  //
+  // 조선소의 상징. 갠트리와 달리 **다리 사이가 배 한 척만큼 넓고**, 위의
+  // 거더가 그 폭을 통째로 건넌다. 항만 크레인이 세로로 서 있다면 이것은
+  // 가로로 걸쳐 있어서, 둘이 한 화면에 있으면 서로를 설명한다.
+  //
+  // ── 처음에 물 위에 세웠다 ────────────────────────────────────────────────
+  // 선대를 `cx - 130` 에 뒀는데 이 자리(z<200)의 안벽은 x=-545 다. 즉
+  // **선대와 건조 중인 선체가 바다 위에 서 있었다.** 부두를 줄이고 나면
+  // 블록 밖에 땅이 20m 밖에 안 남는다 — 그러니 조선소는 **블록 안에**
+  // 들어가야 하고, 배는 다 만든 뒤 물로 나간다.
+  const SPANX = 56;                  // 다리 사이 (블록 폭 66 안)
+  const HGT = 58;
+  const gz = cz;                     // 선대 위
+  {
+    for (const sx2 of [-1, 1]) {
+      const x = cx + sx2 * SPANX / 2;
+      for (const dz of [-7, 7]) {
+        b.add(tubeBetween([x, Y, gz + dz * 1.5], [x, Y + HGT, gz + dz * 0.4], 0.9, 6), mats.craneMat);
+        b.box(4.0, 2.0, 5.5, [x, Y + 1.0, gz + dz * 1.5], mats.metalMat);
+      }
+      b.add(tubeBetween([x, Y + HGT * 0.42, gz - 10.5], [x, Y + HGT * 0.8, gz + 2.8], 0.3, 4), mats.craneMat);
+      b.add(tubeBetween([x, Y + HGT * 0.42, gz + 10.5], [x, Y + HGT * 0.8, gz - 2.8], 0.3, 4), mats.craneMat);
+      b.sphere(0.34, [x, Y + HGT + 7.0, gz], neon(NEON.amber));
+    }
+    // 거더 — 폭을 통째로 건넌다. 두 겹이라야 트러스로 읽힌다
+    for (const dy of [0, 5.0]) {
+      b.box(SPANX + 10, 2.2, 6.0, [cx, Y + HGT + 1.2 + dy, gz], mats.craneMat);
+    }
+    for (let i = 0; i <= 9; i++) {
+      const x = cx - SPANX / 2 + (SPANX * i) / 9;
+      b.add(tubeBetween([x, Y + HGT + 2.3, gz], [x, Y + HGT + 5.0, gz], 0.18, 4), mats.craneMat);
+    }
+    // 트롤리와 매달린 선체 블록
+    const tx = cx + 14;
+    b.box(7.0, 3.0, 6.0, [tx, Y + HGT - 0.6, gz], mats.metalMat);
+    for (const su of [-2.2, 2.2]) {
+      b.add(tubeBetween([tx + su, Y + HGT - 2.0, gz], [tx + su, Y + 30, gz], 0.13, 4), mats.cableMat);
+    }
+    b.add(autoBox(10, 4.5, 11, [tx, Y + 27, gz], 0.2), mats.rustMat);
+  }
+
+  // ── 3) 건조 중인 선체 — 반목 위에 올라가 있다 ────────────────────────────
+  {
+    const sx = cx - 6;
+    const L = 58;
+    const W = 20;
+    const KEEL = Y + 5.0;
+    // 반목 — 선체를 받치는 콘크리트 블록 줄. 이게 있어야 '건조 중' 이다
+    for (let i = 0; i < 9; i++) {
+      const z = cz - L * 0.44 + (L * 0.88 * i) / 8;
+      b.box(W * 0.7, 5.0, 2.0, [sx, Y + 2.5, z], mats.wetConcreteMat);
+    }
+    // 외판이 붙은 앞쪽 절반
+    b.add(hullSection(sx, KEEL, cz - L * 0.24, W, L * 0.5, 9), mats.rustMat);
+    // 늑골만 선 뒤쪽 절반 — 미완성의 신호
+    for (let i = 0; i < 7; i++) {
+      const z = cz + L * 0.06 + (L * 0.4 * i) / 6;
+      for (const sg of [-1, 1]) {
+        b.add(tubeBetween([sx + sg * W * 0.5, KEEL + 9, z], [sx + sg * W * 0.16, KEEL, z], 0.3, 4), mats.craneMat);
+      }
+      b.box(W * 0.34, 0.5, 0.5, [sx, KEEL, z], mats.craneMat);
+    }
+    // 비계 — 선체 옆에 붙은 발판
+    for (const sg of [-1, 1]) {
+      for (let lv = 0; lv < 3; lv++) {
+        b.box(1.4, 0.16, L * 0.86, [sx + sg * (W * 0.62), KEEL + 2.6 + lv * 3.4, cz], mats.grateMat);
+        for (let i = 0; i < 7; i++) {
+          const z = cz - L * 0.42 + (L * 0.84 * i) / 6;
+          b.box(0.12, 3.4, 0.12, [sx + sg * (W * 0.62), KEEL + 0.9 + lv * 3.4, z], mats.pipeMat);
+        }
+      }
+    }
+    // 용접 불빛 — 조선소는 밤에도 스파크가 튄다
+    for (let i = 0; i < 4; i++) {
+      const z = cz - L * 0.3 + (L * 0.6 * i) / 3;
+      const px = sx + (i % 2 ? 1 : -1) * W * 0.62;
+      b.sphere(0.36, [px, KEEL + 3.4 + (i % 3) * 3.4, z], neon(0xdff0ff));
+      pools.push({ kind: 'floor', x: px, y: Y + 0.24, z, rx: 7, rz: 7, tint: rgb01(0x9fc4ff, 0.35) });
+    }
+  }
+
+  // 배는 300m 떨어진 물 위다. 여기서 표시를 새로 걸어야 골리앗 상자가
+  // 배까지 늘어나지 않는다.
+  b.mark('crane', 'shipyard:ship');
+
+  // ── 4) 완성된 화물선 — 물에 떠 있다 ──────────────────────────────────────
+  //
+  // 이 랜드마크의 얼굴. 길이 240m 로 도시의 어느 건물보다 길고, **누워
+  // 있어서** 세로로 선 것투성이인 이 도시에서 혼자 다르다.
+  {
+    // 안벽(x=-545) 바로 바깥에 접안한다. 더 멀면 정박이 아니라 항해다
+    const sx = cx - 130;
+    const L = 240;
+    const W = 38;
+    const DECK = Y + 9.0;
+    const zc = cz + 10;
+
+    b.add(hullSection(sx, DECK - 13, zc, W, L, 13), mats.craneMat);
+    // 갑판
+    b.box(W, 0.8, L, [sx, DECK, zc], mats.metalMat);
+    // 흘수선 띠 — 배를 배로 만드는 한 줄
+    b.box(W + 0.6, 1.4, L * 0.99, [sx, DECK - 11.5, zc], mats.hazardMat);
+
+    // 화물 — 컨테이너를 층층이. 이것이 "화물 실어져있고" 다
+    const CW = 2.5, CH = 2.6, CL = 12.2;
+    const cols = 12;
+    const rows = 16;
+    for (let i = 0; i < cols; i++) {
+      for (let j = 0; j < rows; j++) {
+        const stack = 2 + ((i * 7 + j * 3) % 4);
+        const x = sx - (cols - 1) * (CW + 0.35) / 2 + (CW + 0.35) * i;
+        const z = zc - L * 0.36 + ((CL + 1.0) * j);
+        if (z > zc + L * 0.3) continue;
+        for (let k = 0; k < stack; k++) {
+          const hue = (i * 5 + j * 11 + k * 3) % 4;
+          b.box(CW, CH, CL, [x, DECK + 0.4 + CH * (k + 0.5), z],
+            [mats.crateAltMat, mats.dumpsterMat, mats.crateMat, mats.rustMat][hue]);
+        }
+      }
+    }
+    // 선교 — 뒤쪽에 높이 솟는다. 배의 실루엣을 완성하는 것
+    const bz = zc + L * 0.4;
+    for (let f = 0; f < 6; f++) {
+      const w = W * (0.86 - f * 0.05);
+      b.add(rectBox({ x0: sx - w / 2, x1: sx + w / 2, z0: bz - 9, z1: bz + 9 },
+        DECK + 1 + f * 3.4, 3.4, PANEL_TILE), mats.panelMat);
+      // 창 띠 — 층마다
+      for (const side of SIDES) {
+        const rr = { x0: sx - w / 2, x1: sx + w / 2, z0: bz - 9, z1: bz + 9 };
+        b.add(facePlane(rr, DECK + 2.2 + f * 3.4, 1.2, side, null, 0.03),
+          f > 3 ? neonSoft(NEON.warm) : mats.homeDarkMat);
+      }
+    }
+    // 굴뚝 — 회사 색 띠
+    b.add(lathe([[3.4, 0], [3.0, 9], [2.6, 12]], 12, [sx, DECK + 21.4, bz + 2]), mats.rustMat);
+    b.cylinder(3.1, 3.1, 2.6, [sx, DECK + 28.0, bz + 2], neonSoft(NEON.cool), 12);
+    // 마스트와 항해등
+    b.cylinder(0.3, 0.4, 14, [sx, DECK + 28, bz - 8], mats.metalMat, 6);
+    b.sphere(0.4, [sx, DECK + 35.4, bz - 8], neon(0xffffff));
+    b.sphere(0.34, [sx - W * 0.5, DECK + 2.2, zc - L * 0.44], neon(0xff2a2a));
+    b.sphere(0.34, [sx + W * 0.5, DECK + 2.2, zc - L * 0.44], neon(0x2aff5a));
+    // 선체 네온 — 사이버펑크의 배는 자기 이름을 켠다
+    for (const sg of [-1, 1]) {
+      b.box(0.2, 2.0, L * 0.3, [sx + sg * (W / 2 + 0.2), DECK - 4.0, zc - L * 0.1], neonSoft(NEON.cyan));
+    }
+
+    // 계류 밧줄 — 배가 물에 그냥 떠 있으면 정박한 것으로 안 읽힌다
+    for (const t of [-0.34, 0.34]) {
+      b.add(tubeBetween(
+        [sx + W / 2, DECK - 2, zc + L * t],
+        [-SHORE + 2, Y - 2.0, cz + HALF * t * 1.4], 0.22, 4), mats.cableMat);
+    }
+    // **빛 웅덩이를 안 깐다.** 바닥 웅덩이는 눕힌 판이라, 물 위에 깔면 배
+    // 밑에 창백한 사각형이 생긴다 — 실제로 그렇게 보였다. 물에 비치는 것은
+    // 바다 재질(거칠기 0.02)이 알아서 한다.
+  }
+
+  return Y + 74 + 8;
+}
+
+// 선체 한 도막 — 아래로 갈수록 좁아지는 통. 뱃바닥의 단면이다.
+//
+// 상자로 두면 그냥 긴 상자고, **밑이 좁아야** 물을 가르는 것으로 읽힌다.
+function hullSection(x, keelY, z, w, len, depth) {
+  const g = new THREE.CylinderGeometry(1, 1, 1, 4, 1);
+  g.rotateY(Math.PI / 4);          // 사각 단면의 모서리를 축에 맞춘다
+  const pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const up = pos.getY(i) > 0;
+    // 위는 폭 그대로, 아래는 반쪽으로 좁힌다
+    const k = up ? 1 : 0.42;
+    pos.setX(i, pos.getX(i) * Math.SQRT2 * (w / 2) * k);
+    pos.setZ(i, pos.getZ(i) * Math.SQRT2 * (len / 2));
+    pos.setY(i, up ? depth : 0);
+  }
+  g.computeVertexNormals();
+  g.translate(x, keelY, z);
+  return g;
+}
+
 // 종류 -> 생성기. 표로 두면 **빠뜨린 종류가 즉시 터진다.**
 // 전에는 `kind === 'hq' ? hqTower : twinTower` 라 세 번째 종류를 더하는 순간
 // 조용히 쌍둥이 타워가 섰을 것이다 — `??` 로 값을 때우지 않는다는 규칙
@@ -1262,6 +1934,9 @@ const BUILDERS = {
   neon: neonTower,
   hall: undergroundHall,
   mega: megaBuilding,
+  mall,
+  cola: colaPlant,
+  yard: shipyard,
 };
 
 // ── 랜드마크가 자기 블록에 들어가는가 ──────────────────────────────────────
@@ -1285,11 +1960,16 @@ const FOOTPRINT = {
   neon: 18,    // 캐노피 포함 (half 11 + 7)
   hall: 33,    // 구덩이가 본체. 지면을 직접 깐다
   mega: 28.5,  // 몸통 27 + 모서리 코어 1 + 식별 간판 틀 0.5
+  mall: 30.0, // 몸통 28.4 + 아케이드 차양 1.6. 램프는 몸통 모서리 안이다
+  cola: 29,   // 공업 인도 3.2 -> 쓸 수 있는 것이 29.8
+  // 조선소는 **블록 위의 것만** 잰다. 골리앗 크레인·선대·화물선은 물 위와
+  // 부두 앞마당에 있어서 블록 밖이고, 그게 설계다 (hall 의 구덩이와 같다).
+  yard: 30,
 };
 // 인도만 비켜나면 되는 것들.
 // 번화가는 대지를 꽉 채우는 것이 정체이고, 주거는 1기 건물이라 땅이 아깝다 —
 // 광장은 기업 구역의 어휘다 (corpo.js 머리말).
-const NO_PLAZA = new Set(['depot', 'gate', 'neon', 'hall', 'mega']);
+const NO_PLAZA = new Set(['depot', 'gate', 'neon', 'hall', 'mega', 'mall', 'cola', 'yard']);
 
 function fitsBlock(kind, ix, iz) {
   const R = blockRect(ix, iz);

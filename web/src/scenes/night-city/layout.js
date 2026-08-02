@@ -227,14 +227,26 @@ export function roads() {
   const h = BLOCK_SIZE / 2;
   const out = [];
 
-  // 바깥 경계 도로는 마주 볼 블록이 없다. 안쪽 여백을 거울처럼 접어 쓴다.
+  // ── 바깥 경계 도로는 **순환로**다 (사용자 지시) ──────────────────────────
+  //
+  // *"맵 외곽에 있는 도로는 4차선 도로로 넓게 만들기"*
+  //
+  // 전에는 "마주 볼 블록이 없으니 안쪽 여백을 거울처럼 접어 쓴다" 였고, 그
+  // 결과 저쪽 끝이 **8m** 였다 — 2차선도 안 된다. 그런데 이 도로는 안쪽
+  // 골목이 아니라 **항만과 공장을 도는 순환로**다. 트럭이 다니는 길이 도시에서
+  // 제일 좁다는 것은 앞뒤가 안 맞는다.
+  //
+  // 18m 로 고정한다 — 차선 3.4m x 4 = 13.6m 에 갓길과 연석 여유. 격자 안쪽은
+  // 건드리지 않으므로 도시는 그대로 있고 **바깥으로만** 넓어진다
+  // (안벽까지 −X 133m · 삼면 20m 가 남는다).
+  const OUTER_ROAD = 18;
   const firstEdge = blockCenter(0) - h;
-  out.push({ lo: firstEdge - (blockPitch(0) - BLOCK_SIZE), hi: firstEdge });
+  out.push({ lo: firstEdge - OUTER_ROAD, hi: firstEdge });
   for (let i = 0; i + 1 < GRID; i++) {
     out.push({ lo: blockCenter(i) + h, hi: blockCenter(i + 1) - h });
   }
   const lastEdge = blockCenter(GRID - 1) + h;
-  out.push({ lo: lastEdge, hi: lastEdge + (blockPitch(GRID - 1) - BLOCK_SIZE) });
+  out.push({ lo: lastEdge, hi: lastEdge + OUTER_ROAD });
 
   for (const r of out) {
     r.mid = (r.lo + r.hi) / 2;
