@@ -24,13 +24,16 @@
 | # | 씬 | 상태 | 문서 |
 |---|---|---|---|
 | 1 | `vacant-lot` 주택가 공터 | **완료.** 좌표계·조명 규약을 여기서 확정했고 파이프라인 79항목이 통과했다 | — |
-| 2 | `night-city` 나이트시티 | **작업 중** | [scenes/night-city/](scenes/night-city/status.md) |
+| 2 | `night-city` 나이트시티 | **한 판 마무리.** 여섯 구역 양식과 랜드마크 열이 섰다. 남은 것은 마감·지오메트리 품질 | [scenes/night-city/](scenes/night-city/status.md) |
+| 3 | `model-test` 모델 테스트 | **활성 씬.** 바닥·하늘·1m 나무 상자 하나. 형태를 하나씩 만들어 보는 자리 | [scenes/model-test/](scenes/model-test/status.md) |
 
 ### 씬을 새로 추가할 때
 
 1. `web/src/scenes/<id>/index.js` 에서 `core/scene.js` 의 `Scene` 을 상속
 2. `web/src/scenes/index.js` 의 `SAVED` 에 추가 (햄버거 목록은 여기서 나온다)
 3. `web/shots/views.json` 에 뷰를 등록하고 `__lock('base')` 로 기준을 잡는다
+   — **`_tag` 를 씬마다 다르게 준다.** 샷 파일 이름의 접두사이고, 안 주면
+   다른 씬의 같은 이름 뷰(`wide` 둘)가 같은 파일을 덮어쓴다
 4. 문서는 `docs/scenes/<id>/` 아래에 둔다
 
 **모듈 수준 상태를 새로 만들면 `onSceneReset()` 에 등록한다** (아래 2절).
@@ -56,7 +59,7 @@ let CACHE = null;
 onSceneReset('구역 캐시', () => { CACHE = null; });
 ```
 
-브라우저에서 `__resets()` 로 등록 목록을 본다. 현재 여덟.
+브라우저에서 `__resets()` 로 등록 목록을 본다. 현재 **열둘**.
 
 > 아직 **없는 것**: 지오메트리·재질·텍스처 반납(`dispose`)과 재질 캐시의 씬
 > 스코프화. 그래서 씬 전환은 인페이지 교체가 아니라 **새로고침**이다
@@ -74,6 +77,10 @@ onSceneReset('구역 캐시', () => { CACHE = null; });
 | `shared/` 12개 중 **10개** | 도시만 쓴다 (`neon` `masters` `glyphs` `lightpool` `movers` `urban/*` `index`) |
 | 진짜 공통 | `sky` `rain` 둘뿐 |
 | `core/` 중 도시만 쓰는 것 | `boxfaces` `builder` `profile` `placement` 넷 |
+
+> `profile.js` 에 `yawBox` 가 들어갔다 — 회전한 상자를 두 씬 모듈이 각자
+> 갖고 있어서 올린 것이다. `core` 는 **씬을 모르는 순수 도구**라는 기준은
+> 그대로다.
 
 `shared/index.js` 머리말에 *"둘 이상의 씬이 실제로 쓰는가. 미리 올리지
 않는다"* 라고 적혀 있는데, 지금 `shared/` 의 대부분이 그 규칙을 어기고 있다.

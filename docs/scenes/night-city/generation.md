@@ -33,7 +33,7 @@
 | **streets** | 노면·인도·차선·가로등 | `blocks`, `market.marketPits()` | |
 | port · parking · alleys | | | |
 | **programs** | 공사장·쌈지광장·공터·번화가 광장 | `blocks`, `signs` | 건물 수 |
-| landmarks | 손 배치 일곱 | | |
+| landmarks | 손 배치 **열** | | |
 | **signage** | 간판 전부 | `towers.signs` | |
 | streetlife · crowd | 시설물·사람 | | |
 
@@ -64,6 +64,11 @@
 | 대문이 먹는 폭 | `landmark.GATE_SPAN` (**제일 넓은 조각** = 처마) |
 | 광장·보행 전용 범위 | `plaza.PLAZA` · `PRECINCT` |
 | 점포 벽감 깊이·1층 층고 | `shopfront.ALCOVE` · `SHOP_H` |
+| 출입구 차양 깊이 | `shopfront.CANOPY_D` — 벽에 붙이는 쪽이 몸통을 얼마나 들일지 이 값으로 안다 |
+| 주거 층고 | `housing.HOME_FLOOR` — 메가빌딩도 이걸 받는다 |
+| 안벽 위치 | `port.SHORE` — 조선소가 배를 어디 접안시킬지 이 값으로 안다 |
+| 바깥 순환로 폭 | `layout.roads()` 의 `OUTER_ROAD` 18m |
+| 회전한 상자 | `profile.yawBox` — 두 파일이 각자 갖고 있었다 |
 | 사각형 뺄셈 | `boxfaces.rectMinus` · `rectsMinus` |
 
 ## 3. 계약 — 생성기가 주고받는 것
@@ -106,10 +111,21 @@
 
 ### 3.5 배치 원장 (모든 생성기 → placecheck)
 
-    b.mark('building'|'deck'|'stair'|'bridge'|'holo'|'sign'|'fixture'|'alley'|'podium',
+    b.mark('building'|'deck'|'stair'|'bridge'|'holo'|'sign'|'fixture'|'alley'|'podium'|'crane',
            label, meta)
 
 표시한 뒤에 그린 것이 그 항목의 몸이다. **표시를 안 걸면 검사에서 사라진다.**
+
+### 항목 하나 = 상자 하나. 흩어진 것은 흩어진 채로 표시한다
+
+원장은 항목마다 **축 정렬 상자 하나**다. 그러니 한 표시 안에 멀리 떨어진
+조각을 넣으면 상자가 그 사이를 통째로 삼킨다 — 조선소가 블록 위 공장동과
+300m 떨어진 배를 한 항목으로 넣어 336x240m 가 됐고, 이웃 건물 다섯을
+"최대 44.1m 겹친다" 고 신고했다 (status.md 3.25).
+
+**종류를 바꿔 검사에서 빼는 것은 억제지 해결이 아니다.** 상자는 여전히
+부풀어 있다. 조각마다 표시를 새로 걸면 상자가 각각 자기 크기가 되고 검사도
+그대로 받는다.
 
 ## 4. 난수 규율 — 어기면 도시 전체가 다시 뽑힌다
 
@@ -117,7 +133,7 @@
 2. **조건부로 건너뛸 때는 난수를 먼저 뽑고 그리기만 건너뛴다.**
 3. 난수 호출 **횟수**가 같으면 범위는 바꿔도 된다.
 
-어기면 픽셀 회귀 22뷰가 전부 "다름" 이 되어 아무것도 못 잡는다.
+어기면 픽셀 회귀 26뷰가 전부 "다름" 이 되어 아무것도 못 잡는다.
 
 ## 5. 1층 점포 — **이미 있는 체계다. 새로 만들지 않는다**
 
