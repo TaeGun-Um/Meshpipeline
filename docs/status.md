@@ -25,7 +25,7 @@
 |---|---|---|---|
 | 1 | `vacant-lot` 주택가 공터 | **완료.** 좌표계·조명 규약을 여기서 확정했고 파이프라인 79항목이 통과했다 | — |
 | 2 | `night-city` 나이트시티 | **한 판 마무리.** 여섯 구역 양식과 랜드마크 열이 섰다. 남은 것은 마감·지오메트리 품질 | [scenes/night-city/](scenes/night-city/status.md) |
-| 3 | `model-test` 모델 테스트 | **활성 씬.** 서브컬처 아바타를 코드로 만들어 본 자리. 어디까지 되고 어디서 막히는지가 [character.md](scenes/model-test/character.md) 에 있다 | [scenes/model-test/](scenes/model-test/status.md) |
+| 3 | `model-test` 모델 테스트 | **일단락.** 서브컬처 아바타를 코드로 어디까지 만들 수 있나 — 결론과 규칙이 [character.md](scenes/model-test/character.md) 에 있다. 씬은 그대로 보존 | [scenes/model-test/](scenes/model-test/status.md) |
 
 ### 씬을 새로 추가할 때
 

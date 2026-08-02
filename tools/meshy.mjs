@@ -15,10 +15,32 @@
 // 받아 머리카락·장식·스프링을 얹는다 (scenes/model-test/rigtest.js).
 //
 // ── 쓰는 법 ────────────────────────────────────────────────────────────────
-//   node tools/meshy.mjs --plan "은발 트윈 땋은머리 소녀, 흰 코트"   비용만 계산
-//   node tools/meshy.mjs --prompt "..."                              전체 실행
-//   node tools/meshy.mjs --image concept.png                         이미지부터
-//   node tools/meshy.mjs --resume <run-id>                           이어서
+//   node tools/meshy.mjs --plan "은발 트윈 땋은머리 소녀"   비용만 계산 (키 불필요)
+//   node tools/meshy.mjs --text "..."                       Meshy 만으로 (키 1개)
+//   node tools/meshy.mjs --prompt "..."                     컨셉 이미지부터 (키 2개)
+//   node tools/meshy.mjs --image concept.png                직접 그린 그림부터
+//   node tools/meshy.mjs --resume <run-id>                  이어서
+//
+// ── 어느 길로 갈 것인가 ────────────────────────────────────────────────────
+//   --text    Meshy 키 하나로 끝난다. 20+5 크레딧, 무료등급 월 4회.
+//             대신 **생김새를 글로만 지시**하므로 특정 캐릭터를 노리기 어렵다
+//   --image   컨셉 이미지를 먼저 확정하고 그걸 입체로 만든다. 30+5 크레딧.
+//             **닮게 만들려면 이 길이다** — 이미지는 여러 장 뽑아 고를 수 있고
+//             마음에 드는 한 장만 3D 로 올리면 크레딧이 안 샌다
+//
+// ── 먼저 알아야 할 것: API 는 유료 플랜에서만 열린다 ──────────────────────
+//
+// 무료 등급의 매달 100 크레딧은 **웹 UI 전용**이다. 설정 > API 탭이 통째로
+// 잠겨 있고 "지금 업그레이드" 만 뜬다 (2026-08 확인).
+//
+// 그래서 순서는 이렇다.
+//   1) 먼저 **웹 UI 로 무료로 만들어** GLB 를 내려받는다. 그걸 web/export 에
+//      두고 브라우저에서 `__rig({ url: '/export/…' })` 로 재면 이 저장소가
+//      알아야 할 것(뼈 이름·축척·두상)은 전부 나온다. **돈이 안 든다.**
+//   2) 그 결과가 쓸 만해서 여러 번 돌릴 것 같아지면 그때 Pro($20/월)로
+//      API 를 열고 이 스크립트로 자동화한다.
+//
+// 이 스크립트는 2단계용이다. 1단계에서는 필요 없다.
 //
 // ── 키 ─────────────────────────────────────────────────────────────────────
 // **환경변수로만 읽는다.** 파일에 적지 않고, 로그에도 안 찍는다.
@@ -41,6 +63,22 @@ const SPEC = {
     size: '2K',
     aspect: '2:3', // 전신 캐릭터 시트
   },
+  // 글로 바로 만드는 길. 프리뷰(형태) + 리파인(텍스처) 두 단계다.
+  text: {
+    ai_model: 'meshy-6',
+    // 'realistic' 로 두면 애니 캐릭터를 넣어도 실사 인물로 나온다
+    art_style: 'sculpture',
+    should_remesh: true,
+    topology: 'triangle',
+    target_polycount: 10000,
+    // 사람은 좌우 대칭이다. 켜면 형태가 훨씬 안정적으로 나온다
+    symmetry_mode: 'on',
+  },
+  textRefine: {
+    ai_model: 'meshy-6',
+    enable_pbr: false, // 툰 셰이딩이라 PBR 맵이 필요 없다
+    texture_resolution: '2k',
+  },
   mesh: {
     ai_model: 'meshy-6',
     should_texture: true,
@@ -61,7 +99,7 @@ const SPEC = {
 //   Meshy   image-to-3d(텍스처) 30 크레딧 · 리깅 5 크레딧
 //   크레딧 단가는 **공개돼 있지 않다.** Pro $20 / 1,000 크레딧에서 나눈 값이라
 //   추가 팩 단가는 다를 수 있다. 실제 청구는 응답의 consumed_credits 로 본다.
-const COST = { imageUSD: 0.134, meshCredits: 30, rigCredits: 5, creditUSD: 0.02 };
+const COST = { imageUSD: 0.134, meshCredits: 30, textCredits: 20, rigCredits: 5, creditUSD: 0.02 };
 
 // ── 뼈대 ───────────────────────────────────────────────────────────────────
 
@@ -243,11 +281,82 @@ async function makeMesh(dir, imageFile, state) {
   return raw;
 }
 
+// ── 2b. 글 → 3D (이미지 없이) ──────────────────────────────────────────────
+//
+// 프리뷰가 형태를, 리파인이 텍스처를 만든다. **프리뷰만 보고 마음에 안 들면
+// 리파인을 안 하고 버릴 수 있는 것**이 이 길의 값이다.
+async function makeMeshFromText(dir, prompt, state) {
+  const k = key('MESHY_API_KEY');
+  if (!k) die('MESHY_API_KEY 가 없다.');
+  const H = { Authorization: `Bearer ${k}`, 'Content-Type': 'application/json' };
+  const T3 = 'https://api.meshy.ai/openapi/v2/text-to-3d';
+
+  if (!state.previewTask) {
+    log(`\n[2] 글 → 3D 프리뷰 — ${SPEC.text.ai_model} · ${SPEC.text.target_polycount} 면`);
+    const j = await jsonFetch(
+      T3,
+      {
+        method: 'POST',
+        headers: H,
+        body: JSON.stringify({ mode: 'preview', prompt: `${prompt}. ${SHOT_RULES}`, ...SPEC.text }),
+      },
+      'text-to-3d 프리뷰'
+    );
+    state.previewTask = j.result;
+    writeState(dir, state);
+    log(`  작업 ${state.previewTask}`);
+  } else {
+    log(`\n[2] 글 → 3D 프리뷰 — 이어서 (${state.previewTask})`);
+  }
+  await poll(`${T3}/${state.previewTask}`, H, '프리뷰');
+
+  if (!state.meshTask) {
+    log(`\n[2b] 텍스처 리파인`);
+    const j = await jsonFetch(
+      T3,
+      {
+        method: 'POST',
+        headers: H,
+        body: JSON.stringify({
+          mode: 'refine',
+          preview_task_id: state.previewTask,
+          ...SPEC.textRefine,
+        }),
+      },
+      'text-to-3d 리파인'
+    );
+    state.meshTask = j.result;
+    writeState(dir, state);
+    log(`  작업 ${state.meshTask}`);
+  } else {
+    log(`\n[2b] 텍스처 리파인 — 이어서 (${state.meshTask})`);
+  }
+
+  const done = await poll(`${T3}/${state.meshTask}`, H, '리파인');
+  state.meshCredits = done.consumed_credits ?? null;
+  state.meshGlb = done.model_urls?.glb ?? null;
+  writeState(dir, state);
+  if (!state.meshGlb) die('text-to-3d 결과에 glb 가 없다');
+
+  const raw = path.join(dir, 'mesh.glb');
+  const bytes = await download(state.meshGlb, raw);
+  log(`  저장 ${path.relative(ROOT, raw)} (${(bytes / 1024 / 1024).toFixed(2)}MB · ${state.meshCredits ?? '?'} 크레딧)`);
+  return raw;
+}
+
 // ── 3. 자동 리깅 ───────────────────────────────────────────────────────────
 //
 // 제약이 문서에 명시돼 있다 — GLB 만 · **텍스처 있는 이족 휴머노이드**만 ·
 // **얼굴이 +Z 를 봐야** 하고 · input_task_id 경로는 30만 면 이하.
 // 앞 단계에서 1만 면으로 리메시했으므로 면 수는 문제가 안 된다.
+// text-to-3d 와 image-to-3d 는 다른 엔드포인트라 리깅이 task id 를 못 받을 수
+// 있다. 이미 내려받은 GLB 를 통째로 넘기는 편이 확실하다.
+function glbDataUri(state) {
+  const raw = state.meshLocal;
+  if (!raw || !fs.existsSync(raw)) die('리깅에 넘길 GLB 가 없다');
+  return `data:model/gltf-binary;base64,${fs.readFileSync(raw).toString('base64')}`;
+}
+
 async function makeRig(dir, state) {
   const k = key('MESHY_API_KEY');
   const H = { Authorization: `Bearer ${k}`, 'Content-Type': 'application/json' };
@@ -259,7 +368,11 @@ async function makeRig(dir, state) {
       {
         method: 'POST',
         headers: H,
-        body: JSON.stringify({ input_task_id: state.meshTask, ...SPEC.rig }),
+        body: JSON.stringify(
+          state.mode === 'text'
+            ? { model_url: glbDataUri(state), ...SPEC.rig }
+            : { input_task_id: state.meshTask, ...SPEC.rig }
+        ),
       },
       '리깅 생성'
     );
@@ -288,14 +401,14 @@ async function makeRig(dir, state) {
 
 function plan(prompt) {
   const cr = COST.meshCredits + COST.rigCredits;
+  const crT = COST.textCredits + COST.rigCredits;
   log(`\n계획 — "${prompt}"\n`);
   log(`  [1] 컨셉 이미지  ${SPEC.concept.model} ${SPEC.concept.size}   $${COST.imageUSD.toFixed(3)}`);
   log(`  [2] 이미지→3D    ${SPEC.mesh.ai_model} 텍스처 포함           ${COST.meshCredits} 크레딧`);
   log(`  [3] 자동 리깅    ${SPEC.rig.height_meters}m                        ${COST.rigCredits} 크레딧`);
   log(`  ─────────────────────────────────────────────`);
-  log(`  1회      $${COST.imageUSD.toFixed(2)} + ${cr} 크레딧  ≈ $${(COST.imageUSD + cr * COST.creditUSD).toFixed(2)}`);
-  log(`  무료등급 매달 100 크레딧 = ${Math.floor(100 / cr)}회`);
-  log(`  Pro $20  매달 1,000 크레딧 = ${Math.floor(1000 / cr)}회`);
+  log(`  --text   키 1개 · ${crT} 크레딧            ≈ $${(crT * COST.creditUSD).toFixed(2)}   무료 월 ${Math.floor(100 / crT)}회 · Pro 월 ${Math.floor(1000 / crT)}회`);
+  log(`  --image  키 2개 · $${COST.imageUSD.toFixed(2)} + ${cr} 크레딧  ≈ $${(COST.imageUSD + cr * COST.creditUSD).toFixed(2)}   무료 월 ${Math.floor(100 / cr)}회 · Pro 월 ${Math.floor(1000 / cr)}회`);
   log(`\n  크레딧 단가는 공개돼 있지 않다. 위 환산은 Pro 플랜에서 나눈 값이고,`);
   log(`  실제 청구는 응답의 consumed_credits 로 확인한다.`);
   log(`\n  키:  GEMINI_API_KEY ${key('GEMINI_API_KEY') ? '있음' : '없음'} · MESHY_API_KEY ${key('MESHY_API_KEY') ? '있음' : '없음'}`);
@@ -315,18 +428,27 @@ async function main() {
 
   log(`실행 ${id}`);
 
-  let image = opt('--image') || state.image;
-  if (!image) {
-    if (!prompt) die('--prompt 또는 --image 가 필요하다. 비용만 보려면 --plan.');
-    image = await makeConcept(dir, prompt);
-    state.image = image;
+  const textPrompt = opt('--text') || (state.mode === 'text' ? state.prompt : null);
+  if (textPrompt) {
+    state.mode = 'text';
+    state.prompt = textPrompt;
     writeState(dir, state);
+    log(`\n[1] 컨셉 이미지 — 건너뜀 (--text 는 글에서 바로 만든다)`);
+    state.meshLocal = await makeMeshFromText(dir, textPrompt, state);
   } else {
-    if (!fs.existsSync(image)) die(`이미지가 없다: ${image}`);
-    log(`\n[1] 컨셉 이미지 — 건너뜀 (${path.relative(ROOT, image)})`);
+    let image = opt('--image') || state.image;
+    if (!image) {
+      if (!prompt) die('--text · --prompt · --image 중 하나가 필요하다. 비용만 보려면 --plan.');
+      image = await makeConcept(dir, prompt);
+      state.image = image;
+      writeState(dir, state);
+    } else {
+      if (!fs.existsSync(image)) die(`이미지가 없다: ${image}`);
+      log(`\n[1] 컨셉 이미지 — 건너뜀 (${path.relative(ROOT, image)})`);
+    }
+    state.meshLocal = await makeMesh(dir, image, state);
   }
-
-  await makeMesh(dir, image, state);
+  writeState(dir, state);
   const glb = await makeRig(dir, state);
 
   const cr = (state.meshCredits ?? 0) + (state.rigCredits ?? 0);
