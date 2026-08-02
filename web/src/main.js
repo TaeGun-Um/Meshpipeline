@@ -422,6 +422,11 @@ window.__factory = async () =>
 window.__mats = async () =>
   (await import('./core/material.js')).materialReport();
 
+// 연동 시험 — 리깅된 외부 GLB 위에 코드 생성물을 얹을 수 있나
+// (scenes/model-test/rigtest.js). 씬을 안 바꾸므로 불러야만 돈다.
+window.__rig = async (opt) =>
+  (await import('./scenes/model-test/rigtest.js')).rigTest(scene, opt);
+
 window.__lock = async (prefix = '') => {
   const views = await fetch('/shots/views.json').then((r) => r.json());
   const set = views[SCENE.meta.id];
