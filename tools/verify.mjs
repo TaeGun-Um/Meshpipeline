@@ -64,7 +64,10 @@ let failed = 0;
 let missing = 0;
 
 for (const scene of scenes) {
-  const tag = scene === 'night-city' ? 'nc_' : '';
+  // 파일 이름 접두사는 views.json 이 정한다. 예전에는 여기와 main.js 두 곳에
+  // `scene === 'night-city' ? 'nc_' : ''` 를 각각 적어 뒀다 — 씬이 셋이 되는
+  // 순간 공터의 `wide` 와 무대의 `wide` 가 같은 파일을 덮어쓴다.
+  const tag = views[scene]._tag || '';
   console.log(`\n[${scene}]`);
 
   for (const name of Object.keys(views[scene])) {

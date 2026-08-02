@@ -50,6 +50,13 @@ document.body.appendChild(renderer.domElement);
 // 갈아탈 수 있어야 한다 (src/scenemenu.js).
 mountSceneMenu(SCENE.meta.id);
 
+// 씬 이름이 나오는 곳 셋 — 탭 제목 · 로딩 화면 · 좌측 하단 HUD.
+// index.html 에 1번 씬 이름('주택가 공터')이 박혀 있어서 어느 씬을 띄워도
+// 셋 다 공터라고 적혀 있었다. **씬 이름의 출처는 `meta.name` 하나다.**
+document.title = SCENE.meta.name;
+boot.querySelector('.title').textContent = SCENE.meta.name;
+document.querySelector('#hud h1').textContent = SCENE.meta.name;
+
 const lens = SCENE.meta.lens;
 const camera = new THREE.PerspectiveCamera(lens.fov, innerWidth / innerHeight, lens.near, lens.far);
 camera.position.set(...SCENE.meta.camera.pos);
@@ -178,8 +185,8 @@ async function build() {
   renderer.render(scene, camera);
   const tris = renderer.info.render.triangles;
 
+  // 씬 이름은 바로 위 h1 에 있다 — 여기 또 적으면 두 줄에 같은 이름이 겹친다
   statsEl.innerHTML = [
-    SCENE.meta.name,
     `생성 ${buildMs.toFixed(0)}ms`,
     `삼각형 ${tris.toLocaleString('ko-KR')}`,
     ...(world.stats || []),
@@ -400,6 +407,15 @@ window.__shops = async () =>
 window.__houses = async () =>
   (await import('./scenes/night-city/housing.js')).houseTally();
 
+// 슬럼 세 유형 분포. 대지가 셋뿐이라 한 종류가 통째로 안 나올 수 있다
+// (scenes/night-city/slum.js).
+window.__slum = async () =>
+  (await import('./scenes/night-city/slum.js')).slumTally();
+
+// 공업 대지 유형 넷과 지붕 셋의 분포 (scenes/night-city/factory.js).
+window.__factory = async () =>
+  (await import('./scenes/night-city/factory.js')).factoryTally();
+
 // 재질이 몇 개 만들어졌고 몇 번 공유됐나 (core/material.js).
 // `materialReport` 는 이때까지 **아무도 못 부르는 곳에** 있었다 — 진단용은
 // 호출자가 없어도 남기지만, 그건 `window.__*` 로 닿을 수 있을 때 얘기다.
@@ -411,7 +427,10 @@ window.__lock = async (prefix = '') => {
   const set = views[SCENE.meta.id];
   if (!set) throw new Error(`views.json 에 '${SCENE.meta.id}' 항목이 없다`);
 
-  const tag = SCENE.meta.id === 'night-city' ? 'nc_' : '';
+  // 접두사는 views.json 이 정한다 (`_tag`). 여기와 tools/verify.mjs 두 곳에
+  // 씬 이름을 각각 적어 두면 어긋난다 — 실제로 씬이 셋이 되자 공터의 `wide` 와
+  // 무대의 `wide` 가 같은 파일 이름을 쓰게 됐다.
+  const tag = set._tag || '';
   const done = [];
   for (const [name, cfg] of Object.entries(set)) {
     if (name.startsWith('_')) continue;

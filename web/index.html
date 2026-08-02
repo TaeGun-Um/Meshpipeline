@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>주택가 공터</title>
+<!-- 이름 셋(탭 제목·로딩 화면·HUD)은 main.js 가 SCENE.meta.name 으로 덮어쓴다.
+     여기 적힌 것은 스크립트가 돌기 전 한순간만 보이는 값이다. -->
+<title>절차적 생성</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0d10; }
@@ -64,7 +66,7 @@
 </head>
 <body>
   <div id="boot">
-    <div class="title">주 택 가 &nbsp;공 터</div>
+    <div class="title">절 차 적 &nbsp;생 성</div>
     <div class="bar"><i></i></div>
     <div class="step">BAKE: 시작</div>
   </div>
@@ -73,7 +75,7 @@
   <div id="lockhint" style="opacity:0">화면을 클릭하면 마우스로 시점을 조작합니다 &nbsp;(Esc 해제)</div>
 
   <div id="hud">
-    <h1>주택가 공터</h1>
+    <h1>절차적 생성</h1>
     <div class="sub">외부 애셋 0개 — 텍스처 · 형상 · 캐릭터 전부 로드 시점에 코드로 생성</div>
     <div class="stats"></div>
   </div>
