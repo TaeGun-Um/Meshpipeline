@@ -14,10 +14,30 @@
 
 ---
 
+## 0. 지금 어느 씬인가
+
+**활성 씬은 4번 `office-sector` (오피스 섹터)** 다. 지하 연구시설 1층,
+이 저장소의 첫 실내 씬이고 작업 중이다.
+
+| | |
+|---|---|
+| 형태의 근거 | [`scenes/office-sector/facility.md`](scenes/office-sector/facility.md) — **치수를 고치기 전에 읽는다** |
+| 생성기 구조와 남은 일 | [`scenes/office-sector/status.md`](scenes/office-sector/status.md) |
+
+나이트시티(2번)는 한 판 마무리 상태고, 모델 테스트(3번)는 일단락해 보존만
+한다. 아래 1~2장은 나이트시티 기준으로 쓰였지만 검사 하네스와 규율은 씬을
+가리지 않는다.
+
+> **나이트시티 26뷰는 지금 재현되지 않는다** — 같은 코드로 두 번 찍으면 값이
+> 다르다. 그 씬 작업을 재개할 때 먼저 처리한다 (`status.md` 4장).
+
+---
+
 ## 1. 5분 안에 파악하기
 
 ```bash
 node web/server.mjs
+# http://localhost:5173                    활성 씬 (= 4번 오피스 섹터)
 # http://localhost:5173/?scene=night-city
 ```
 
@@ -45,6 +65,7 @@ node tools/verify.mjs        # 기준선과 픽셀 비교
 
 | # | 문서 | 무엇 |
 |---|---|---|
+| 0 | `scenes/office-sector/facility.md` | **시설의 내력.** 활성 씬이다. 실내 치수를 건드리기 전에 읽는다 |
 | 1 | `scenes/night-city/city.md` | **도시의 내력.** 모든 형태 결정의 근거. 이게 가장 위에 있다 |
 | 1b | `scenes/model-test/character.md` | **캐릭터를 코드로 만든다는 것.** 사람을 건드리기 전에 읽는다 |
 | 2 | `lessons.md` | **실패 패턴과 규칙** — 결합 대장 · 검증의 구멍. 씬을 가리지 않는다 |

@@ -25,6 +25,7 @@
 |---|---|---|---|
 | 1 | `vacant-lot` 주택가 공터 | **완료.** 좌표계·조명 규약을 여기서 확정했고 파이프라인 79항목이 통과했다 | — |
 | 2 | `night-city` 나이트시티 | **한 판 마무리.** 여섯 구역 양식과 랜드마크 열이 섰다. 남은 것은 마감·지오메트리 품질 | [scenes/night-city/](scenes/night-city/status.md) |
+| 4 | `office-sector` 오피스 섹터 | **활성 씬 · 작업 중.** 지하 연구시설 사무 구역 1층. 첫 실내 씬 — 천장·구멍 난 벽·실내 전용 검사를 여기서 세웠다. 조명은 **정점에 구웠다** (런타임 광원 40→2, 밝기 폭 4.18배) | [scenes/office-sector/](scenes/office-sector/status.md) |
 | 3 | `model-test` 모델 테스트 | **일단락.** 서브컬처 아바타를 코드로 어디까지 만들 수 있나 — 결론과 규칙이 [character.md](scenes/model-test/character.md) 에 있다. 씬은 그대로 보존 | [scenes/model-test/](scenes/model-test/status.md) |
 
 ### 씬을 새로 추가할 때
@@ -100,6 +101,7 @@ onSceneReset('구역 캐시', () => { CACHE = null; });
 | | |
 |---|---|
 | 씬 3 이후 | `core`/`shared` 재배치 (3절) |
+| 나이트시티 재개 시 | **26뷰가 재현되지 않는다.** 같은 코드로 두 번 찍으면 값이 다르다 (`corner` 462,719 → 835,520 픽셀). 나머지 세 씬은 픽셀 단위로 일치하므로 나이트시티 안의 무언가가 프레임마다 다르다 (교통·명멸이 의심된다). 2026-08-04 오피스 섹터 작업 중 우연히 확인 — **진단은 그 씬으로 돌아갈 때 한다** |
 | 필요해지면 | 인페이지 씬 전환 — `Scene.dispose()` + 재질 캐시 씬 스코프화 (2절) |
 | 낮은 순위 | 단축평가 뒤 난수 8곳 · `SIDES[rng.int(0, 3)]` 다수 (`lessons.md` 2.1) |
 
@@ -129,3 +131,7 @@ onSceneReset('구역 캐시', () => { CACHE = null; });
 | `night-city/districts.md` | 구역별 파라미터 명세 |
 | `night-city/generation.md` | **도시 생성 — 새 기능을 만들기 전에 읽는다.** 순서·단일 출처·계약·난수 규율 |
 | `night-city/status.md` | 그 씬의 상태와 작업 기록 |
+| `model-test/character.md` | **캐릭터를 코드로 만든다는 것** — 도구·치수·규칙·결함·비용. 결론이 여기 있다 |
+| `model-test/status.md` | 그 씬의 상태 |
+| `office-sector/facility.md` | **시설의 내력** — 지하 1층의 치수·조명·검사 규칙. **형태를 건드리기 전에 읽는다** |
+| `office-sector/status.md` | 생성기의 구조(어디를 고치면 무엇이 바뀌나) · 걸린 것 · 열려 있는 것 |
