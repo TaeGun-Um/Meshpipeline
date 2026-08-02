@@ -9,9 +9,18 @@ import * as THREE from 'three';
 
 // ── 프리미티브 ─────────────────────────────────────────────────────────────
 
+// 축 길이를 span 미터마다 한 번 자른 분할 수. span 이 0 이면 1 — 예전 동작이다.
+//
+// ── 왜 박스를 쪼개나 ───────────────────────────────────────────────────────
+// 정점에 빛을 구우려면 **빛이 변하는 자리에 정점이 있어야** 한다. 18m 벽이
+// 꼭짓점 8개면 그 사이의 밝기 변화는 담을 데가 없다. 텍스처 라이트맵을 쓰지
+// 않는 이 저장소에서는 분할이 곧 라이트맵 해상도다.
+const segs = (len, span) => (span > 0 ? Math.max(1, Math.round(Math.abs(len) / span)) : 1);
+
 // 박스. y=0을 기준으로 원하는 위치에 놓는다.
-export function boxGeometry(w, h, d, offset = null) {
-  const g = new THREE.BoxGeometry(w, h, d);
+// span 을 주면 각 축을 그 길이마다 쪼갠다 (정점 컬러 굽기용).
+export function boxGeometry(w, h, d, offset = null, span = 0) {
+  const g = new THREE.BoxGeometry(w, h, d, segs(w, span), segs(h, span), segs(d, span));
   if (offset) g.translate(offset[0], offset[1], offset[2]);
   return g;
 }
@@ -24,23 +33,29 @@ export function boxGeometry(w, h, d, offset = null) {
 //
 // 이걸 material 쪽 texture.repeat 으로 하면 크기가 다른 박스마다 머티리얼을
 // 복제해야 하고, glTF 로 나갈 때 KHR_texture_transform 확장이 붙는다.
-export function metricBox(w, h, d, offset = null, tile = 0) {
-  const g = new THREE.BoxGeometry(w, h, d);
+export function metricBox(w, h, d, offset = null, tile = 0, span = 0) {
+  const sw = segs(w, span);
+  const sh = segs(h, span);
+  const sd = segs(d, span);
+  const g = new THREE.BoxGeometry(w, h, d, sw, sh, sd);
 
   if (tile > 0) {
     const uv = g.attributes.uv;
-    // BoxGeometry 면 순서: +X, -X, +Y, -Y, +Z, -Z — 면당 정점 4개
-    const spans = [
-      [d, h],
-      [d, h],
-      [w, d],
-      [w, d],
-      [w, h],
-      [w, h],
+    // BoxGeometry 면 순서: +X, -X, +Y, -Y, +Z, -Z.
+    // UV 는 분할과 무관하게 면마다 0..1 이므로 면 전체를 같은 배율로 늘리면
+    // 된다. 다만 **면당 정점 수가 분할에 따라 달라진다** — 분할이 1이면
+    // (1+1)^2 = 4 라 예전 코드와 정확히 같다.
+    const faces = [
+      [d, h, (sd + 1) * (sh + 1)],
+      [d, h, (sd + 1) * (sh + 1)],
+      [w, d, (sw + 1) * (sd + 1)],
+      [w, d, (sw + 1) * (sd + 1)],
+      [w, h, (sw + 1) * (sh + 1)],
+      [w, h, (sw + 1) * (sh + 1)],
     ];
-    for (let f = 0; f < 6; f++) {
-      const [su, sv] = spans[f];
-      for (let i = f * 4; i < f * 4 + 4; i++) {
+    let i = 0;
+    for (const [su, sv, n] of faces) {
+      for (let k = 0; k < n; k++, i++) {
         uv.setXY(i, (uv.getX(i) * su) / tile, (uv.getY(i) * sv) / tile);
       }
     }

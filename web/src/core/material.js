@@ -197,6 +197,12 @@ export const TexturedSurface = new MasterMaterial('TexturedSurface', {
     // emissiveMap 의 세기. 같은 텍스처를 밝게/어둡게 쓸 때. 1을 넘기면
     // glTF 에 KHR_materials_emissive_strength 확장이 붙으므로 1 이하로 둔다.
     emissiveIntensity: 1,
+    // 정점 컬러를 알베도에 곱한다. 실내 씬이 조명을 정점에 구워 쓴다
+    // (office-sector/bake.js). glTF 의 COLOR_0 이라 확장 없이 그대로 나간다.
+    //
+    // **켜면 지오메트리에 color 속성이 반드시 있어야 한다.** 없으면 셰이더가
+    // 쓰레기값을 읽어 검게 나온다 — 굽는 쪽에서 빠진 메시를 세어 던진다.
+    vertexColors: false,
   },
   create(p) {
     if (!p.set) throw new Error('TexturedSurface 는 set 이 필요하다');
@@ -207,6 +213,7 @@ export const TexturedSurface = new MasterMaterial('TexturedSurface', {
       normalMap: bound.normalMap,
       normalScale: new THREE.Vector2(p.normalScale, p.normalScale),
       metalness: p.metalness,
+      vertexColors: p.vertexColors,
     };
     if (bound.emissiveMap) {
       opts.emissiveMap = bound.emissiveMap;
@@ -250,11 +257,30 @@ export const SolidSurface = new MasterMaterial('SolidSurface', {
     side: null,
     // 반사가 주인공인 표면(유리)은 환경맵 기여를 따로 올린다
     envMapIntensity: null,
+    // 실제로 **비쳐 보이는** 유리. 도시의 유리는 밤이라 불투명해도 됐지만,
+    // 실내에서는 칸막이 너머가 보여야 공간이 이어져 보인다.
+    // 슬롯이 없어서 씬이 raw THREE 를 쓰기 시작하면 마스터를 둔 뜻이 없다.
+    transparent: false,
+    opacity: 1,
+    // TexturedSurface 의 같은 슬롯 참고
+    vertexColors: false,
   },
   create(p) {
-    const opts = { color: color(p.color), roughness: p.roughness, metalness: p.metalness };
+    const opts = {
+      color: color(p.color),
+      roughness: p.roughness,
+      metalness: p.metalness,
+      vertexColors: p.vertexColors,
+    };
     if (p.side !== null) opts.side = p.side;
     if (p.envMapIntensity !== null) opts.envMapIntensity = p.envMapIntensity;
+    if (p.transparent) {
+      opts.transparent = true;
+      opts.opacity = p.opacity;
+      // 투명면끼리 겹치면 그리는 순서에 따라 깜빡인다. 깊이 기록을 끄면
+      // 유리 너머의 것이 항상 보인다 — 창 한 겹짜리에는 이쪽이 맞다.
+      opts.depthWrite = false;
+    }
     return new THREE.MeshStandardMaterial(opts);
   },
 });
@@ -272,6 +298,10 @@ export const Glow = new MasterMaterial('Glow', {
     intensity: 1,
     tint: 0.06,
     roughness: 0.4,
+    // 발광 자체는 정점 컬러에 안 곱해진다 (three 는 알베도에만 곱한다).
+    // 그래도 슬롯이 필요하다 — 같은 메시에 섞여 있으면 color 속성이 붙으므로
+    // 켜 두지 않으면 발광판만 셰이더가 갈려 드로우콜이 쪼개진다.
+    vertexColors: false,
   },
   create(p) {
     const col = color(p.color);
@@ -287,6 +317,7 @@ export const Glow = new MasterMaterial('Glow', {
       emissiveIntensity: 1,
       roughness: p.roughness,
       metalness: 0,
+      vertexColors: p.vertexColors,
     });
   },
 });

@@ -37,6 +37,11 @@ export class MeshBuilder {
   // attributes  정점 속성 추가 정의. [{ name, itemSize, from }]
   //             from 은 add(…, data) 의 data 에서 값을 읽어올 키다.
   //             예: 빛 웅덩이는 웅덩이마다 색이 달라야 드로우콜을 하나로 유지한다.
+  // span        box() 가 만드는 상자를 이 길이마다 쪼갠다 (미터). 기본 0 = 안 쪼갬.
+  //             **정점 컬러에 빛을 구울 때만 쓴다** — 빛이 변하는 자리에 정점이
+  //             없으면 담을 데가 없다. 실내 씬의 바닥·벽·천장이 이걸 쓴다.
+  //             소품에는 주지 않는다. 0.4m 짜리 의자는 꼭짓점만으로 충분하고,
+  //             전부에 주면 삼각형이 의미 없이 몇 배로 는다.
   constructor(name, opts = {}) {
     this.name = name;
     this.castShadow = opts.castShadow !== false;
@@ -44,6 +49,7 @@ export class MeshBuilder {
     this.renderOrder = opts.renderOrder || 0;
     this.frustumCulled = opts.frustumCulled !== false;
     this.attributes = opts.attributes || [];
+    this.span = opts.span || 0;
     this.parts = [];
   }
 
@@ -86,7 +92,10 @@ export class MeshBuilder {
   // 축에 정렬된 박스. at 은 중심 좌표.
   // tile 을 주면 텍스처가 tile 미터마다 반복되도록 UV를 늘린다 (metricBox).
   box(w, h, d, at, material, tile = 0) {
-    const g = tile > 0 ? metricBox(w, h, d, at, tile) : boxGeometry(w, h, d, at);
+    const g =
+      tile > 0
+        ? metricBox(w, h, d, at, tile, this.span)
+        : boxGeometry(w, h, d, at, this.span);
     return this.add(g, material);
   }
 
