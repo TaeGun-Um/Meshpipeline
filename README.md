@@ -9,7 +9,7 @@
 |---|---|---|---|---|
 | 1 | `vacant-lot` 주택가 공터 | 낮 · 3인칭 · 기준 씬. 좌표계·조명 규약을 여기서 확정했다 | 182,428 | 63MB |
 | 2 | `night-city` 나이트시티 | 사이버펑크 야간 도시 · 프리캠 · 구역·매싱·1층 점포 | 4,203,303 | 218MB |
-| 3 | `model-test` 모델 테스트 | 바닥·하늘·1m 나무 상자 하나. 형태를 하나씩 만들어 보는 자리 | 1,486 | 4MB |
+| 3 | `model-test` 모델 테스트 | 서브컬처 아바타 · 툰 셰이딩 · 머리카락 스프링. 코드로 사람이 어디까지 되나 | 61,380 | 9MB |
 
 삼각형은 씬이 들고 있는 지오메트리 총량이다 (`__audit()`). 한 프레임에 실제로
 그리는 수는 그림자 패스 때문에 이보다 많다.
@@ -117,6 +117,7 @@ node tools/pipeline.mjs --accept   # 새 스펙을 승인 (아래 참고)
 | [scenes/night-city/generation.md](docs/scenes/night-city/generation.md) | **도시 생성 — 새 기능을 만들기 전에 먼저 읽는다.** 순서·단일 출처·계약·난수 규율 |
 | [scenes/night-city/districts.md](docs/scenes/night-city/districts.md) | 구역 설계 명세 (레퍼런스 분석 → 파라미터) |
 | [scenes/night-city/status.md](docs/scenes/night-city/status.md) | 그 씬의 상태와 작업 기록 |
+| [scenes/model-test/character.md](docs/scenes/model-test/character.md) | **캐릭터를 코드로 만든다는 것** — 도구·치수·규칙·결함·비용 |
 
 ## 저장소 구조
 

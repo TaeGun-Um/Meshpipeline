@@ -46,6 +46,7 @@ node tools/verify.mjs        # 기준선과 픽셀 비교
 | # | 문서 | 무엇 |
 |---|---|---|
 | 1 | `scenes/night-city/city.md` | **도시의 내력.** 모든 형태 결정의 근거. 이게 가장 위에 있다 |
+| 1b | `scenes/model-test/character.md` | **캐릭터를 코드로 만든다는 것.** 사람을 건드리기 전에 읽는다 |
 | 2 | `lessons.md` | **실패 패턴과 규칙** — 결합 대장 · 검증의 구멍. 씬을 가리지 않는다 |
 | 3 | `handover.md` | 이 문서 |
 | 4 | `scenes/night-city/districts.md` | 구역별 파라미터 명세 |
@@ -57,7 +58,7 @@ node tools/verify.mjs        # 기준선과 픽셀 비교
 
 ---
 
-## 3. 이 프로젝트에서 반복된 실패 — 열둘 (전체 서른다섯은 `lessons.md`)
+## 3. 이 프로젝트에서 반복된 실패 — 열둘 (전체 마흔은 `lessons.md`)
 
 원인이 크게 둘이다. 다음 사람이 열세 번째를 내지 않도록 적는다.
 
