@@ -7,7 +7,8 @@
 //   web/                       활성 씬 (아래 ACTIVE)
 //   web/?scene=vacant-lot      1번 씬
 //   web/?scene=night-city      2번 씬
-//   web/?scene=model-test      3번 씬 (활성 — 아무것도 안 붙이면 여기가 뜬다)
+//   web/?scene=model-test      3번 씬
+//   web/?scene=office-sector   4번 씬 (활성 — 아무것도 안 붙이면 여기가 뜬다)
 //
 // ── 씬을 새로 추가하는 방법 ─────────────────────────────────────────────────
 //   1. scenes/<id>/index.js 에서 core/scene.js 의 Scene 을 상속하고
@@ -23,6 +24,7 @@
 import vacantLot from './vacant-lot/index.js';
 import nightCity from './night-city/index.js';
 import modelTest from './model-test/index.js';
+import officeSector from './office-sector/index.js';
 
 // 만든 순서대로. 번호가 곧 만든 순서다.
 export const SAVED = [
@@ -40,6 +42,11 @@ export const SAVED = [
     scene: modelTest,
     made: '2026-08-02',
     note: '모델 테스트. 바닥·하늘·1m 나무 상자 하나뿐이다. 형태를 하나씩 만들어 보는 자리.',
+  },
+  {
+    scene: officeSector,
+    made: '2026-08-03',
+    note: '지하 연구시설 사무 구역 1층. 첫 실내 씬 — 천장·구멍 난 벽·실내 조명을 여기서 세웠다.',
   },
 ];
 
