@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { MeshBuilder } from '../../core/builder.js';
 import { hash2 } from '../../core/textures.js';
-import { CELLS, H, W, interiorWalls, onWall, wallRuns, openingsOf } from './layout.js';
+import { CELLS, H, interiorWalls, onWall, wallRuns, openingsOf } from './layout.js';
 
 // 축에 안 맞는 조각. MeshBuilder.box 는 축 정렬만 낸다.
 function boxAt(b, w, h, d, at, mat, yaw = 0) {
@@ -88,7 +88,8 @@ function chair(b, at, face, M, mat, swivel = false) {
   };
   // 관. **뚜껑을 안 만든다** — 한쪽은 바닥에 닿고 한쪽은 좌판에 가린다.
   // 6각 열린 관이 12삼각형이라, 상자(12)와 같은 값에 실루엣만 얻는다.
-  const tube = (r0, r1, len, lx, ly, lz, m, tilt = 0, lay = null) => {
+  // 이름을 tube 로 두면 최상단의 tube(다른 시그니처)를 가린다 — pipe 로 갈랐다.
+  const pipe = (r0, r1, len, lx, ly, lz, m, tilt = 0, lay = null) => {
     const g = new THREE.CylinderGeometry(r0, r1, len, 6, 1, true);
     if (lay === 'x') g.rotateZ(Math.PI / 2);
     if (lay === 'z') g.rotateX(Math.PI / 2);
@@ -120,17 +121,17 @@ function chair(b, at, face, M, mat, swivel = false) {
       w.rotateY((i / 5) * Math.PI * 2);
       put(w, M.rubber);
     }
-    tube(0.032, 0.032, 0.35, 0, 0.235, 0, M.trim);
-    tube(0.046, 0.046, 0.13, 0, 0.13, 0, M.steelDark);
-    tube(0.02, 0.02, 0.24, 0, 0.6, -0.15, M.trim, TILT);
+    pipe(0.032, 0.032, 0.35, 0, 0.235, 0, M.trim);
+    pipe(0.046, 0.046, 0.13, 0, 0.13, 0, M.steelDark);
+    pipe(0.02, 0.02, 0.24, 0, 0.6, -0.15, M.trim, TILT);
     return;
   }
 
   // 식당 의자 — 관 네 다리에 옆 가로대. 겹쳐 쌓는 그 의자다.
   for (const dx of [-0.185, 0.185]) {
-    for (const dz of [-0.165, 0.165]) tube(0.014, 0.014, 0.46, dx, 0.23, dz, M.trim);
-    tube(0.011, 0.011, 0.33, dx, 0.13, 0, M.trim, 0, 'z');
-    tube(0.014, 0.014, 0.34, dx * 0.92, 0.6, -0.175, M.trim, TILT);
+    for (const dz of [-0.165, 0.165]) pipe(0.014, 0.014, 0.46, dx, 0.23, dz, M.trim);
+    pipe(0.011, 0.011, 0.33, dx, 0.13, 0, M.trim, 0, 'z');
+    pipe(0.014, 0.014, 0.34, dx * 0.92, 0.6, -0.175, M.trim, TILT);
   }
 }
 
@@ -161,16 +162,20 @@ function terminal(b, x, y, z, dir, M) {
     b.box(0.24, 0.008, 0.02, [x, cy + 0.181, z - f * (0.03 + dz)], M.crtDark, 0);
   }
 
-  // 베젤과 화면. 화면은 베젤 **안쪽으로 들어간다** — 같은 평면에 두면
-  // 스티커를 붙인 것으로 보인다.
+  // 베젤과 화면. 처음에 화면 앞면이 베젤 앞면과 **정확히 같은 평면**(fz+0.010)
+  // 이라 근접에서 z-파이팅 빗금이 났다 (#65). "안쪽으로 물린다" 고 6mm 뒤로
+  // 옮겼더니 이번엔 통짜 베젤 상자 **속에** 묻혀 화면이 통째로 사라졌다 —
+  // 자판기 상품과 같은 병(#64)이다. 베젤이 틀이 아니라 상자인 이상 화면은
+  // **앞으로 4mm 돌출**이 맞다 (뒤끝은 베젤 안, 앞면은 베젤 밖 — 겹평면 없음).
   const fz = z - f * 0.03 + f * 0.15; // 몸통 앞면
   b.box(0.38, 0.34, 0.02, [x, cy, fz], M.crtDark, 0);
-  b.box(0.3, 0.235, 0.012, [x, cy + 0.028, fz + f * 0.004], M.screen, 0);
-  // 아래 조작부 — 버튼 넷과 전원 표시등
+  b.box(0.3, 0.235, 0.012, [x, cy + 0.028, fz + f * 0.008], M.screen, 0);
+  // 아래 조작부 — 버튼 넷과 전원 표시등. 가로 오프셋에도 f 를 곱는다 —
+  // 안 곱하면 dir=-1 로 돌린 책상에서 마우스·숫자판이 반대쪽에 붙는다.
   for (const dx of [-0.09, -0.05, -0.01, 0.03]) {
-    b.box(0.022, 0.012, 0.008, [x + dx, cy - 0.135, fz + f * 0.012], M.crt, 0);
+    b.box(0.022, 0.012, 0.008, [x + f * dx, cy - 0.135, fz + f * 0.012], M.crt, 0);
   }
-  b.box(0.014, 0.01, 0.008, [x + 0.13, cy - 0.135, fz + f * 0.012], M.led, 0);
+  b.box(0.014, 0.01, 0.008, [x + f * 0.13, cy - 0.135, fz + f * 0.012], M.led, 0);
 
   // ── 자판 ─────────────────────────────────────────────────────────────
   //
@@ -189,15 +194,15 @@ function terminal(b, x, y, z, dir, M) {
       [0.085, 0.09 + (r % 2) * 0.02],
     ];
     for (const [dx, sw] of segs) {
-      b.box(sw, 0.008, 0.019, [x + dx, ry, rz], M.keycap, 0);
+      b.box(sw, 0.008, 0.019, [x + f * dx, ry, rz], M.keycap, 0);
     }
   }
-  b.box(0.16, 0.008, 0.019, [x - 0.02, y + 0.021, kz + f * 0.056], M.keycap, 0); // 스페이스
-  b.box(0.075, 0.008, 0.07, [x + 0.16, y + 0.024, kz - f * 0.01], M.keycap, 0); // 숫자판
+  b.box(0.16, 0.008, 0.019, [x - f * 0.02, y + 0.021, kz + f * 0.056], M.keycap, 0); // 스페이스
+  b.box(0.075, 0.008, 0.07, [x + f * 0.16, y + 0.024, kz - f * 0.01], M.keycap, 0); // 숫자판
 
   // 마우스와 패드
-  b.box(0.11, 0.006, 0.13, [x + 0.31, y + 0.003, kz], M.crtDark, 0);
-  b.box(0.055, 0.028, 0.095, [x + 0.31, y + 0.02, kz], M.crt, 0);
+  b.box(0.11, 0.006, 0.13, [x + f * 0.31, y + 0.003, kz], M.crtDark, 0);
+  b.box(0.055, 0.028, 0.095, [x + f * 0.31, y + 0.02, kz], M.crt, 0);
 }
 
 // ── 천장 설비 ──────────────────────────────────────────────────────────────
@@ -378,10 +383,10 @@ function cafeteria(b, c, M, tally) {
       [1.0, 1.97, M.vend],
       [0.96, 1.87, M.vendBlue],
     ];
-    fit(0, len, 1.55, 1.4)
-      .slice(0, 4)
-      .forEach((v, i) => vendor(b, w, w.a + v, SPEC[i % 4], i, M));
-    tally.vending = (tally.vending ?? 0) + 4;
+    const seats = fit(0, len, 1.55, 1.4).slice(0, 4);
+    seats.forEach((v, i) => vendor(b, w, w.a + v, SPEC[i % 4], i, M));
+    // 벽이 좁으면 4개 미만이 나온다 — 고정 +4 로 적으면 tally 가 거짓말을 한다
+    tally.vending = (tally.vending ?? 0) + seats.length;
     b.endMark();
   }
 }
@@ -404,52 +409,83 @@ function vendor(b, w, u, spec, idx, M) {
   const F = DEP; // 앞면
   const box = (du, v, y, wid, h, th, m) => wallBox(b, w, u + du, v, y, wid, h, th, m);
 
-  box(0, DEP / 2, 0.05, WID - 0.08, 0.1, DEP - 0.06, M.steelDark); // 굽
-  box(0, DEP / 2, 0.1 + (HT - 0.1) / 2, WID, HT - 0.1, DEP, BODY); // 본체
-
-  // 간판 — 위쪽 1/5. 밝은 띠가 있어야 자판기로 읽힌다
-  box(0, F + 0.012, HT - 0.22, WID - 0.06, 0.34, 0.024, M.paper);
-  box(0, F + 0.026, HT - 0.22, WID - 0.16, 0.14, 0.01, idx % 2 ? M.vendBlue : M.vend);
-
-  // ── 진열창 ───────────────────────────────────────────────────────────
+  // ── 진열창의 자리 ────────────────────────────────────────────────────
+  // 창은 왼쪽으로 치우친다 — 오른쪽 0.29m 는 선택부(버튼·투입구)의 기둥이다.
   const gW = WID - 0.4;
+  const gC = -0.09; // 창 중심 (u 기준)
   const gY = 1.06;
   const gH = 0.86;
-  box(-0.09, F + 0.006, gY, gW + 0.05, gH + 0.05, 0.012, M.rubber); // 창틀
-  // 상품 — 네 단, 단마다 다섯 줄. 유리 뒤로 들어가 있다
+  const gL = gC - gW / 2;
+  const gR = gC + gW / 2;
+
+  box(0, DEP / 2, 0.05, WID - 0.08, 0.1, DEP - 0.06, M.steelDark); // 굽
+
+  // ── 본체 — 창 둘레를 틀로 쪼개어 짓는다 ──────────────────────────────
+  //
+  // 처음에는 본체를 통짜 상자로 두고 상품을 그 **속에** 넣었다. 상품·선반이
+  // 전부 렌더는 되는데 불투명 본체에 가려 화면에는 검은 사각형만 남았고,
+  // "추측 안 했으면 자판기인지 몰랐을" 물건이 됐다 (#64). 벽에 문을 낼 때와
+  // 같은 방식으로 — 불리언 없이 — 창을 뺀 네 조각 + 뒷판으로 짓는다.
+  box(0, 0.1, 0.1 + (HT - 0.1) / 2, WID, HT - 0.1, 0.2, BODY); // 뒷판 (진열칸의 배경)
+  box(gL / 2 - WID / 4, DEP / 2 + 0.1, 0.1 + (HT - 0.1) / 2, gL + WID / 2, HT - 0.1, DEP - 0.2, BODY); // 왼 기둥
+  box(gR / 2 + WID / 4, DEP / 2 + 0.1, 0.1 + (HT - 0.1) / 2, WID / 2 - gR, HT - 0.1, DEP - 0.2, BODY); // 오른 기둥
+  const yTop = gY + gH / 2;
+  const yBot = gY - gH / 2;
+  box(gC, DEP / 2 + 0.1, (yTop + HT) / 2, gW, HT - yTop, DEP - 0.2, BODY); // 상단 띠
+  // 하단 띠 — 앞면을 0.28 뒤로 물린다. 그 요철이 배출 베이다. 예전에는 통짜
+  // 본체 **속에** 배출구 상자를 넣어 그것도 안 보였다 (#64 와 같은 병).
+  box(gC, 0.36, (0.1 + yBot) / 2, gW, yBot - 0.1, 0.32, BODY);
+
+  // 간판 — 위쪽 1/5. 밝은 띠가 있어야 자판기로 읽힌다.
+  // 앞면(F)과 같은 평면에 뒷면을 붙이면 z-파이팅이므로 2mm 띄운다.
+  box(0, F + 0.014, HT - 0.22, WID - 0.06, 0.34, 0.024, M.paper);
+  box(0, F + 0.028, HT - 0.22, WID - 0.16, 0.14, 0.01, idx % 2 ? M.vendBlue : M.vend);
+
+  // ── 진열칸 속 — 선반과 상품. 이제 창 너머로 실제로 보인다 ────────────
   const PAL = [M.vend, M.vendBlue, M.plastic, M.plasticWarm, M.warn, M.crate];
   for (let s = 0; s < 4; s++) {
-    const sy = gY - gH / 2 + 0.13 + s * 0.21;
-    box(-0.09, F - 0.07, sy - 0.075, gW, 0.014, 0.14, M.steelDark); // 선반
+    const sy = yBot + 0.13 + s * 0.21;
+    box(gC, 0.5, sy - 0.075, gW, 0.014, 0.5, M.steelDark); // 선반
     for (let k = 0; k < 5; k++) {
-      const r = hash2(idx * 17 + s * 5 + k, u * 3 + s);
+      const r = hash2(idx * 17 + s * 5 + k, s * 7 + k);
       if (r < 0.12) continue; // 다 팔린 줄
       const m = PAL[Math.floor(r * PAL.length) % PAL.length];
-      box(-0.09 - gW / 2 + 0.06 + k * (gW - 0.12) / 4, F - 0.07, sy + 0.02,
-        0.055, 0.13 + r * 0.03, 0.05, m);
+      const ph = 0.13 + r * 0.03;
+      // 선반 윗면(sy-0.068)에 바닥을 붙인다 — 띄우면 유리 너머로 뜬 게 보인다
+      box(gL + 0.06 + (k * (gW - 0.12)) / 4, 0.55, sy - 0.068 + ph / 2, 0.055, ph, 0.05, m);
     }
   }
-  // 유리 — 상품 앞에. 마지막에 놓아야 투명 정렬이 맞다
-  box(-0.09, F + 0.014, gY, gW, gH, 0.01, M.glass);
 
-  // ── 선택부 ───────────────────────────────────────────────────────────
-  const px = WID / 2 - 0.16;
-  box(px, F + 0.012, 1.18, 0.26, 1.0, 0.024, M.steelDark); // 조작 판
-  box(px, F + 0.03, 1.58, 0.2, 0.1, 0.01, M.screen); // 표시창
+  // 창틀 — 개구부를 덮는 판이 아니라 **둘레의 띠 넷**이다.
+  // 예전에는 창 전체 크기의 검은 판을 앞에 붙여 놓아 그것부터가 가림막이었다.
+  const FR = 0.03;
+  box(gC, F + 0.008, yTop + FR / 2, gW + FR * 2, FR, 0.016, M.rubber);
+  box(gC, F + 0.008, yBot - FR / 2, gW + FR * 2, FR, 0.016, M.rubber);
+  box(gL - FR / 2, F + 0.008, gY, FR, gH, 0.016, M.rubber);
+  box(gR + FR / 2, F + 0.008, gY, FR, gH, 0.016, M.rubber);
+  // 유리 — 상품 앞에. 투명은 마지막에 놓아야 정렬이 맞다 (아래에서 배치)
+
+  // ── 선택부 — 오른 기둥 위. 간판(하단 y=HT-0.39)과 안 겹치게 그 아래로 ──
+  const px = WID / 2 - 0.145;
+  const pTop = HT - 0.44;
+  box(px, F + 0.014, pTop - 0.45, 0.24, 0.9, 0.024, M.steelDark); // 조작 판
+  box(px, F + 0.032, pTop - 0.1, 0.18, 0.1, 0.01, M.screen); // 표시창
   for (let r = 0; r < 4; r++) {
     for (let k = 0; k < 2; k++) {
-      box(px - 0.05 + k * 0.1, F + 0.03, 1.42 - r * 0.09, 0.06, 0.055, 0.014, M.trim);
+      box(px - 0.045 + k * 0.09, F + 0.032, pTop - 0.26 - r * 0.09, 0.055, 0.05, 0.014, M.trim);
     }
   }
-  box(px + 0.05, F + 0.03, 1.03, 0.02, 0.075, 0.014, M.rubber); // 동전 투입구
-  box(px - 0.05, F + 0.03, 1.0, 0.11, 0.026, 0.014, M.rubber); // 지폐 투입구
-  box(px, F + 0.028, 0.88, 0.14, 0.06, 0.012, M.trim); // 반환구
+  box(px + 0.045, F + 0.032, pTop - 0.64, 0.02, 0.075, 0.014, M.rubber); // 동전 투입구
+  box(px - 0.045, F + 0.032, pTop - 0.67, 0.1, 0.026, 0.014, M.rubber); // 지폐 투입구
+  box(px, F + 0.03, pTop - 0.79, 0.13, 0.06, 0.012, M.trim); // 반환구
 
-  // ── 배출구 ───────────────────────────────────────────────────────────
-  // **안으로 들어가야** 구멍으로 보인다. 같은 평면에 검은 판을 붙이면 스티커다.
-  box(-0.06, F - 0.1, 0.42, WID - 0.34, 0.3, 0.16, M.rubber);
-  box(-0.06, F - 0.02, 0.5, WID - 0.34, 0.2, 0.02, M.trim); // 여닫이 뚜껑
-  box(-0.06, F + 0.008, 0.28, WID - 0.3, 0.14, 0.016, M.steelDark); // 발판
+  // ── 배출구 — 하단 띠가 뒤로 물러난 자리에 앉는다 ─────────────────────
+  box(gC, 0.6, 0.42, gW - 0.06, 0.34, 0.16, M.rubber); // 어두운 베이 속
+  box(gC, 0.7, 0.47, gW - 0.2, 0.22, 0.02, M.trim); // 여닫이 뚜껑
+  box(gC, F + 0.01, 0.28, gW, 0.14, 0.016, M.steelDark); // 발판
+
+  // 유리 — 모든 불투명 조각 뒤(=코드상 마지막)에 넣는다
+  box(gC, F + 0.016, gY, gW, gH, 0.01, M.glass);
 }
 
 // 서버 랙 하나. 600 x 1000 x 2000, 앞면이 +face 쪽을 본다.
@@ -563,8 +599,9 @@ function crac(b, w, u, h, M) {
     const at = wallAt(w, u + du, DEP - 0.12, (HT + h) / 2);
     tube(b, 0.045, h - HT, at, M.steel, 'y', 8);
   }
-  // 드레인
-  const dr = wallAt(w, u + WID / 2 - 0.1, 0.1, HT / 2);
+  // 드레인 — 함체 **밖** 앞모서리를 타고 내려간다. 처음에 v=0.1 (함체 속)
+  // 에 넣어 아예 안 보였다.
+  const dr = wallAt(w, u + WID / 2 + 0.045, DEP - 0.1, HT / 2);
   tube(b, 0.022, HT, dr, M.trim, 'y', 6);
 }
 
@@ -598,10 +635,14 @@ function serverRoom(b, c, M, tally) {
       tally.crac = (tally.crac ?? 0) + 1;
     }
   }
-  // 통로 위 급기 덕트 — 찬 바람이 랙 앞으로 떨어진다
+  // 급기 덕트 — **콜드 아일(앞면끼리 마주 본 통로) 위**에만 놓는다.
+  // 처음에는 랙 열 좌표(r)에 그대로 놓아서 덕트가 통로가 아니라 랙 꼭대기를
+  // 달리고 있었다 — 주석("통로 위")과 코드가 달랐다. 열이 번갈아 도는 배치라
+  // 콜드 아일은 (0,1) (2,3)… 쌍의 중점이다.
   const lo = along ? c.x0 : c.z0;
   const hi = along ? c.x1 : c.z1;
-  for (const r of rows) {
+  for (let i = 0; i + 1 < rows.length; i += 2) {
+    const r = (rows[i] + rows[i + 1]) / 2;
     const y = c.h - 0.3;
     const A = lo + 0.4;
     const B = hi - 0.4;
@@ -755,8 +796,10 @@ function storage(b, c, M, tally) {
           // 공중에 떠 있었다. 같은 파일의 onWall 은 [x, z] 를 돌려주므로
           // 규약이 둘이다 — 헷갈리면 통째로 받아 쓴다.
           const [px, , pz] = wallAt(w, uu, 0.32 + (r - 0.5) * 0.06, 0);
-          // 벽 방향에 맞춰 상자의 긴 변을 돌린다
-          const base = w.axis === 'x' ? 0 : Math.PI / 2;
+          // 벽 방향에 맞춰 상자의 긴 변을 돌리고, **라벨(로컬 +z)이 방
+          // 안쪽을 보게** 한다. inward 를 안 보면 절반이 벽을 보고 붙는다.
+          const base =
+            w.axis === 'x' ? (w.inward > 0 ? 0 : Math.PI) : (w.inward > 0 ? Math.PI / 2 : -Math.PI / 2);
 
           if (r > 0.82) {
             // 플라스틱 상자 — 테두리가 있어 골판지와 실루엣이 다르다
@@ -802,7 +845,7 @@ function panel(b, w, u, h, M) {
   // 경첩 — 왼쪽 모서리에 셋
   for (const dy of [-0.55, 0, 0.55]) {
     const at = wallAt(w, u - WID / 2 + 0.03, DEP + 0.02, cy + dy);
-    tube(b, 0.018, 0.09, at, M.trim, w.axis === 'x' ? 'y' : 'y', 5, true);
+    tube(b, 0.018, 0.09, at, M.trim, 'y', 5, true);
   }
   // 손잡이와 잠금 — 오른쪽
   box(u + WID / 2 - 0.09, DEP + 0.055, cy, 0.028, 0.34, 0.028, M.trim);

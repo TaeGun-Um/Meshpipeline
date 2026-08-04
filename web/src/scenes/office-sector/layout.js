@@ -133,7 +133,7 @@ const PAIR = {
   }
 })();
 
-export function pairRule(a, b) {
+function pairRule(a, b) {
   const k = [a, b].sort().join('|');
   const r = PAIR[k];
   if (!r) throw new Error(`벽 규칙에 '${k}' 가 없다 — layout.PAIR 에 추가한다`);

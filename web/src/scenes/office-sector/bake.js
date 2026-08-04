@@ -51,7 +51,14 @@ const DECAY = 1.8;
 //
 // 위쪽(등보다 높은 곳)은 여전히 0 이다. 천장이 직사광을 안 받아야 정점 간격
 // 때문에 생기는 얼룩이 안 나온다.
+//
+// **경사로 이어붙인다.** 바닥값을 상수로 두면 down=0 에서 0 -> 0.32 로 뚝
+// 끊겨, 등과 같은 높이를 지나는 물건에 딱딱한 명암선이 생긴다. 첫 SPREAD_RAMP
+// 구간에서 0 -> SPREAD 로 올라간 뒤 램버트로 이어진다 (연속).
 const SPREAD = 0.32;
+const SPREAD_RAMP = 0.12;
+const lampLobe = (down) =>
+  SPREAD * Math.min(1, down / SPREAD_RAMP) + (1 - SPREAD) * down;
 
 // 구운 값을 화면 밝기로 옮기는 배율.
 //
@@ -289,7 +296,7 @@ export function bakeVertexLight(groups, plan) {
             if (down <= 0) continue;
 
             const att = Math.pow(SOFT / Math.max(d, SOFT), DECAY);
-            const k = L.power * att * nl * (SPREAD + (1 - SPREAD) * down) * w * GAIN;
+            const k = L.power * att * nl * lampLobe(down) * w * GAIN;
             r += L.r * k;
             g += L.g * k;
             b += L.b * k;

@@ -11,7 +11,7 @@
 // 먼저 세우는 편이 낫다 — 이번 씬은 그 순서로 갔다.
 import { CELLS, H, W, openness } from './layout.js';
 
-export function checkInterior(lightTally) {
+export function checkInterior(plan) {
   const faults = [];
 
   // ── 캄캄한 방 ────────────────────────────────────────────────────────────
@@ -19,7 +19,7 @@ export function checkInterior(lightTally) {
   // 도시의 "간판이 통째로 죽었다" 와 같은 부류다. 빌드는 성공하고 화면도
   // 멀쩡한데 그 방만 검은 상자다. 개수를 세면 바로 잡힌다.
   for (const c of CELLS) {
-    const t = lightTally.byCell[c.id];
+    const t = plan.byCell[c.id];
     if (!t) faults.push(`${c.id} 에 조명 기록이 없다`);
     else if (t.lights < 1) faults.push(`${c.id} 에 광원이 없다 — 캄캄한 방`);
     else if (t.fixtures < 1) faults.push(`${c.id} 에 등이 없다 — 광원만 있고 보이는 것이 없다`);
