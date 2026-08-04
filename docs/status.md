@@ -23,10 +23,14 @@
 
 | # | 씬 | 상태 | 문서 |
 |---|---|---|---|
-| 1 | `vacant-lot` 주택가 공터 | **완료.** 좌표계·조명 규약을 여기서 확정했고 파이프라인 79항목이 통과했다 | — |
-| 2 | `night-city` 나이트시티 | **한 판 마무리.** 여섯 구역 양식과 랜드마크 열이 섰다. 남은 것은 마감·지오메트리 품질 | [scenes/night-city/](scenes/night-city/status.md) |
-| 4 | `office-sector` 오피스 섹터 | **활성 씬 · 작업 중.** 지하 연구시설 사무 구역 1층. 첫 실내 씬 — 천장·구멍 난 벽·실내 전용 검사를 여기서 세웠다. 조명은 **정점에 구웠다** (런타임 광원 40→2, 밝기 폭 4.18배) | [scenes/office-sector/](scenes/office-sector/status.md) |
-| 3 | `model-test` 모델 테스트 | **일단락.** 서브컬처 아바타를 코드로 어디까지 만들 수 있나 — 결론과 규칙이 [character.md](scenes/model-test/character.md) 에 있다. 씬은 그대로 보존 | [scenes/model-test/](scenes/model-test/status.md) |
+| 1 | `vacant-lot` 주택가 공터 | **동결 · 파이프라인 기준 씬.** 좌표계·조명 규약을 여기서 확정했고 79항목이 통과했다. core 회귀의 첫 관문 | [scenes/vacant-lot/](scenes/vacant-lot/status.md) |
+| 2 | `night-city` 나이트시티 | **동결.** 여섯 구역 양식과 랜드마크 열. 26뷰가 재현되지 않아 픽셀 회귀 대상이 아니다 — 삼각형 수로 잰다 | [scenes/night-city/](scenes/night-city/status.md) |
+| 3 | `model-test` 모델 테스트 | **동결.** 서브컬처 아바타 실험 — 결론과 규칙이 [character.md](scenes/model-test/character.md) 에 있다 | [scenes/model-test/](scenes/model-test/status.md) |
+| 4 | `office-sector` 오피스 섹터 | **활성 — 유일한 작업 대상.** 지하 연구시설 1층. 실내 생성기·실내 전용 검사·정점 조명 굽기 | [scenes/office-sector/](scenes/office-sector/status.md) |
+
+**앞으로의 작업은 4번에만 한다** (2026-08-03 사용자 결정). 동결 씬은 빌드
+가능한 상태로 보존하고, 값어치는 학습된 데이터 — `lessons.md` 와 씬별 지식
+문서 — 로 쓴다. 동결 씬의 작업 계획·백로그는 유지하지 않는다.
 
 ### 씬을 새로 추가할 때
 
@@ -68,29 +72,17 @@ onSceneReset('구역 캐시', () => { CACHE = null; });
 
 ---
 
-## 3. 계층 — 지금은 "공통" 이 공통이 아니다
+## 3. 계층 — "공통" 의 실제 상태
 
-씬이 둘인데 하나(도시 904KB)가 다른 하나(공터 60KB)의 15배다. 그래서 실측하면
-이렇게 나온다.
+| 층 | 기준 | 실제 |
+|---|---|---|
+| `core/` | 씬을 모르는 순수 도구 | 기준대로다. 오피스 섹터도 core 만 쓴다 |
+| `shared/` | 둘 이상의 씬이 실제로 쓰는 것 | 대부분 나이트시티 전용이다 (`neon` `masters` `glyphs` `urban/*` 등). 진짜 공통은 `sky` `rain` 정도 |
+| `scenes/<id>/` | 그 장소만의 배치·치수·재질 | — |
 
-| | |
-|---|---|
-| `shared/` 12개 중 **10개** | 도시만 쓴다 (`neon` `masters` `glyphs` `lightpool` `movers` `urban/*` `index`) |
-| 진짜 공통 | `sky` `rain` 둘뿐 |
-| `core/` 중 도시만 쓰는 것 | `boxfaces` `builder` `profile` `placement` 넷 |
-
-> `profile.js` 에 `yawBox` 가 들어갔다 — 회전한 상자를 두 씬 모듈이 각자
-> 갖고 있어서 올린 것이다. `core` 는 **씬을 모르는 순수 도구**라는 기준은
-> 그대로다.
-
-`shared/index.js` 머리말에 *"둘 이상의 씬이 실제로 쓰는가. 미리 올리지
-않는다"* 라고 적혀 있는데, 지금 `shared/` 의 대부분이 그 규칙을 어기고 있다.
-`core/` 는 대체로 엔진이 맞다 — 위 넷도 씬을 모르는 순수 지오메트리·검사
-도구라 자리 자체는 틀리지 않았다.
-
-**지금 재배치하지 않는다.** 씬이 둘뿐이라 공통을 판정할 근거가 없다 — 지금
-확정하면 "도시 것" 을 공통이라고 못 박는 셈이다. **3번 씬을 만들면서** 그 씬이
-실제로 무엇을 집어 쓰는지 보고 정한다.
+동결 뒤로는 이 상태로 굳는다 — `shared/` 는 사실상 동결 씬의 영역이고,
+**오피스에서 필요한 것은 core 로 올리거나 씬 안에 둔다.** shared 재배치는
+안 한다 (옮겨 봐야 소비자가 동결 씬뿐이다).
 
 ---
 
@@ -98,12 +90,17 @@ onSceneReset('구역 캐시', () => { CACHE = null; });
 
 씬별 작업 목록은 씬 문서에 있다. 여기는 저장소 전체에 걸린 것만.
 
+씬 작업은 오피스 섹터에만 한다 — 그 목록은
+[scenes/office-sector/status.md](scenes/office-sector/status.md) 5장에 있다.
+
 | | |
 |---|---|
-| 씬 3 이후 | `core`/`shared` 재배치 (3절) |
-| 나이트시티 재개 시 | **26뷰가 재현되지 않는다.** 같은 코드로 두 번 찍으면 값이 다르다 (`corner` 462,719 → 835,520 픽셀). 나머지 세 씬은 픽셀 단위로 일치하므로 나이트시티 안의 무언가가 프레임마다 다르다 (교통·명멸이 의심된다). 2026-08-04 오피스 섹터 작업 중 우연히 확인 — **진단은 그 씬으로 돌아갈 때 한다** |
-| 필요해지면 | 인페이지 씬 전환 — `Scene.dispose()` + 재질 캐시 씬 스코프화 (2절) |
-| 낮은 순위 | 단축평가 뒤 난수 8곳 · `SIDES[rng.int(0, 3)]` 다수 (`lessons.md` 2.1) |
+| 필요해지면 | 인페이지 씬 전환 — `Scene.dispose()` + 재질 캐시 씬 스코프화 (2절). 지금은 씬 전환이 페이지 리로드라 필요 없다 |
+| 낮은 순위 | 동결 씬(나이트시티)의 단축평가 뒤 난수 8곳 · `SIDES[rng.int(0, 3)]` 다수 (`lessons.md` 2.1) — 동결이라 안 고친다. 오피스에서 같은 패턴을 만들지 않는 것으로 갚는다 |
+
+나이트시티 26뷰 재현 불가는 그 씬의 **동결 상태 그대로 두는 알려진 한계**다
+([scenes/night-city/status.md](scenes/night-city/status.md)) — core 회귀는
+삼각형 수로 잰다.
 
 ---
 
@@ -125,13 +122,16 @@ onSceneReset('구역 캐시', () => { CACHE = null; });
 
 ### 씬별 — `docs/scenes/<id>/`
 
+활성 씬 문서 둘이 위, 동결 씬의 지식 문서가 아래다.
+
 | 문서 | 무엇 |
 |---|---|
-| `night-city/city.md` | **도시의 내력과 지리.** 모든 형태 결정의 근거 |
-| `night-city/districts.md` | 구역별 파라미터 명세 |
-| `night-city/generation.md` | **도시 생성 — 새 기능을 만들기 전에 읽는다.** 순서·단일 출처·계약·난수 규율 |
-| `night-city/status.md` | 그 씬의 상태와 작업 기록 |
-| `model-test/character.md` | **캐릭터를 코드로 만든다는 것** — 도구·치수·규칙·결함·비용. 결론이 여기 있다 |
-| `model-test/status.md` | 그 씬의 상태 |
-| `office-sector/facility.md` | **시설의 내력** — 지하 1층의 치수·조명·검사 규칙. **형태를 건드리기 전에 읽는다** |
-| `office-sector/status.md` | 생성기의 구조(어디를 고치면 무엇이 바뀌나) · 걸린 것 · 열려 있는 것 |
+| `office-sector/facility.md` | **시설의 내력** — 치수·조명·검사 규칙. **형태를 건드리기 전에 읽는다** |
+| `office-sector/status.md` | **생성기의 구조** — 어디를 고치면 무엇이 바뀌나 · 걸린 것 · 열려 있는 것 |
+| `vacant-lot/status.md` | 동결 · 파이프라인 기준 씬 — 부트스트랩과 규약 실측의 출처 |
+| `night-city/status.md` | 동결 요약 — 실측 · 지식의 위치 · 알려진 한계 |
+| `night-city/city.md` | 도시의 내력과 지리 — 형태 결정 근거 (지식) |
+| `night-city/generation.md` | 생성 순서·단일 출처·계약·난수 규율 (지식 — 오피스 생성기도 같은 규율을 쓴다) |
+| `night-city/districts.md` | 구역별 파라미터 명세 (지식) |
+| `model-test/status.md` | 동결 요약 |
+| `model-test/character.md` | **캐릭터를 코드로 만든다는 것** — 유기형이 필요해지면 여기부터 |

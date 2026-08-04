@@ -138,6 +138,25 @@ Icosphere를 여기 넣는데, 이 규약은 glTF 익스포터만 알기 때문�
 
 ---
 
+## 씬별 유니티 조립 — 오피스 섹터
+
+vacant-lot 은 `BuildScene.cs`, 오피스는 `BuildOfficeScene.cs` 다. 방식이 다른
+이유는 하나 — **오피스는 조명이 정점 컬러에 구워져 있다.** 그래서 유니티
+광원을 만들지 않고 전 불투명 메시를 `Custom/BakedVertexColor`(텍스처 x
+정점색, 언릿)로 갈아 끼운다. 발광·유리는 재질 이름으로 보존한다.
+
+```
+브라우저에서:  for (const k of ['rock','floors','walls','ceilings','props','fixtures'])
+                 await __export(k);
+복사:          web/export/*.glb -> unity/Assets/ProceduralImport/office/
+유니티:        Unity.exe -batchmode -quit -projectPath unity
+                 -executeMethod BuildOfficeScene.Full
+결과:          Assets/Scenes/OfficeSector.unity · Reports/office_scene.png
+```
+
+contract·pipeline.mjs 는 아직 vacant-lot 목록을 하드코딩한다 — 씬별 목록화가
+남은 일이다 (#68).
+
 ## 좌표계 — 확정된 사실
 
 이 프로젝트에서 가장 많이 깨졌던 부분이다. 전부 실측으로 확정했다.

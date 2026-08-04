@@ -7,21 +7,26 @@
 
 | # | 씬 | 무엇 | 삼각형 | 텍스처 |
 |---|---|---|---|---|
-| 1 | `vacant-lot` 주택가 공터 | 낮 · 3인칭 · 기준 씬. 좌표계·조명 규약을 여기서 확정했다 | 182,428 | 63MB |
-| 2 | `night-city` 나이트시티 | 사이버펑크 야간 도시 · 프리캠 · 구역·매싱·1층 점포 | 4,203,303 | 218MB |
-| 3 | `model-test` 모델 테스트 | 서브컬처 아바타 · 툰 셰이딩 · 머리카락 스프링. 코드로 사람이 어디까지 되나 | 61,380 | 9MB |
-| 4 | `office-sector` 오피스 섹터 | 지하 연구시설 1층 · 첫 실내 씬. 방-복도 그래프 · 구멍 난 벽 · **정점에 구운 조명** | 126,276 | 33MB |
+| 1 | `vacant-lot` 주택가 공터 | 동결 · 파이프라인 기준 씬. 좌표계·조명 규약을 여기서 확정했다 | 182,428 | 63MB |
+| 2 | `night-city` 나이트시티 | 동결 · 사이버펑크 야간 도시 · 구역·매싱·1층 점포 | 4,203,303 | 218MB |
+| 3 | `model-test` 모델 테스트 | 동결 · 서브컬처 아바타 — 코드로 사람이 어디까지 되나의 결론 | 61,380 | 9MB |
+| 4 | `office-sector` 오피스 섹터 | **활성 — 유일한 작업 대상.** 지하 연구시설 1층 · 실내 생성기 · **정점에 구운 조명** | 126,372 | 33MB |
 
 삼각형은 씬이 들고 있는 지오메트리 총량이다 (`__audit()`). 한 프레임에 실제로
 그리는 수는 그림자 패스 때문에 이보다 많다.
 
 ```bash
+cd web && npm install && cd ..    # 처음 한 번만 — three.js 는 커밋 안 한다
 node web/server.mjs
-# http://localhost:5173                    활성 씬 (= 3번 모델 테스트)
-# http://localhost:5173/?scene=vacant-lot  이전 씬 다시 띄우기
-# http://localhost:5173/?scene=model-test  3번 씬
+# http://localhost:5173                       활성 씬 (= 4번 오피스 섹터)
+# http://localhost:5173/?scene=vacant-lot     1번 씬
+# http://localhost:5173/?scene=night-city     2번 씬
+# http://localhost:5173/?scene=model-test     3번 씬
 # http://localhost:5173/?scene=office-sector  4번 씬 (기본과 같다)
 ```
+
+> `npm install` 을 건너뛰면 `node_modules/three` 가 없어 **모듈 로드가 통째로
+> 실패한다.** 서버가 그 상태를 감지해 콘솔과 브라우저 양쪽에 이유를 띄운다.
 
 ```
 브라우저 (three.js)          블렌더 (헤드리스)         유니티 (배치모드)
@@ -115,14 +120,11 @@ node tools/pipeline.mjs --accept   # 새 스펙을 승인 (아래 참고)
 
 | 문서 | 내용 |
 |---|---|
-| [scenes/night-city/city.md](docs/scenes/night-city/city.md) | **도시의 내력** — 왜 이 도시가 이렇게 생겼는가. 모든 형태 결정의 근거 |
-| [scenes/night-city/generation.md](docs/scenes/night-city/generation.md) | **도시 생성 — 새 기능을 만들기 전에 먼저 읽는다.** 순서·단일 출처·계약·난수 규율 |
-| [scenes/night-city/districts.md](docs/scenes/night-city/districts.md) | 구역 설계 명세 (레퍼런스 분석 → 파라미터) |
-| [scenes/night-city/status.md](docs/scenes/night-city/status.md) | 그 씬의 상태와 작업 기록 |
-| [scenes/model-test/character.md](docs/scenes/model-test/character.md) | **캐릭터를 코드로 만든다는 것** — 도구·치수·규칙·결함·비용 |
-| [scenes/model-test/status.md](docs/scenes/model-test/status.md) | 그 씬의 상태 |
-| [scenes/office-sector/facility.md](docs/scenes/office-sector/facility.md) | **시설의 내력** — 지하 1층의 치수·조명·검사 규칙. 형태를 건드리기 전에 읽는다 |
+| [scenes/office-sector/facility.md](docs/scenes/office-sector/facility.md) | **활성 씬 — 시설의 내력.** 치수·조명·검사 규칙. 형태를 건드리기 전에 읽는다 |
 | [scenes/office-sector/status.md](docs/scenes/office-sector/status.md) | **생성기의 구조** — 어디를 고치면 무엇이 바뀌나. 걸린 것과 열려 있는 것 |
+| [scenes/vacant-lot/status.md](docs/scenes/vacant-lot/status.md) | 동결 · 파이프라인 기준 씬 |
+| [scenes/night-city/status.md](docs/scenes/night-city/status.md) | 동결 요약 — 지식은 [city.md](docs/scenes/night-city/city.md) · [generation.md](docs/scenes/night-city/generation.md) · [districts.md](docs/scenes/night-city/districts.md) |
+| [scenes/model-test/status.md](docs/scenes/model-test/status.md) | 동결 요약 — 지식은 [character.md](docs/scenes/model-test/character.md) |
 
 ## 저장소 구조
 
