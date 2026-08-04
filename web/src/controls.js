@@ -259,6 +259,8 @@ export function createFlyCamera(camera, input) {
   const fwd = new THREE.Vector3();
   const right = new THREE.Vector3();
   const UP = new THREE.Vector3(0, 1, 0);
+  // 매 프레임 재사용 — 프레임마다 new 하면 GC 가 조금씩 갉아먹는다
+  const EULER = new THREE.Euler(0, 0, 0, 'YXZ');
   const move = new THREE.Vector3();
 
   function syncFromCamera() {
@@ -302,7 +304,7 @@ export function createFlyCamera(camera, input) {
       camera.position.add(move);
     }
 
-    camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+    camera.quaternion.setFromEuler(EULER.set(pitch, yaw, 0));
     return { speedLevel: level + 1, speed: sp };
   }
 

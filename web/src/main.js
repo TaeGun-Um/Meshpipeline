@@ -41,7 +41,9 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'hi
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = SCENE.meta.render.shadows;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// r0.185 에서 PCFSoft 는 폐기 — three 가 경고를 찍고 PCF 로 바꿔 그린다.
+// 어차피 PCF 로 그려지고 있었으므로 이름을 실제 동작에 맞춘다 (픽셀 동일 확인).
+renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = SCENE.meta.render.exposure;
 document.body.appendChild(renderer.domElement);
@@ -110,6 +112,15 @@ const input = createInput(renderer.domElement);
 // 프리 카메라 하나로만 돌아간다. 도시처럼 "걸어다니는 것"이 목적이 아닌 씬에서는
 // 캐릭터가 스케일 기준으로도 쓸모가 없고, 물리·충돌체를 유지할 이유도 없다.
 const HAS_PLAYER = SCENE.meta.player !== false;
+
+// ── 빌드 완료 신호 ─────────────────────────────────────────────────────────
+//
+// `__ready` 는 불리언이다. 그래서 `await window.__ready` 는 **빌드 중이어도
+// 즉시 통과한다** (undefined 를 await 하면 바로 풀린다) — 실제로 20초짜리
+// 도시 빌드 90% 시점에 감사를 돌려 삼각형이 117만 개 모자란 값을 읽은 적이
+// 있다. 기다리려면 이 Promise 를 쓴다:  await window.__built
+let __buildDone;
+window.__built = new Promise((r) => (__buildDone = r));
 
 let mode = HAS_PLAYER ? MODE.PLAY : MODE.FLY;
 let player = null;
@@ -209,15 +220,22 @@ async function build() {
     placement: world.placement || null,
   };
   window.__ready = true;
+  __buildDone();
 }
 
 // ── 루프 ───────────────────────────────────────────────────────────────────
-
-const clock = new THREE.Clock();
+//
+// THREE.Clock 은 r0.185 에서 폐기다 (콘솔 경고). 대체제 Timer 는 애드온이라
+// 의존을 늘리느니 직접 잰다 — 필요한 것은 경과시간과 클램프된 dt 둘뿐이다.
+const t0 = performance.now() / 1000;
+let last = t0;
 
 function frame() {
-  const dt = Math.min(clock.getDelta(), 0.05);
-  const t = clock.getElapsedTime();
+  const now = performance.now() / 1000;
+  // 탭 전환 뒤 첫 프레임처럼 dt 가 튀면 물리가 터널링한다. Clock 시절과 같은 클램프.
+  const dt = Math.min(now - last, 0.05);
+  last = now;
+  const t = now - t0;
 
   if (input.toggleRequested) {
     input.toggleRequested = false;
