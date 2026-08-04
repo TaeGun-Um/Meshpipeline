@@ -27,8 +27,8 @@ const Y = CURB_HEIGHT;
 // 것을 알려 준다.
 // 굴착 구덩이의 반폭. **여기가 유일한 출처다** — `streets` 가 지면 평면에
 // 뚫을 구멍을 이 값으로 잡는다. 두 곳에서 계산하면 판이 구덩이를 반쯤
-// 덮는다 (docs/status.md 2.1).
-export const PIT_HALF = BLOCK_SIZE / 2 - PIT_INSET - 4;
+// 덮는다 (docs/lessons.md 2.1).
+const PIT_HALF = BLOCK_SIZE / 2 - PIT_INSET - 4;
 
 export function constructionPit(cx, cz) {
   return { x0: cx - PIT_HALF, x1: cx + PIT_HALF, z0: cz - PIT_HALF, z1: cz + PIT_HALF };

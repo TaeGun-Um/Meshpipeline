@@ -16,7 +16,7 @@ import * as THREE from 'three';
 
 // 초타원 위의 점. u 는 0..1 (한 바퀴).
 // w 가 X 반경, d 가 Z 반경.
-export function superPoint(u, w, d, k = 2) {
+function superPoint(u, w, d, k = 2) {
   const a = u * Math.PI * 2;
   const c = Math.cos(a);
   const s = Math.sin(a);

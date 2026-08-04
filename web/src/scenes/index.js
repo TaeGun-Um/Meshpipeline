@@ -27,7 +27,7 @@ import modelTest from './model-test/index.js';
 import officeSector from './office-sector/index.js';
 
 // 만든 순서대로. 번호가 곧 만든 순서다.
-export const SAVED = [
+const SAVED = [
   {
     scene: vacantLot,
     made: '2026-07-30',
@@ -50,7 +50,7 @@ export const SAVED = [
   },
 ];
 
-export const SCENES = Object.fromEntries(SAVED.map((e) => [e.scene.meta.id, e.scene]));
+const SCENES = Object.fromEntries(SAVED.map((e) => [e.scene.meta.id, e.scene]));
 
 // ── 뷰포트 목록 ────────────────────────────────────────────────────────────
 //

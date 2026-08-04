@@ -45,7 +45,7 @@ export function pickScheme(rng) {
 // 비율은 `shared/glyphs.js` 의 캔버스 크기가 정한다. 그걸 여섯 생산자
 // (bazaar·market·towers·corpo·program·landmark)가 각자 알고 지키게 하면
 // 반드시 어긋난다 — 이 프로젝트에서 같은 값을 두 곳에서 계산해 스무 번 틀렸다
-// (docs/status.md 2.1). 그래서 **간판을 만드는 이 파일이 혼자 안다.**
+// (docs/lessons.md 2.1). 그래서 **간판을 만드는 이 파일이 혼자 안다.**
 //
 // 생산자는 "이 자리에 이만한 크기로" 만 말하고, 실제 폭·높이는 여기서 비율에
 // 맞춰 다시 계산한다.

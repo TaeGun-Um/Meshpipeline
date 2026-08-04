@@ -22,7 +22,7 @@ import { SKY_STOPS, woodTextures } from './textures.js';
 import { createCharacter } from './character.js';
 
 // 상자 한 변 (미터). 스케일 기준이므로 딱 떨어지는 값이어야 한다.
-export const CRATE = 1.0;
+const CRATE = 1.0;
 
 // 바닥 한 변. 처음에 120m 로 두고 안개로 가리려 했는데, 안개가 진해지기도
 // 전에 평면 모서리가 하늘을 자르며 드러났다 (60m 지점에서 안개는 3%).

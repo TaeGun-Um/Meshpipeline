@@ -32,7 +32,7 @@ export const BLOCK_SIZE = 66;
 // **골목이 있나 없나를 판단하는 곳은 여기 하나뿐이다.** 소비자가 둘이므로
 // (blockLots 가 필지를 자르고, allAlleyRects 가 입구를 비운다) 각자 판단하게
 // 두면 한쪽만 꺼지는 사고가 난다 — 실제로 그렇게 됐다.
-export const ALLEYS_ON = false;
+const ALLEYS_ON = false;
 
 // 보행로 양옆 완충. 건물은 이만큼 물러나 선다.
 //
@@ -173,7 +173,7 @@ export function blockCenter(i) {
 // 차이다.
 //
 // roads() 를 단일 출처로 만들어 두었더니 격자 불일치 수정이 자동으로
-// 전파됐다 (docs/status.md 0.1). 같은 이유로 먼저 모아 둔다.
+// 전파됐다 (당시 일지 기록 — 일지는 폐기됨). 같은 이유로 먼저 모아 둔다.
 export function blockRect(ix, iz) {
   const h = BLOCK_SIZE / 2;
   const cx = blockCenter(ix);
@@ -182,7 +182,7 @@ export function blockRect(ix, iz) {
 }
 
 // 그 블록의 피치 (도로 폭을 포함한 간격).
-export function blockPitch(i) {
+function blockPitch(i) {
   return CENTERS.pitches[Math.max(0, Math.min(GRID - 1, i))];
 }
 
@@ -191,7 +191,7 @@ export function blockPitch(i) {
 // 전에는 여섯 모듈이 각자 `Math.round(x / PITCH + (GRID-1)/2)` 를 썼다.
 // 등간격이 아니게 되는 순간 그 식이 전부 틀린다.
 //
-// **같은 값을 두 곳에서 계산하지 말 것** (docs/status.md 2.1 결합 대장).
+// **같은 값을 두 곳에서 계산하지 말 것** (docs/lessons.md 2.1 결합 대장).
 // 여기 하나만 두고 전부 이걸 부른다.
 export function blockIndexAt(v) {
   const c = CENTERS.centers;
@@ -264,7 +264,7 @@ export function roadAt(v) {
   return null;
 }
 
-export function inRoad(v) {
+function inRoad(v) {
   return roadAt(v) !== null;
 }
 
@@ -479,7 +479,7 @@ export function allAlleyRects() {
 //
 // 띠가 십자로 만나면 조각이 넷이 된다 — 그 교차점이 광장이 되고, 사람은
 // 늘 그런 자리에 모인다.
-export function subtractStrips(root, strips) {
+function subtractStrips(root, strips) {
   const MIN = 12; // 이보다 얇은 조각은 건물이 못 선다. 길에 흡수시킨다
   let parts = [root];
   for (const st of strips) {

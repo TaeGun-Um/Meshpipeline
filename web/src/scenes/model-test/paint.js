@@ -85,19 +85,6 @@ export function taperStroke(g, pts) {
   g.fill();
 }
 
-// 세로 그라디언트 — 애니 눈동자는 거의 다 이것이다.
-export function vgrad(g, x, y0, y1, stops) {
-  const gr = g.createLinearGradient(x, y0, x, y1);
-  for (const [t, c] of stops) gr.addColorStop(t, c);
-  return gr;
-}
-
-export function rgrad(g, x, y, r0, r1, stops) {
-  const gr = g.createRadialGradient(x, y, r0, x, y, r1);
-  for (const [t, c] of stops) gr.addColorStop(t, c);
-  return gr;
-}
-
 // 타원 채우기 (회전 포함)
 export function ellipse(g, x, y, rx, ry, rot = 0) {
   g.beginPath();

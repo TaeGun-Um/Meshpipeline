@@ -255,7 +255,7 @@ export function parcels() {
 }
 
 // 이 칸이 속한 대지.
-export function parcelAt(ix, iz) {
+function parcelAt(ix, iz) {
   const d = data();
   const cx = Math.max(0, Math.min(GRID - 1, ix));
   const cz = Math.max(0, Math.min(GRID - 1, iz));

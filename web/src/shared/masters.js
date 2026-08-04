@@ -39,7 +39,7 @@ export const Beacon = Glow.derive('Beacon', { intensity: 1, tint: 0.05 });
 //   Holo      선·테두리·표식. 좁으므로 진하게
 //   HoloSoft  광고판 면·빛기둥·잎. 넓으므로 아주 옅게
 export const Holo = Additive.derive('Holo', { opacity: 0.5 });
-export const HoloSoft = Additive.derive('HoloSoft', { opacity: 0.16 });
+const HoloSoft = Additive.derive('HoloSoft', { opacity: 0.16 });
 
 // 쓰는 쪽이 색만 넘기면 되게 감싼다 (neon/neonSoft 와 같은 방식).
 export function holo(color) {

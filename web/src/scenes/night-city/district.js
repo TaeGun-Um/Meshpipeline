@@ -384,14 +384,6 @@ export function districtNear(x, z) {
   return districtAt(blockIndexAt(x), blockIndexAt(z));
 }
 
-// 구역별 블록 수. 비율을 실측으로 맞출 때 쓴다.
-export function districtTally() {
-  if (!ZONE_CACHE) ZONE_CACHE = buildZones();
-  const t = {};
-  for (const k of ZONE_CACHE) t[k] = (t[k] || 0) + 1;
-  return t;
-}
-
 // 구역이 정한 가중치로 건물 유형을 고른다 (facade.pickArchetype 을 대체).
 export function pickArchetypeIn(rng, district, height, width) {
   const w = { ...district.archetype };

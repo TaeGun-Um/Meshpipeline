@@ -63,7 +63,7 @@ export function marketSpots() {
 //
 // **여기가 유일한 출처다.** 구덩이 크기를 아는 곳은 `underpass()` 하나이므로
 // 거기서 만들면서 등록한다 — 크기를 두 곳에서 계산하면 반드시 어긋난다
-// (docs/status.md 2.1).
+// (docs/lessons.md 2.1).
 let PITS = [];
 export function marketPits() {
   return PITS.slice();
@@ -122,7 +122,7 @@ const tally = (k, r, top) => {
 const STALL_KINDS = ['table', 'hang', 'noodle', 'crate', 'booth'];
 
 // 난수는 칸마다 **똑같이 열둘**을 뽑는다. 유형마다 다르게 뽑으면 소비량이
-// 갈려 도시 전체가 다시 뽑힌다 (docs/status.md 2.1 규칙 6). 뽑아 두고 골라 쓴다.
+// 갈려 도시 전체가 다시 뽑힌다 (docs/lessons.md 2.1 규칙 6). 뽑아 두고 골라 쓴다.
 const ROLLS = 12;
 const rr = (R, i, lo, hi) => lo + R[i % ROLLS] * (hi - lo);
 const ri = (R, i, lo, hi) => Math.min(hi, lo + Math.floor(R[i % ROLLS] * (hi - lo + 1)));
@@ -299,7 +299,7 @@ function stallNoodle(b, x, z, w, d, fx, fz, R, mats) {
     //
     // 당연하다. 김은 형태가 없는 것이고, 이 파이프라인에는 반투명이 없다.
     // 없는 것을 불투명한 덩어리로 흉내 내면 늘 다른 물건이 된다
-    // (docs/status.md 2.1 규칙 8 과 같은 종류다 — 이름이 아니라 결과를 본다).
+    // (docs/lessons.md 2.1 규칙 8 과 같은 종류다 — 이름이 아니라 결과를 본다).
     //
     // 뜨겁다는 것은 **국물이 빛나는 것**으로 말한다. 냄비 아가리에 얇은
     // 발광 원반 하나. 아래에서 김이 오르는 대신 위로 빛이 새어 나온다.
@@ -418,7 +418,7 @@ function arcade(b, r, rng, mats, signs, pools) {
   // 길에서 보아 "저기가 입구" 가 한눈에 읽힌다.
   //
   // 어느 칸을 비울지는 **좌표 해시**로 정한다 — 난수로 뽑으면 문 하나 때문에
-  // 도시 전체가 다시 뽑힌다 (docs/status.md 2.1 규칙 6).
+  // 도시 전체가 다시 뽑힌다 (docs/lessons.md 2.1 규칙 6).
   const T = 1.6;
   const n = Math.max(4, Math.round(len / 5.5));
   const DOOR_H = 3.4;
@@ -539,7 +539,7 @@ function arcade(b, r, rng, mats, signs, pools) {
   // 어둡다.** 그래서 위에서 보면 줄무늬 뚜껑 하나고, 안에 시장이 있다는 신호가
   // 밖으로 한 조각도 안 나갔다. "반투명 채광 슬릿" 이라고 주석에 써 놓고
   // 실제로는 안 빛나는 판을 깐 것이다 — `vitrineGlassMat` 때와 같은 착각이다
-  // (docs/status.md 2.1 규칙 7: 재질을 이름으로 믿지 않는다).
+  // (docs/lessons.md 2.1 규칙 7: 재질을 이름으로 믿지 않는다).
   //
   // 채광창은 **아래가 밝을 때 위에서 빛난다.** 그것이 이 지붕의 전부다.
   // 뼈대(불투명)와 채광판(발광)을 번갈아 놓으면, 위에서는 빛나는 줄무늬가
@@ -832,7 +832,7 @@ function vitrine(b, r, rng, mats, signs, pools) {
 
   // 2~4층. 좌표 해시로 한 층을 더 얹는다 — `rng.int(2,3)` 만 쓰면 15채 중
   // 중앙값이 계속 11.5m 에 몰려 "명품관은 다 똑같이 생겼다" 가 된다.
-  // 난수를 더 뽑지 않는 이유는 늘 같다 (status.md 2.1 규칙 6).
+  // 난수를 더 뽑지 않는 이유는 늘 같다 (lessons.md 2.1 규칙 6).
   const floors = rng.int(2, 3) + (hash2(Math.round(r.x0), Math.round(r.z0) + 313) > 0.55 ? 1 : 0);
   const FH = 5.2; // 층고가 높다. 높은 천장이 그 자체로 과시다
   const H = floors * FH;
@@ -1035,7 +1035,7 @@ function blackMarket(b, r, rng, mats, signs, pools) {
   for (let i = 0; i < nx; i++) {
     for (let j = 0; j < nz; j++) {
       // 난수를 **먼저 다 뽑는다.** 조건부로 건너뛰면 소비량이 갈려서 도시
-      // 전체가 다시 뽑힌다 (docs/status.md 2.1 규칙 6)
+      // 전체가 다시 뽑힌다 (docs/lessons.md 2.1 규칙 6)
       const skip = rng.chance(0.16); // 빈 자리 — 다 차 있으면 계획된 것으로 보인다
       const h = rng.range(2.4, 3.9);
       const shrinkW = rng.range(0.3, 1.1);
@@ -1307,7 +1307,7 @@ export function marketSideOf(ix) {
 }
 
 // 기업 사각형까지의 격자 거리 (0 이면 맞닿아 있다).
-export function corpoDistance(ix, iz) {
+function corpoDistance(ix, iz) {
   const dx = Math.max(CORPO.ix0 - ix, 0, ix - CORPO.ix1);
   const dz = Math.max(CORPO.iz0 - iz, 0, iz - CORPO.iz1);
   return Math.hypot(dx, dz);

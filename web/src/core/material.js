@@ -49,7 +49,7 @@ function keyOf(v) {
 
 // 공유가 실제로 일어나는지 눈으로 확인할 수 있어야 한다.
 // created 는 만들어진 머티리얼 수, shared 는 캐시에 걸려 재사용된 횟수다.
-export const materialStats = { created: 0, shared: 0, byMaster: {} };
+const materialStats = { created: 0, shared: 0, byMaster: {} };
 
 export function materialReport() {
   const rows = Object.entries(materialStats.byMaster)

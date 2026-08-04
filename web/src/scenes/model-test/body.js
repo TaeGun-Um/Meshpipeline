@@ -231,7 +231,7 @@ const kneeOut = (x, y, z) => {
   return [x, y, z > 0 ? z + 0.007 * k : z];
 };
 
-export function legGeo() {
+function legGeo() {
   return loft(ringsFrom(LEG_KEYS, 18), 18, { capTop: false, deform: kneeOut });
 }
 

@@ -18,7 +18,7 @@ import { MasterMaterial } from '../../core/material.js';
 // 값이 몇 개냐가 곧 명암 단계 수다 — 애니는 둘이 기본이고, 셋을 넘기면
 // 회색이 늘어 사진처럼 보이기 시작한다.
 const rampCache = new Map();
-export function ramp(steps) {
+function ramp(steps) {
   const key = steps.join(',');
   if (rampCache.has(key)) return rampCache.get(key);
   const data = new Uint8Array(steps.length * 4);
@@ -107,7 +107,7 @@ export const Toon = new MasterMaterial('Toon', {
 
 // 선 재질. 빛을 받지 않아야 한다 — 아웃라인이 명암을 받으면 선이 아니라
 // 테두리 띠가 된다.
-export const Line = new MasterMaterial('ToonLine', {
+const Line = new MasterMaterial('ToonLine', {
   params: { color: 0x2a2537 },
   create: (p) =>
     new THREE.MeshBasicMaterial({
@@ -127,7 +127,7 @@ export const Line = new MasterMaterial('ToonLine', {
 //
 // 두께를 세계 단위로 고정하면 작은 부품(손가락·장식)에서 선이 부품보다
 // 굵어진다. 그래서 부위마다 값을 받는다.
-export function outlineOf(geo, t = 0.006, color = 0x2a2537) {
+function outlineOf(geo, t = 0.006, color = 0x2a2537) {
   const g = geo.clone();
   const pos = g.attributes.position;
   const nor = g.attributes.normal;

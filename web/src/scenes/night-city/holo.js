@@ -612,7 +612,7 @@ export function createHolo(scene, rng, mats, anchors) {
   // 남의 건물 한복판이다.
   //
   // `parcel.blockRect` 를 단일 출처로 만들면서 여덟 모듈을 고쳤는데
-  // (status.md 2.1 결합 대장) 여기는 `layout` 쪽 블록 사각형을 봤다.
+  // (lessons.md 2.1 결합 대장) 여기는 `layout` 쪽 블록 사각형을 봤다.
   // **같은 이름의 함수가 두 곳에 있으면 반드시 한쪽이 틀린 것을 본다.**
   //
   // 그리고 대지 사각형만으로는 부족하다. 대지 안에서 건물은 다시 물러나

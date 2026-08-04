@@ -290,8 +290,3 @@ export function supportAt(x, y, z, list, { margin = 1.2, roof = 2.5 } = {}) {
   return null;
 }
 
-function fmt(n) {
-  return Math.round(n * 100) / 100;
-}
-
-export { fmt as roundCm };
