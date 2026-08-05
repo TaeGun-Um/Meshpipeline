@@ -61,13 +61,15 @@ export function buildCeilings(scene, M) {
 // ── 벽 ─────────────────────────────────────────────────────────────────────
 
 // 한 구간을 세운다. axis 'x' 면 x 로 뻗고 z 가 고정이다.
-function slab(b, run, a, bb, y0, y1, mat, tile) {
+// thick 는 문틀·유리처럼 벽면보다 **돌출해야 하는** 조각이 쓴다 — 벽과 같은
+// 두께로 겹쳐 세우면 같은 평면이 되어 z-파이팅이 난다.
+function slab(b, run, a, bb, y0, y1, mat, tile, thick = W.wall) {
   const len = bb - a;
   if (len < 0.02 || y1 - y0 < 0.02) return;
   const mid = (a + bb) / 2;
   const cy = (y0 + y1) / 2;
   const at = run.axis === 'x' ? [mid, cy, run.at] : [run.at, cy, mid];
-  const size = run.axis === 'x' ? [len, y1 - y0, W.wall] : [W.wall, y1 - y0, len];
+  const size = run.axis === 'x' ? [len, y1 - y0, thick] : [thick, y1 - y0, len];
   b.box(size[0], size[1], size[2], at, mat, tile);
 }
 
@@ -103,8 +105,45 @@ export function buildWalls(scene, M) {
     const { gaps, tooNarrow } = openingsOf(run);
     if (tooNarrow) tally.narrow.push(`${run.from}-${run.to}`);
 
+    // 유리벽 창 구간 — 벽을 세우기 **전에** 계산한다. 창도 문처럼 벽을
+    // 쪼개어 뚫어야 하기 때문이다. 예전에는 선 벽 위에 유리를 겹쳐 붙였는데,
+    // 유리 뒤에 벽이 그대로 남아 창 너머가 안 보였다 — 서버룸은 복도에서
+    // 안이 보여야 한다 (facility.md 0장). 벽을 통째로 유리로 하면 구조가
+    // 없어 보이므로 허리(sill) 아래와 머리(head) 위는 벽으로 남긴다.
+    const sill = 1.0;
+    const head = Math.min(run.h - 0.25, 2.4);
+    const wins = [];
+    if (run.rule === 'glass' && gaps.length) {
+      // 창 계산은 문이 하나라는 전제 위에 있다 — 문이 둘이면 창이 둘째 문과
+      // 겹친다. 조용히 겹치게 두지 말고 터뜨린다 (lessons 2.1 규칙 4 의 태도).
+      if (gaps.length > 1) {
+        throw new Error(`유리벽 ${run.from}-${run.to} 에 문이 ${gaps.length}개 — 창 배치가 gaps[0] 만 안다. wins 계산을 다중 문으로 확장해야 한다`);
+      }
+      const [g0, g1] = gaps[0];
+      for (const [a0, a1] of [
+        [run.a + 0.25, g0 - 0.15],
+        [g1 + 0.15, run.b - 0.25],
+      ]) {
+        if (a1 - a0 >= 0.6) wins.push([a0, a1]);
+      }
+    }
+
+    // 창을 뺀 벽 — 문 개구부와 같은 방식으로 쪼갠다:
+    // 창 좌우 구간 + 창 아래 허리벽 + 창 위 상인방. 창이 없으면 통짜다.
+    const wallCut = (a0, a1) => {
+      let at = a0;
+      for (const [w0, w1] of wins) {
+        if (w1 <= a0 || w0 >= a1) continue;
+        wall(at, w0, 0, run.h);
+        wall(w0, w1, 0, sill);
+        wall(w0, w1, head, run.h);
+        at = w1;
+      }
+      wall(at, a1, 0, run.h);
+    };
+
     if (!gaps.length) {
-      wall(run.a, run.b, 0, run.h);
+      wallCut(run.a, run.b);
       b.endMark();
       continue;
     }
@@ -112,38 +151,35 @@ export function buildWalls(scene, M) {
     // 개구부를 뺀 구간들
     let cur = run.a;
     for (const [g0, g1] of gaps) {
-      wall(cur, g0, 0, run.h);
+      wallCut(cur, g0);
       // 상인방 — 문 위에서 천장까지
       slab(b, run, g0, g1, H.door, run.h, M.wall, 1.0);
-      // 문틀
+      // 문틀 — 개구부 **안쪽**을 딛고 벽면보다 1.5cm 씩 돌출한다.
+      //
+      // 처음에는 벽 절단면·상인방과 같은 평면에 같은 두께로 세웠고, 그
+      // 겹평면이 문마다 z-파이팅 얼룩을 냈다 — 화면 네 곳의 지직거림을
+      // 픽셀 디프 + 레이캐스트로 재 보니 전부 이 하나로 수렴했다 (문틀↔벽
+      // 간격 0.0000). 브라운관 #65 와 같은 결론이다: **겹평면 없음, 틀은
+      // 돌출**. 틀이 개구부를 4cm 씩 먹는 것은 실제 문틀도 그렇다.
       const jamb = 0.06;
-      slab(b, run, g0 - jamb, g0, 0, H.door + jamb, M.trim, 0);
-      slab(b, run, g1, g1 + jamb, 0, H.door + jamb, M.trim, 0);
-      slab(b, run, g0, g1, H.door, H.door + jamb, M.trim, 0);
+      const JT = W.wall + 0.03; // 틀 두께 — 벽에서 양쪽 1.5cm 돌출
+      slab(b, run, g0 - 0.02, g0 + jamb - 0.02, 0, H.door - 0.01, M.trim, 0, JT);
+      slab(b, run, g1 - jamb + 0.02, g1 + 0.02, 0, H.door - 0.01, M.trim, 0, JT);
+      slab(b, run, g0 - 0.02, g1 + 0.02, H.door - 0.055, H.door + 0.005, M.trim, 0, JT);
       cur = g1;
     }
-    wall(cur, run.b, 0, run.h);
+    wallCut(cur, run.b);
 
-    // 유리벽 — 서버룸은 복도에서 안이 보여야 한다
-    if (run.rule === 'glass') {
-      const [g0, g1] = gaps[0];
-      // 개구부 양옆의 벽을 유리로 갈아 끼우는 대신, 벽 위쪽에 창을 얹는다.
-      // 벽을 통째로 유리로 하면 구조가 없어 보인다.
-      const sill = 1.0;
-      const head = Math.min(run.h - 0.25, 2.4);
-      for (const [a0, a1] of [
-        [run.a + 0.25, g0 - 0.15],
-        [g1 + 0.15, run.b - 0.25],
-      ]) {
-        if (a1 - a0 < 0.6) continue;
-        // 창 자리의 벽을 유리로 (벽은 이미 섰으므로 살짝 앞으로 겹쳐 붙인다)
-        slab(b, run, a0, a1, sill, head, M.glass, 0);
-        // 멀리언
-        const n = Math.max(1, Math.round((a1 - a0) / 1.2));
-        for (let i = 1; i < n; i++) {
-          const x = a0 + ((a1 - a0) * i) / n;
-          slab(b, run, x - 0.03, x + 0.03, sill, head, M.trim, 0);
-        }
+    // 유리벽 — **뚫린** 창 자리에 유리를 끼우고 멀리언을 세운다.
+    // 유리는 벽과 같은 두께다 — 이제 뒤에 벽이 없으니 겹평면이 아니다
+    // (겹쳐 붙이던 시절에는 1cm 돌출로 z-파이팅을 피했었다).
+    // 멀리언은 유리 위에 겹치므로 1cm 돌출시킨다 — 문틀과 같은 처방.
+    for (const [a0, a1] of wins) {
+      slab(b, run, a0, a1, sill, head, M.glass, 0);
+      const n = Math.max(1, Math.round((a1 - a0) / 1.2));
+      for (let i = 1; i < n; i++) {
+        const x = a0 + ((a1 - a0) * i) / n;
+        slab(b, run, x - 0.03, x + 0.03, sill, head, M.trim, 0, W.wall + 0.02);
       }
     }
     b.endMark();

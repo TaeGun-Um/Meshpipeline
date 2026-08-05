@@ -97,7 +97,7 @@ export function checkLighting(bake, albedo = null) {
     return v.length ? v.reduce((s, r) => s + r.mean, 0) / v.length : 0;
   };
 
-  // 1. 제일 밝은 곳은 플라자다. 창이 없는 지하에서 높이 다음으로 위계를
+  // 1. 제일 밝은 곳은 플라자다. 창이 귀한 실내에서 높이 다음으로 위계를
   //    만드는 것이 밝기고, 이 층의 중심은 플라자다.
   if (top.kind !== 'plaza') faults.push(`제일 밝은 칸이 ${top.id}(${top.kind}) 다 — 플라자여야 한다`);
 

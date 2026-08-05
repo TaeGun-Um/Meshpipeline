@@ -224,6 +224,7 @@ export function bakeVertexLight(groups, plan) {
   for (const c of CELLS) acc[c.id] = { sum: 0, n: 0, min: Infinity, max: 0 };
 
   let verts = 0;
+  let statVerts = 0;
   let meshes = 0;
   let clipped = 0;
   // 전체 밝기 분포. **레벨을 눈으로 맞추면 안 된다** — 상위 0.5% 가 1.0 에
@@ -232,6 +233,9 @@ export function bakeVertexLight(groups, plan) {
   const hist = new Uint32Array(101);
 
   for (const root of groups) {
+    // 씬에 안 붙는 그룹(약탈 열림 포즈)은 굽되 통계에서 뺀다 — 화면에 없는
+    // 정점이 칸 바닥 통계와 분포를 오염시키면 잣대가 씬이 아니게 된다.
+    const inStats = root.userData?.bakeStats !== false;
     root.traverse((o) => {
       if (!o.isMesh) return;
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
@@ -313,22 +317,25 @@ export function bakeVertexLight(groups, plan) {
         col[i * 3 + 1] = g;
         col[i * 3 + 2] = b;
 
-        const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        hist[Math.min(100, Math.round(lum * 100))]++;
+        if (inStats) {
+          const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          hist[Math.min(100, Math.round(lum * 100))]++;
 
-        // 바닥을 향해 위를 보는 면만 칸 통계에 넣는다 — "이 방이 밝은가" 는
-        // 서 있는 사람이 보는 바닥의 밝기다.
-        if (c && ny > 0.7 && py < 0.25) {
-          const a = acc[c.id];
-          a.sum += lum;
-          a.n++;
-          if (lum < a.min) a.min = lum;
-          if (lum > a.max) a.max = lum;
+          // 바닥을 향해 위를 보는 면만 칸 통계에 넣는다 — "이 방이 밝은가" 는
+          // 서 있는 사람이 보는 바닥의 밝기다.
+          if (c && ny > 0.7 && py < 0.25) {
+            const a = acc[c.id];
+            a.sum += lum;
+            a.n++;
+            if (lum < a.min) a.min = lum;
+            if (lum > a.max) a.max = lum;
+          }
         }
       }
 
       geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
       verts += pos.count;
+      if (inStats) statVerts += pos.count;
       meshes++;
     });
   }
@@ -342,7 +349,7 @@ export function bakeVertexLight(groups, plan) {
   }
 
   const pct = (q) => {
-    let want = verts * q;
+    let want = statVerts * q; // 분포의 분모도 통계 대상 정점만
     for (let i = 0; i <= 100; i++) {
       want -= hist[i];
       if (want <= 0) return i / 100;

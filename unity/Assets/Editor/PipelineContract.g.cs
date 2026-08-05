@@ -9,7 +9,7 @@ using System.Collections.Generic;
 /// <summary>파이프라인 규약 상수. pipeline/contract.json 에서 생성됨.</summary>
 public static class PipelineContract
 {
-    public const int Version = 1;
+    public const int Version = 2;
 
     // ── 좌표계 변환 ──
     public const string GltfToUnityAxisFlip = "X";

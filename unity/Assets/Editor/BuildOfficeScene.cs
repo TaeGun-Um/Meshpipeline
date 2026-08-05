@@ -82,10 +82,15 @@ public static class BuildOfficeScene
         var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         var root = new GameObject("OfficeSector").transform;
 
+        // interactables 는 소품 중 상호작용 대상 — 물건마다 독립 노드(rack_07 등,
+        // 이름 결정론)라 개별 콜라이더·상태(크랙·약탈 포즈)를 달 수 있다.
+        // interactables_open 은 약탈 뒤의 열림 포즈(rack_07_open) — 씬에 겹쳐
+        // 들어오므로 루트를 꺼 둔다. 게임 로직이 약탈 시 닫힘/열림을 토글한다.
         foreach (var piece in new[]
         {
             "rock.glb", "floors.glb", "walls.glb",
             "ceilings.glb", "props.glb", "fixtures.glb",
+            "interactables.glb", "interactables_open.glb",
         })
         {
             var asset = AssetDatabase.LoadAssetAtPath<GameObject>($"{GlbDir}/{piece}");
@@ -93,6 +98,7 @@ public static class BuildOfficeScene
             var go = (GameObject)PrefabUtility.InstantiatePrefab(asset);
             go.name = Path.GetFileNameWithoutExtension(piece);
             go.transform.SetParent(root, false);
+            if (go.name == "interactables_open") go.SetActive(false);
         }
 
         // ── 재질 교체 — 원본 재질 하나당 구운 재질 하나 (텍스처 공유 유지) ──

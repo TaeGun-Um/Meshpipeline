@@ -12,7 +12,7 @@
     "코드에 숫자를 직접 박지 말 것 — 그렇게 흩어져서 좌표계 혼선이 생겼다."
   ],
 
-  "version": 1,
+  "version": 2,
 
   "units": {
     "length": "meter",
@@ -62,6 +62,39 @@
     }
   },
 
+  "scenes": {
+    "$comment": [
+      "씬별 파이프라인 목록 (#68). tools/pipeline.mjs 가 씬 인자로 여기서 스펙을 찾고,",
+      "없는 씬이면 즉시 실패한다 — ?? 로 때우지 않는다 (lessons.md 2.1 규칙 4).",
+      "",
+      "익스포트 파일 이름은 shots/views.json 의 _tag 를 접두사로 쓴다 (샷 파일과 같은",
+      "규약, 출처도 같은 파일이다). 씬이 달라도 조각 이름(walls·props)이 겹치므로,",
+      "접두사가 없으면 web/export 에서 서로 덮어쓴다. vacant-lot 은 _tag 가 빈",
+      "문자열이라 기존 파일 이름 그대로다.",
+      "",
+      "office-sector 에 convert·blender 단계가 없는 이유: 캐릭터가 없다. 블렌더 FBX",
+      "경유는 휴머노이드 아바타(glTFast 가 만들지 않는 것) 때문에만 필요하다 —",
+      "unityImportRules.preferredRoute 의 주석 참고. 정적 조각은 GLB 직행이 기준이다."
+    ],
+    "vacant-lot": {
+      "assets": ["ground", "road", "walls", "houses", "poles", "props", "weeds_baked", "character"],
+      "$commentAssets": "weeds.glb(원본 인스턴싱)는 비교 실험용이었고 EXT_mesh_gpu_instancing 때문에 규약을 위반하므로 목록에서 제외한다.",
+      "stages": ["contract", "freshness", "inspect", "convert", "blender", "unity"],
+      "unityMethods": ["BuildScene.All", "PipelineCheck.Run"]
+    },
+    "office-sector": {
+      "assets": ["rock", "floors", "walls", "ceilings", "props", "fixtures", "interactables", "interactables_open"],
+      "$commentInteract": "interactables 는 상호작용 소품 — 물건마다 독립 노드다 (크랙·약탈 포즈용 개별 콜라이더·상태). props 는 배경 병합. 분리 사정은 web/src/scenes/office-sector/props.js 의 interactSet 머리말.",
+      "$commentOpen": "interactables_open 은 약탈 뒤의 열림 포즈 (rack_07_open 등, 닫힘과 같은 번호). 브라우저 씬에는 안 붙고 굽기·익스포트만 탄다. 유니티는 임포트 후 루트를 비활성으로 두고 약탈 시 닫힘/열림을 토글한다.",
+      "stages": ["contract", "freshness", "inspect", "unity"],
+      "bakedVertexColors": true,
+      "$commentBaked": "이 씬은 조명을 정점에 굽는다 — 여섯 조각 전부 COLOR_0 이 있어야 한다. 이 검사는 태그 없던 시절의 vacant-lot walls.glb 같은 딴 씬 파일이 섞여 드는 것도 잡는다.",
+      "unityImportDir": "unity/Assets/ProceduralImport/office",
+      "$commentImportDir": "unity 단계가 익스포트를 여기로 복사한다 (태그를 떼고 — BuildOfficeScene.cs 는 rock.glb 등 민이름을 읽는다).",
+      "unityMethods": ["BuildOfficeScene.Full"]
+    }
+  },
+
   "exportRules": {
     "exportInputs": [
       "web/src/core",
@@ -72,11 +105,6 @@
       "web/src/main.js"
     ],
     "$commentInputs": "익스포트 결과물에 영향을 주는 소스만 신선도 검사 대상이다. controls.js(입력·물리)는 지오메트리를 만들지 않으므로 제외 — 넣으면 무관한 변경마다 파이프라인이 헛울린다.",
-
-    "exportedAssets": [
-      "ground", "road", "walls", "houses", "poles", "props", "weeds_baked", "character"
-    ],
-    "$commentAssets": "실사용 에셋 목록. weeds.glb(원본 인스턴싱)는 비교 실험용이었고 EXT_mesh_gpu_instancing 때문에 규약을 위반하므로 파이프라인에서 제외한다.",
 
     "rootTransformMustBeIdentity": true,
     "$comment1": "에셋의 루트 트랜스폼은 원점이어야 한다. 브라우저에서 물리가 갱신하는 런타임 좌표가 박히면 임포트 측에서 공중에 뜬다(실측: y=1.1479).",

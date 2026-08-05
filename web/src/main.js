@@ -15,6 +15,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { sceneResetList } from './core/scenestate.js';
 import { mountSceneMenu } from './scenemenu.js';
+import { mountInteract } from './interact.js';
 
 const SCENE = activeScene();
 const SEED = SCENE.meta.seed;
@@ -125,6 +126,7 @@ window.__built = new Promise((r) => (__buildDone = r));
 let mode = HAS_PLAYER ? MODE.PLAY : MODE.FLY;
 let player = null;
 let flycam = null;
+let interactor = null; // 씬이 interact 를 신고하면 근접 E 토글이 붙는다 (interact.js)
 let world = null; // 활성 씬이 build()에서 돌려준 것 (built · tick · stats)
 let hero = null; // 캐릭터 (하네스가 포즈를 고정하려면 필요하다). player 없으면 null
 let charClips = []; // 캐릭터 애니메이션 클립 (익스포트에 함께 실린다)
@@ -186,6 +188,8 @@ async function build() {
 
   flycam = createFlyCamera(camera, input);
   flycam.syncFromCamera();
+
+  if (world.interact) interactor = mountInteract({ camera, input, interact: world.interact });
 
   bar.style.width = '100%';
   stepEl.textContent = 'BAKE: 완료';
@@ -261,6 +265,7 @@ function frame() {
   // 씬 갱신은 **카메라가 확정된 뒤**에 한다. 비처럼 카메라 위치를 참조하는
   // 것이 있어서, 먼저 돌리면 한 프레임 뒤처진 자리에 뿌려진다.
   world?.tick?.(t, dt);
+  interactor?.update(); // 근접 감지도 카메라 확정 뒤
 
   draw();
 }
@@ -380,13 +385,27 @@ window.__sim = (codes, frames = 60, dt = 1 / 60) => {
 window.__setMode = (m) => setMode(m);
 window.__world = built;
 
-// 블렌더 연결 점검용: 지정한 오브젝트를 .glb로 뽑는다.
+// 파이프라인 인계용: 지정한 오브젝트를 .glb로 뽑는다.
 // bake:true 면 InstancedMesh를 실제 정점으로 구워서 내보낸다.
+//
+// 파일 이름 접두사는 views.json 의 _tag 가 정한다 — 샷 파일과 같은 규약이고
+// 출처도 같다 (__lock 의 주석 참고). 씬이 달라도 조각 이름이 겹치므로
+// (walls·props 가 공터와 오피스에 다 있다) 접두사 없이는 web/export 에서
+// 서로 덮어쓴다. vacant-lot 은 _tag 가 비어 있어 기존 이름 그대로다.
 window.__export = async (key, { bake = false, limit = Infinity, name } = {}) => {
+  // 상호작용 프리뷰로 열어 둔 포즈를 전부 닫는다. 열린 채 내보내면 숨긴
+  // 닫힘 노드가 GLB 에서 빠지고, 옮겨 간 열림 노드가 열림 그룹에서 빠진다.
+  interactor?.reset();
   let target = built[key];
   if (!target) throw new Error(`unknown object: ${key}`);
   if (bake) target = bakeInstances(target, limit);
-  const file = name || `${key}${bake ? '_baked' : ''}.glb`;
+  let file = name;
+  if (!file) {
+    const views = await fetch('/shots/views.json').then((r) => r.json());
+    const set = views[SCENE.meta.id];
+    if (!set) throw new Error(`views.json 에 '${SCENE.meta.id}' 항목이 없다 — _tag 가 없으면 익스포트 파일 이름이 다른 씬과 겹친다`);
+    file = `${set._tag || ''}${key}${bake ? '_baked' : ''}.glb`;
+  }
   // 캐릭터는 스킨 + 애니메이션 클립을 함께 싣는다
   const animations = key === 'character' ? charClips : [];
   const t0 = performance.now();
@@ -446,6 +465,8 @@ window.__rig = async (opt) =>
   (await import('./scenes/model-test/rigtest.js')).rigTest(scene, opt);
 
 window.__lock = async (prefix = '') => {
+  // 열어 둔 포즈가 있으면 뷰가 기준선과 어긋난다 — 검증은 닫힘 상태가 기준
+  interactor?.reset();
   const views = await fetch('/shots/views.json').then((r) => r.json());
   const set = views[SCENE.meta.id];
   if (!set) throw new Error(`views.json 에 '${SCENE.meta.id}' 항목이 없다`);

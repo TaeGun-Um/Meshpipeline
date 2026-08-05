@@ -42,6 +42,9 @@ export class MeshBuilder {
   //             없으면 담을 데가 없다. 실내 씬의 바닥·벽·천장이 이걸 쓴다.
   //             소품에는 주지 않는다. 0.4m 짜리 의자는 꼭짓점만으로 충분하고,
   //             전부에 주면 삼각형이 의미 없이 몇 배로 는다.
+  // ledger      false 면 조각을 배치 원장에 올리지 않는다. 씬에 안 붙는
+  //             지오메트리(상태 포즈 변형처럼 "지금은 없는" 것)에 쓴다 —
+  //             올리면 열린 문짝이 통로를 침범한 것으로 잡힌다.
   constructor(name, opts = {}) {
     this.name = name;
     this.castShadow = opts.castShadow !== false;
@@ -50,6 +53,7 @@ export class MeshBuilder {
     this.frustumCulled = opts.frustumCulled !== false;
     this.attributes = opts.attributes || [];
     this.span = opts.span || 0;
+    this.ledger = opts.ledger !== false;
     this.parts = [];
   }
 
@@ -84,7 +88,7 @@ export class MeshBuilder {
     if (!geometry) throw new Error(`${this.name}: geometry 가 없다`);
     if (!material) throw new Error(`${this.name}: material 이 없다`);
     // 열린 기록이 있을 때만 경계를 잰다. 표시하지 않은 빌더는 비용이 0 이다.
-    if (ledgerOpen()) growItem(geometry);
+    if (this.ledger && ledgerOpen()) growItem(geometry);
     this.parts.push(data ? { geometry, material, ...data } : { geometry, material });
     return this;
   }

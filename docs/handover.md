@@ -10,8 +10,10 @@
 
 ## 0. 작업 대상은 오피스 섹터 하나다
 
-**활성 씬은 4번 `office-sector`** (지하 연구시설 1층, 첫 실내 씬) 이고,
+**활성 씬은 4번 `office-sector`** (회사 사옥 사무층, 첫 실내 씬) 이고,
 **앞으로의 작업은 이 씬에만 한다** (2026-08-03 사용자 결정).
+이 씬은 **게임의 오프닝 무대**다 — 스토리와 모델링 목표는
+[`scenes/office-sector/story.md`](scenes/office-sector/story.md) (2026-08-05 확정).
 
 나머지 세 씬 — 공터·나이트시티·모델테스트 — 은 **동결**이다. 돌아갈 계획이
 없고 백로그도 없다. 값어치는 거기서 학습한 데이터다: `lessons.md` 의 규칙,
@@ -58,12 +60,13 @@ node tools/verify.mjs office-sector   # 기준선과 픽셀 비교
 
 | # | 문서 | 무엇 |
 |---|---|---|
-| 1 | `scenes/office-sector/facility.md` | 활성 씬의 형태 근거 |
-| 2 | `lessons.md` | **실패 패턴과 규칙 전부.** 결합 대장 · 검증의 구멍 · 형태와 밝기의 규칙 |
-| 3 | `scenes/office-sector/status.md` | 생성기 구조 — 어디를 고치면 무엇이 바뀌나 |
-| 4 | `verification.md` | 검증 방법론 — 무엇이 버그를 잡았고 무엇이 시간만 썼나 |
-| 5 | `status.md` | 저장소 전체 상태 · 씬 상태 계약 · 문서 지도 |
-| 6 | `architecture.md` `modules.md` `pipeline.md` `toolchain.md` | 필요할 때 |
+| 1 | `scenes/office-sector/story.md` | **게임에서 무엇을 하는 씬인가** — 형태 근거의 최상위 (2026-08-05 확정) |
+| 2 | `scenes/office-sector/facility.md` | 활성 씬의 형태 근거 — 치수·조명·검사 규칙 |
+| 3 | `lessons.md` | **실패 패턴과 규칙 전부.** 결합 대장 · 검증의 구멍 · 형태와 밝기의 규칙 |
+| 4 | `scenes/office-sector/status.md` | 생성기 구조 — 어디를 고치면 무엇이 바뀌나 |
+| 5 | `verification.md` | 검증 방법론 — 무엇이 버그를 잡았고 무엇이 시간만 썼나 |
+| 6 | `status.md` | 저장소 전체 상태 · 씬 상태 계약 · 문서 지도 |
+| 7 | `architecture.md` `modules.md` `pipeline.md` `toolchain.md` | 필요할 때 |
 
 **형태를 만들기 전에 근거 문서부터, 코드를 고치기 전에 규칙부터.** 이
 프로젝트에서 가장 크게 실패한 지점이 "형태를 만들고 설명을 갖다 붙인 것"

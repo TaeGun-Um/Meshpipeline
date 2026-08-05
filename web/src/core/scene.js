@@ -82,6 +82,8 @@ export class Scene {
       // 배치 검사 결과 (core/placement.js). 관통·부유를 잡는다. 안 하는 씬은 null.
       placement: world.placement || null,
       tick: world.tick || null,
+      // 근접 상호작용 쌍 (src/interact.js). 신고하는 씬에만 하네스가 E 토글을 단다.
+      interact: world.interact || null,
     };
   }
 

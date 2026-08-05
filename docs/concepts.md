@@ -204,8 +204,9 @@ blender --background --python tools/glb-to-fbx.py -- --mode loose --out ... a.gl
 
 ### 아직 안 정한 것
 
-나이트시티는 **한 번도 내보낸 적이 없다.** `contract.json` 의 `exportedAssets`
-목록은 전부 주택가 공터의 것이다. 인계 단계에 들어가기 전에 정해야 한다.
+나이트시티는 **한 번도 내보낸 적이 없다.** `contract.json` 의 `scenes` 에는
+vacant-lot 과 office-sector 의 목록만 있다 (2026-08-05 씬별 목록화 —
+`pipeline.md`). 나이트시티를 내보내려면 거기에 항목부터 정해야 한다.
 
 - 어떤 덩어리로 쪼갤 것인가 — 통짜 하나 / 구역별 / 건물 유형별 프리팹
 - 브라우저에서는 드로우콜을 줄이려고 재질별로 합쳐 놨는데, 유니티에서 LOD·오클루전

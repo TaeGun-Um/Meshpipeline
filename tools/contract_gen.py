@@ -6,7 +6,7 @@
 
 """블렌더 FBX 익스포트 규약. pipeline/contract.json 에서 생성됨."""
 
-VERSION = 1
+VERSION = 2
 
 # bpy.ops.export_scene.fbx 에 그대로 넘기는 옵션
 FBX_OPTIONS = {

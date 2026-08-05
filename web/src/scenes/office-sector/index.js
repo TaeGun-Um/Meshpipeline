@@ -1,9 +1,10 @@
-// 씬 4: GATE Cascade Research Facility · Office Sector · Level 1.
+// 씬 4: 회사 사옥의 사무 층 — 게임 오프닝의 무대.
 //   web/?scene=office-sector
 //
-// 지하 500m 연구시설의 사무 구역 첫 층. 레퍼런스는 게임 Abiotic Factor 이고,
-// **그 게임의 평면도를 베끼지 않는다** — 섹터의 성격과 구성 요소를 참고하고
-// 배치는 우리 규칙으로 뽑는다 (docs/scenes/office-sector/facility.md).
+// 지진 직후, 플레이어가 깨어나 탈출하는 층이다 (docs/scenes/office-sector/
+// story.md). 지하 연구시설로 시작했다가 2026-08-05 스토리 확정으로 지상
+// 사옥으로 전환했다 — 외벽·창문 등 전환의 형태 작업은 status.md 5.2 에 있다.
+// 레퍼런스의 평면도를 베끼지 않는 원칙은 그대로다 (facility.md).
 //
 // ── 앞선 씬들과 무엇이 다른가 ──────────────────────────────────────────────
 // 도시(씬 2)는 전부 **외부**였다. 여기는 안이다. 그 차이가 셋을 바꾼다.
@@ -53,8 +54,7 @@ class OfficeSector extends Scene {
 
     const M = await step('재질', 18, () => buildMaterials());
 
-    // 지하다. 안개로 복도 끝을 지운다 — 창이 없어 원경이 없으므로 옅게.
-    // 실내는 원경이 없다. 안개는 복도 끝을 삼킬 정도면 충분하고,
+    // 실내라 원경이 없다. 안개는 복도 끝을 삼킬 정도면 충분하고,
     // 세게 주면 8m 앞 벽까지 뿌예져 공간이 좁아 보인다.
     scene.fog = new THREE.FogExp2(0x0b0d12, 0.012);
     scene.background = new THREE.Color(0x05060a);
@@ -67,8 +67,15 @@ class OfficeSector extends Scene {
     const walls = await step('벽 · 문 · 유리', 56, () => buildWalls(scene, M));
     built.walls = walls.group;
     built.ceilings = await step('천장', 66, () => buildCeilings(scene, M));
-    const props = await step('소품 · 가구 · 설비', 76, () => createProps(scene, M));
+    // lp 를 넘긴다 — 스프링클러가 형광등 자리를 물어보고 비킨다 (props.services)
+    const props = await step('소품 · 가구 · 설비', 76, () => createProps(scene, M, lp));
     built.props = props.group;
+    // 상호작용 소품 — 물건마다 독립 노드 (props.js interactSet 머리말).
+    // 익스포트 조각으로도 따로 나간다 — 유니티가 개별 콜라이더·상태를 단다.
+    built.interactables = props.interactables;
+    // 약탈 뒤의 열림 포즈. **씬에는 안 붙는다** (화면 비용 0) — 빛 굽기와
+    // 익스포트만 태운다. 유니티가 닫힘/열림 노드를 1프레임에 토글한다.
+    built.interactables_open = props.open;
     built.fixtures = await step('등', 82, () => createFixtures(scene, M, lp));
 
     // ── 조명 ─────────────────────────────────────────────────────────────
@@ -79,9 +86,13 @@ class OfficeSector extends Scene {
     let bake = null;
     let lights = 0;
     if (BAKED) {
+      // interactables_open 은 씬 밖 그룹이지만 같이 굽는다 — bake 는 그룹을
+      // 직접 순회하고 지오메트리가 월드 좌표라 씬 소속이 필요 없다. 열림
+      // 상태는 열림 포즈 그대로 구워야 상자 속까지 맞는 빛이 든다.
       bake = await step('빛 굽기', 90, () =>
         bakeVertexLight(
-          [built.rock, built.floors, built.walls, built.ceilings, built.props, built.fixtures],
+          [built.rock, built.floors, built.walls, built.ceilings, built.props,
+           built.interactables, built.interactables_open, built.fixtures],
           lp
         )
       );
@@ -105,20 +116,51 @@ class OfficeSector extends Scene {
     const lum = bake ? checkLighting(bake, albedo) : { faults: [], rows: [], span: 0 };
 
     const fixtures = lp.fixtures.length;
+
+    // ── 근접 상호작용 프리뷰 (하네스 interact.js) ────────────────────────
+    // 닫힘/열림 노드를 이름으로 짝짓는다. 라벨에 없는 종류가 생기면 던진다 —
+    // 기본값으로 때우면 힌트에 'undefined' 가 뜬 채 굴러간다.
+    const KIND_LABEL = {
+      rack: '서버 랙',
+      panel: '배전반',
+      carton: '골판지 상자',
+      crate: '플라스틱 상자',
+      desk: '책상 서랍',
+    };
+    const labelOf = (name) => {
+      const l = KIND_LABEL[name.split('_')[0]];
+      if (!l) throw new Error(`상호작용 라벨에 '${name}' 의 종류가 없다 — KIND_LABEL 에 추가한다`);
+      return `${l} ${name}`;
+    };
+    const openByName = new Map(props.open.children.map((o) => [o.name, o]));
+    const interact = {
+      radius: 2.4,
+      pairs: props.interactables.children
+        .filter((o) => openByName.has(`${o.name}_open`))
+        .map((o) => ({
+          closed: o,
+          open: openByName.get(`${o.name}_open`),
+          label: labelOf(o.name),
+        })),
+    };
+
     return {
       built,
+      interact,
       stats: [
         `칸 ${plan.cells} · 벽 ${walls.runs}구간`,
         `문 ${walls.tally.door + walls.tally.wide + walls.tally.glass}`,
         bake
           ? `등 ${fixtures} · 구운 광원 ${lp.emitters.length} · 밝기폭 ${lum.span.toFixed(1)}배`
           : `등 ${fixtures} · 실시간 광원 ${lights}`,
-        `소품 ${Object.values(props.tally).reduce((s, v) => s + v, 0)}`,
+        `소품 ${Object.values(props.tally).reduce((s, v) => s + v, 0)} (개별 노드 ${props.interactCount} · 열림 포즈 ${props.openCount})`,
       ],
       counts: {
         cells: plan.cells,
         doors: walls.tally.door,
         lights: lp.emitters.length,
+        interactables: props.interactCount,
+        lootPoses: props.openCount,
         ...props.tally,
       },
       placement: {

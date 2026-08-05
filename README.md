@@ -10,7 +10,7 @@
 | 1 | `vacant-lot` 주택가 공터 | 동결 · 파이프라인 기준 씬. 좌표계·조명 규약을 여기서 확정했다 | 182,428 | 63MB |
 | 2 | `night-city` 나이트시티 | 동결 · 사이버펑크 야간 도시 · 구역·매싱·1층 점포 | 4,203,303 | 218MB |
 | 3 | `model-test` 모델 테스트 | 동결 · 서브컬처 아바타 — 코드로 사람이 어디까지 되나의 결론 | 61,380 | 9MB |
-| 4 | `office-sector` 오피스 섹터 | **활성 — 유일한 작업 대상.** 지하 연구시설 1층 · 실내 생성기 · **정점에 구운 조명** | 126,372 | 33MB |
+| 4 | `office-sector` 오피스 섹터 | **활성 — 유일한 작업 대상.** 회사 사옥 사무층 (게임 오프닝 무대) · 실내 생성기 · **정점에 구운 조명** | 126,564 | 33MB |
 
 삼각형은 씬이 들고 있는 지오메트리 총량이다 (`__audit()`). 한 프레임에 실제로
 그리는 수는 그림자 패스 때문에 이보다 많다.
@@ -89,10 +89,14 @@ await window.__export('weeds', { bake: true, name: 'weeds_baked.glb' });
 파이프라인으로 블렌더 변환 → 유니티 임포트 → 검증을 한 번에 한다:
 
 ```bash
-node tools/pipeline.mjs            # 전체 (약 19초, 검사 79건)
-node tools/pipeline.mjs 3 6        # 특정 단계만
-node tools/pipeline.mjs --accept   # 새 스펙을 승인 (아래 참고)
+node tools/pipeline.mjs                  # vacant-lot 전체 (약 19초, 검사 79건)
+node tools/pipeline.mjs office-sector    # 활성 씬 경로 — 블렌더 없이 GLB 직행
+node tools/pipeline.mjs 3 6              # 특정 단계만
+node tools/pipeline.mjs --accept         # 새 스펙을 승인 (아래 참고)
 ```
+
+어느 에셋을 어느 단계로 보내는지는 씬마다 다르고 `pipeline/contract.json` 의
+`scenes` 가 정한다 ([docs/pipeline.md](docs/pipeline.md)).
 
 통과하면 종료 코드 0, 하나라도 깨지면 1이다.
 

@@ -13,13 +13,20 @@
 그게 결정되기 전에 하류를 검증하는 건 의미가 없다.
 
 ```bash
-node tools/pipeline.mjs            # 전체 (약 19초, 검사 79건)
-node tools/pipeline.mjs 3 6        # 특정 단계만
-node tools/pipeline.mjs --accept   # 새 스펙 승인
+node tools/pipeline.mjs                  # vacant-lot 전체 (약 19초, 검사 79건)
+node tools/pipeline.mjs office-sector    # 오피스 섹터 경로 (블렌더 없음 — 아래)
+node tools/pipeline.mjs 3 6              # 특정 단계만 (씬 인자와 섞어도 된다)
+node tools/pipeline.mjs --accept         # 새 스펙 승인
 BLENDER=... UNITY=... node tools/pipeline.mjs
 ```
 
 종료 코드 0 = 통과, 1 = 실패. 실패 항목은 `단계/항목: 상세` 로 전부 열거된다.
+
+씬마다 **에셋 목록과 도는 단계가 다르다** — `contract.json` 의 `scenes.<id>` 가
+정한다. 익스포트 파일 이름은 `shots/views.json` 의 `_tag` 를 접두사로 쓴다
+(샷 파일과 같은 규약 — `of_walls.glb` 처럼. 씬이 달라도 조각 이름이 겹치므로
+접두사 없이는 `web/export` 에서 서로 덮어쓴다. vacant-lot 은 태그가 비어 있어
+기존 이름 그대로다).
 
 ## `--accept` — 스펙 승인
 
@@ -49,6 +56,7 @@ BLENDER=... UNITY=... node tools/pipeline.mjs
 |---|---|
 | `spaces` | 브라우저·glTF·블렌더·유니티의 손(handedness)·up축·정면 |
 | `conversions` | glTF→Unity 축 반전(`X`), 블렌더 FBX 왕복 추가 회전(`180°`) |
+| `scenes` | **씬별 목록** — 에셋, 도는 단계, 유니티 임포트 경로·조립 메서드 |
 | `exportRules` | 루트 원점, 인스턴스 굽기, 노말맵 사용, 금지 확장, 감시 대상 소스 |
 | `blenderFbxOptions` | FBX 익스포터에 그대로 넘기는 19개 옵션 |
 | `unityImportRules` | `useFileScale`, 애니메이션 타입, 루프 클립, `modelYaw` |
@@ -78,8 +86,10 @@ pipeline/contract.json
 
 ### 2. freshness — 익스포트가 브라우저 소스보다 최신인지
 
-`exportRules.exportInputs` 에 지정된 경로의 `.js` 최신 수정시각과 `web/export/*.glb` 를
-비교한다. 소스가 더 새로우면 실패하고 어느 파일 때문인지 알려준다.
+`exportRules.exportInputs` 에 지정된 경로의 `.js` 최신 수정시각과 **그 씬의 익스포트**
+(`scenes.<id>.assets`, 제일 묵은 것 기준)를 비교한다. 소스가 더 새로우면 실패하고
+어느 파일 때문인지 알려준다. `web/export` 는 씬을 가리지 않는 작업대라서 디렉토리
+전체가 아니라 그 씬의 에셋만 본다.
 
 > **왜 필요한가**: 브라우저 코드를 고친 뒤 재익스포트를 잊는 것이 가장 흔한 실수다.
 > 그러면 하류 전체가 낡은 애셋을 검증하며 "통과"라고 보고한다.
@@ -89,7 +99,7 @@ pipeline/contract.json
 
 ### 3. inspect — GLB가 규약을 지키는지
 
-`exportRules.exportedAssets` 의 8개 애셋에 대해 GLB 바이너리를 직접 파싱한다.
+`scenes.<id>.assets` 의 애셋(vacant-lot 8개 · 오피스 6개)에 대해 GLB 바이너리를 직접 파싱한다.
 
 | 검사 | 왜 |
 |---|---|
@@ -97,6 +107,7 @@ pipeline/contract.json
 | `rootAtOrigin` | 브라우저 런타임 좌표가 박히면 임포트 측에서 공중에 뜬다 (실측 y=1.1479) |
 | `noBumpExt` | `EXT_materials_bump` 는 비표준이라 블렌더·유니티가 통째로 버린다 |
 | `normalTextures` | 텍스처가 있는 조각은 노말맵 개수가 기대와 같아야 한다 |
+| `bakedVertexColors` | 빛을 정점에 굽는 씬(`bakedVertexColors: true`, 오피스)은 조각마다 `COLOR_0` 이 있어야 한다. 태그 도입 전에 남은 딴 씬의 같은 이름 파일이 섞여 드는 것도 잡는다 |
 
 ### 4. convert — 블렌더로 glb → fbx
 
@@ -146,16 +157,24 @@ vacant-lot 은 `BuildScene.cs`, 오피스는 `BuildOfficeScene.cs` 다. 방식�
 정점색, 언릿)로 갈아 끼운다. 발광·유리는 재질 이름으로 보존한다.
 
 ```
-브라우저에서:  for (const k of ['rock','floors','walls','ceilings','props','fixtures'])
-                 await __export(k);
-복사:          web/export/*.glb -> unity/Assets/ProceduralImport/office/
-유니티:        Unity.exe -batchmode -quit -projectPath unity
-                 -executeMethod BuildOfficeScene.Full
+브라우저에서:  for (const k of ['rock','floors','walls','ceilings','props',
+                                'fixtures','interactables','interactables_open'])
+                 await __export(k);        // of_rock.glb 등 — _tag 가 접두사
+파이프라인:    node tools/pipeline.mjs office-sector
+                 (태그를 떼며 unity/Assets/ProceduralImport/office/ 로 복사까지 한다)
 결과:          Assets/Scenes/OfficeSector.unity · Reports/office_scene.png
 ```
 
-contract·pipeline.mjs 는 아직 vacant-lot 목록을 하드코딩한다 — 씬별 목록화가
-남은 일이다 (#68).
+`props` 는 배경 병합, `interactables` 는 상호작용 소품 — 물건마다 독립
+노드(`rack_07` 같은 결정론 이름)라 유니티가 개별 콜라이더·상태를 단다.
+`interactables_open` 은 약탈 뒤의 열림 포즈(`rack_07_open`, 닫힘과 같은 번호) —
+브라우저 씬에는 안 붙고 굽기·익스포트만 타며, 유니티 조립이 루트를 비활성으로
+둔다. 게임 로직이 약탈 시 두 노드를 토글한다.
+
+씬별 목록은 `contract.json` 의 `scenes` 가 정한다 (#68 의 목록화 부분, 2026-08-05).
+오피스 경로는 `contract → freshness → inspect → unity` 다 — **convert·blender 단계가
+없다.** 블렌더 FBX 경유는 휴머노이드 아바타(glTFast 가 만들지 않는 것) 때문에만
+필요한데 이 씬에는 캐릭터가 없다. 아래 "두 임포트 경로 비교" 참고.
 
 ## 좌표계 — 확정된 사실
 

@@ -30,6 +30,67 @@ function tube(b, r, len, at, mat, axis = 'y', seg = 6, capped = false) {
   b.add(g, mat);
 }
 
+// ── 상호작용 소품의 분리 ───────────────────────────────────────────────────
+//
+// 병합 배치(Props)는 **배경 소품만** 한다. 크랙(파괴)·약탈 포즈처럼 게임에서
+// 개별 상태를 갖는 물건은 저마다 독립 노드로 살아남아야 유니티에서 개별
+// 콜라이더와 상태를 받는다 — 병합되면 어느 정점이 어느 물건인지 알 길이 없다.
+//
+// 이름은 결정적이다. 생성이 시드·좌표 해시에 고정되므로 같은 코드는 같은
+// 번호를 낸다 — 유니티 스크립트가 이 이름(rack_07 등)으로 물건을 찾는다.
+//
+// 비용: 노드마다 재질 수만큼 드로우콜이 는다 (병합의 반대급부). 실측은
+// scenes/office-sector/status.md 1장. 배치 원장은 그대로다 — mark 는 전역
+// 원장에 쓰므로 어느 빌더에 조각을 넣든 열린 기록으로 들어간다.
+function interactSet() {
+  const group = new THREE.Group();
+  group.name = 'Interactables';
+  // 약탈 뒤의 열림 포즈. **씬에 안 붙는다** — 화면 비용 0. 굽기와 익스포트만
+  // 태운다 (bake 는 그룹을 직접 순회하고 지오메트리는 월드 좌표라 씬 소속이
+  // 필요 없다). 유니티가 닫힘/열림을 토글한다 — 1프레임 상태 교체이므로
+  // 열림 상태는 열림 포즈 그대로 구워 둔다.
+  const openGroup = new THREE.Group();
+  openGroup.name = 'InteractablesOpen';
+  // 굽기는 받되 **밝기 통계에는 안 들어간다** — 화면에 없는 포즈의 정점이
+  // 칸 바닥 통계·분포(p995)에 섞이면 잣대가 씬이 아니게 된다 (bake.js).
+  openGroup.userData.bakeStats = false;
+  const counts = {};
+  const builders = [];
+  const openBuilders = [];
+  return {
+    group,
+    openGroup,
+    counts,
+    get openCount() {
+      return openBuilders.length;
+    },
+    spawn(kind) {
+      const n = (counts[kind] = (counts[kind] ?? 0) + 1);
+      const nb = new MeshBuilder(`${kind}_${String(n).padStart(2, '0')}`);
+      builders.push(nb);
+      return nb;
+    },
+    // 약탈 가능한 물건 — 닫힘(씬에 보이는 것)과 열림(약탈 뒤 포즈) 두 벌.
+    // 같은 번호를 나눠 갖는다 (rack_07 / rack_07_open). 열림 빌더는 배치
+    // 원장에 안 올린다 — 열린 문짝은 "지금 씬에 있는 것" 이 아니다.
+    spawnPair(kind) {
+      const n = (counts[kind] = (counts[kind] ?? 0) + 1);
+      const name = `${kind}_${String(n).padStart(2, '0')}`;
+      const closed = new MeshBuilder(name);
+      const open = new MeshBuilder(`${name}_open`, { ledger: false });
+      builders.push(closed);
+      openBuilders.push(open);
+      return { closed, open };
+    },
+    build(scene) {
+      for (const nb of builders) nb.build(group);
+      scene.add(group);
+      for (const nb of openBuilders) nb.build(openGroup);
+      return group;
+    },
+  };
+}
+
 // ── 벽에 붙는 물건의 좌표계 ────────────────────────────────────────────────
 //
 // 벽마다 축이 x 냐 z 냐로 갈리면 조각마다 삼항연산자가 붙고, 하나만 틀려도
@@ -44,6 +105,20 @@ const wallSize = (w, wid, h, thick) =>
 const wallBox = (b, w, u, v, y, wid, h, thick, mat) => {
   const s = wallSize(w, wid, h, thick);
   b.box(s[0], s[1], s[2], wallAt(w, u, v, y), mat, 0);
+};
+
+// 경첩처럼 벽면에서 **회전해 여닫는** 조각 — 축 정렬 wallBox 로는 못 놓는다.
+// 로컬 (+x = 벽을 따라, +z = 방 안쪽, 원점 = 벽 위 u0·바닥) 에서 짓고 한 번에
+// 옮긴다. 축·inward 조합 둘에서 로컬 +x 가 세계에서 뒤집히는데(회전은 반사가
+// 아니므로), 경첩이 반대 모서리로 가는 것뿐이라 시각적으로 무해하고 결정론은
+// 유지된다.
+const wallYaw = (w) =>
+  w.axis === 'x' ? (w.inward > 0 ? 0 : Math.PI) : w.inward > 0 ? Math.PI / 2 : -Math.PI / 2;
+const wallPut = (b, w, u0, g, m) => {
+  g.rotateY(wallYaw(w));
+  const [px, , pz] = wallAt(w, u0, 0, 0);
+  g.translate(px, 0, pz);
+  b.add(g, m);
 };
 
 // 간격 p 로 [lo, hi] 를 채운 중심들. 자리가 모자라면 빈 배열 — **하나를
@@ -208,19 +283,33 @@ function terminal(b, x, y, z, dir, M) {
 // ── 천장 설비 ──────────────────────────────────────────────────────────────
 //
 // 복도 천장 위에는 덕트와 케이블 트레이가 지나간다. 마감 천장에 가려 안 보이지만
-// **스프링클러와 점검구는 뚫고 내려온다** — 그게 지하 시설의 표식이다.
-function services(b, c, M, tally) {
+// **스프링클러와 점검구는 뚫고 내려온다** — 그게 설비를 이고 사는 건물의 표식이다.
+function services(b, c, M, tally, lp) {
   const long = c.z1 - c.z0 > c.x1 - c.x0;
   const lo = long ? c.z0 : c.x0;
   const hi = long ? c.z1 : c.x1;
   const mid = long ? (c.x0 + c.x1) / 2 : (c.z0 + c.z1) / 2;
 
-  // 스프링클러 — 3.0m 격자 (실제 규정도 이 근처다)
+  // 스프링클러 — 3.0m 격자 (실제 규정도 이 근처다).
+  // **형광등 자리는 묻고 비킨다.** 안 물었더니 격자가 등판 한가운데를 뚫고
+  // 내려와 발광면에 검은 꼭지가 박혀 있었다 — 놓기 전에 그 자리에 무엇이
+  // 있는지 묻는다 (lessons.md 2장의 공통 원인). 등 격자와 스프링클러 격자가
+  // 거의 같은 자리라 **빼면 안 되고 옆으로 민다** — 스킵으로 했더니 103개
+  // 중 10개만 남았다. 실제 천장도 헤드가 등 사이에 선다.
+  const lamps = lp.fixtures.filter((f) => f.cell === c.id);
+  const clearLamp = (x, z) => {
+    const f = lamps.find((q) => Math.abs(x - q.x) < 0.72 && Math.abs(z - q.z) < 0.42);
+    if (!f) return [x, z];
+    const dz = z <= f.z ? -0.55 : 0.55; // 등판 짧은 변(z) 옆으로
+    const nz = f.z + dz;
+    return nz > c.z0 + 0.3 && nz < c.z1 - 0.3 ? [x, nz] : [x, f.z - dz];
+  };
   b.mark('service', `sprinkler:${c.id}`);
   for (const x of fit(c.x0, c.x1, 3.0, 0.5)) {
     for (const z of fit(c.z0, c.z1, 3.0, 0.5)) {
-      b.cylinder(0.012, 0.012, 0.09, [x, c.h - 0.045, z], M.trim, 5);
-      b.sphere(0.028, [x, c.h - 0.1, z], M.steel, 5, 3);
+      const [sx, sz] = clearLamp(x, z);
+      b.cylinder(0.012, 0.012, 0.09, [sx, c.h - 0.045, sz], M.trim, 5);
+      b.sphere(0.028, [sx, c.h - 0.1, sz], M.steel, 5, 3);
       tally.sprinkler = (tally.sprinkler ?? 0) + 1;
     }
   }
@@ -245,19 +334,20 @@ function services(b, c, M, tally) {
       g.translate(long ? mid + off : (lo + hi) / 2, y, long ? (lo + hi) / 2 : mid + off);
       b.add(g, mat);
       tally.pipe = (tally.pipe ?? 0) + 1;
-    }
-    // 행어
-    for (const t of fit(lo, hi, 3.6, 1.0)) {
-      for (const off of [-1.85, 1.95]) {
-        const at = long ? [mid + off, c.h - 0.28, t] : [t, c.h - 0.28, mid + off];
-        b.box(0.05, 0.5, 0.05, at, M.trim, 0);
+      // 행어 — **배관마다**, 천장에서 배관 윗면까지 내려온다. 처음에 배관과
+      // 딴 좌표(-1.85·1.95)에 세워 기둥이 허공을 짚고 있었다 — 연결부의
+      // 좌표는 연결할 것에서 나와야 한다 (utility 의 배관 행어와 같은 방식).
+      const hh = 0.55 - r + 0.04;
+      for (const t of fit(lo, hi, 3.6, 1.0)) {
+        const at = long ? [mid + off, c.h - hh / 2, t] : [t, c.h - hh / 2, mid + off];
+        b.box(0.05, hh, 0.05, at, M.trim, 0);
       }
     }
     b.endMark();
     return;
   }
 
-  // 복도 천장 아래로 내려온 덕트 — 낮은 천장에 굵은 관이 지나가면 지하답다
+  // 복도 천장 아래로 내려온 덕트 — 낮은 천장에 굵은 관이 지나가면 뒷복도답다
   if (c.kind === 'corridor') {
     b.mark('service', `duct:${c.id}`);
     const y = c.h - 0.26;
@@ -350,20 +440,22 @@ function corridorWalls(b, c, M, tally) {
 
 // ── 칸 종류별 ──────────────────────────────────────────────────────────────
 
-function cafeteria(b, c, M, tally) {
+function cafeteria(b, c, M, tally, I) {
   // 식탁 — 4인 원탁이 아니라 긴 테이블. 급식 시설은 대개 그렇다.
+  // 식탁·의자는 파괴 대상이라 저마다 노드다 (interactSet 머리말).
   b.mark('furniture', `tables:${c.id}`);
   for (const x of fit(c.x0, c.x1, 3.1, 1.6)) {
     for (const z of fit(c.z0, c.z1, 2.6, 1.6)) {
-      b.box(2.0, 0.06, 0.8, [x, 0.74, z], M.laminate, 0);
+      const tb = I.spawn('table');
+      tb.box(2.0, 0.06, 0.8, [x, 0.74, z], M.laminate, 0);
       for (const dx of [-0.85, 0.85]) {
-        for (const dz of [-0.32, 0.32]) b.box(0.05, 0.72, 0.05, [x + dx, 0.37, z + dz], M.trim, 0);
+        for (const dz of [-0.32, 0.32]) tb.box(0.05, 0.72, 0.05, [x + dx, 0.37, z + dz], M.trim, 0);
       }
       // 의자 — 양쪽에 둘씩. **식탁을 바라보게** 돌린다.
       // face 는 앉은 사람이 보는 방향이므로 -z 쪽 의자는 +z 를 본다.
       for (const dz of [-0.66, 0.66]) {
         for (const dx of [-0.5, 0.5]) {
-          chair(b, [x + dx, 0, z + dz], dz < 0 ? 0 : Math.PI, M, M.plastic);
+          chair(I.spawn('chair'), [x + dx, 0, z + dz], dz < 0 ? 0 : Math.PI, M, M.plastic);
         }
       }
       tally.table = (tally.table ?? 0) + 1;
@@ -384,7 +476,7 @@ function cafeteria(b, c, M, tally) {
       [0.96, 1.87, M.vendBlue],
     ];
     const seats = fit(0, len, 1.55, 1.4).slice(0, 4);
-    seats.forEach((v, i) => vendor(b, w, w.a + v, SPEC[i % 4], i, M));
+    seats.forEach((v, i) => vendor(I.spawn('vend'), w, w.a + v, SPEC[i % 4], i, M));
     // 벽이 좁으면 4개 미만이 나온다 — 고정 +4 로 적으면 tally 가 거짓말을 한다
     tally.vending = (tally.vending ?? 0) + seats.length;
     b.endMark();
@@ -498,7 +590,7 @@ function vendor(b, w, u, spec, idx, M) {
 //   4. 랙 번호
 //
 // ax 는 랙이 늘어선 축('x' 면 랙이 x 로 줄지어 서고 앞면은 z 를 본다).
-function serverRack(b, u, v, ax, face, M, seed) {
+function serverRack(b, u, v, ax, face, M, seed, pose = 'closed') {
   const W_ = 0.6;
   const D_ = 1.0;
   const HT = 2.0;
@@ -563,15 +655,55 @@ function serverRack(b, u, v, ax, face, M, seed) {
   // ── 망문 ─────────────────────────────────────────────────────────────
   //
   // 반투명이라 뒤의 유닛과 표시등이 비친다. 테두리·손잡이·잠금이 있어야
-  // "잠긴 문" 으로 보인다.
+  // "잠긴 문" 으로 보인다. pose 'open' 이면 경첩축으로 열려 있다 — 약탈 뒤.
   const dz = D_ / 2 + 0.01;
-  box(0, dz, HT / 2, W_ - 0.03, HT - 0.1, 0.012, M.meshDoor);
-  for (const s of [-1, 1]) box((s * (W_ - 0.05)) / 2, dz + 0.008, HT / 2, 0.035, HT - 0.1, 0.02, M.rack);
-  for (const s of [-1, 1]) box(0, dz + 0.008, HT / 2 + (s * (HT - 0.1)) / 2, W_ - 0.03, 0.035, 0.02, M.rack);
-  box(W_ / 2 - 0.07, dz + 0.035, HT / 2, 0.022, 0.26, 0.022, M.trim); // 손잡이
-  box(W_ / 2 - 0.07, dz + 0.022, HT / 2 - 0.2, 0.05, 0.05, 0.016, M.trim); // 잠금
-  // 랙 번호 — 종이(알베도 0.7)로 뒀더니 어두운 랙 위에서 흰 판때기로 튀었다
-  box(-W_ / 2 + 0.13, dz + 0.02, HT - 0.13, 0.1, 0.036, 0.008, M.trim);
+  if (pose === 'closed') {
+    box(0, dz, HT / 2, W_ - 0.03, HT - 0.1, 0.012, M.meshDoor);
+    for (const s of [-1, 1]) box((s * (W_ - 0.05)) / 2, dz + 0.008, HT / 2, 0.035, HT - 0.1, 0.02, M.rack);
+    for (const s of [-1, 1]) box(0, dz + 0.008, HT / 2 + (s * (HT - 0.1)) / 2, W_ - 0.03, 0.035, 0.02, M.rack);
+    box(W_ / 2 - 0.07, dz + 0.035, HT / 2, 0.022, 0.26, 0.022, M.trim); // 손잡이
+    box(W_ / 2 - 0.07, dz + 0.022, HT / 2 - 0.2, 0.05, 0.05, 0.016, M.trim); // 잠금
+    // 랙 번호 — 종이(알베도 0.7)로 뒀더니 어두운 랙 위에서 흰 판때기로 튀었다
+    box(-W_ / 2 + 0.13, dz + 0.02, HT - 0.13, 0.1, 0.036, 0.008, M.trim);
+  } else {
+    // 문짝 조립체 전체(망판·테두리·손잡이·잠금)를 로컬에서 짓고 — 경첩변이
+    // 원점 — 스윙 각으로 돌린 뒤 경첩 자리에 앉힌다. 프레임에 남는 것은 없다.
+    const SWING = 1.1; // 63도 — 확실히 "열려 있다"
+    const rackYaw = ax === 'x' ? (face > 0 ? 0 : Math.PI) : face > 0 ? Math.PI / 2 : -Math.PI / 2;
+    const dw = W_ - 0.03;
+    const doorPut = (g, m) => {
+      g.rotateY(-SWING); // 로컬 +x(문 폭) -> +z(앞) 으로 연다
+      g.translate(-W_ / 2 + 0.015, 0, dz); // 경첩 자리 (랙 로컬)
+      g.rotateY(rackYaw);
+      const [cx0, , cz0] = ax === 'x' ? [u, 0, v] : [v, 0, u];
+      g.translate(cx0, 0, cz0);
+      b.add(g, m);
+    };
+    const dg = new THREE.BoxGeometry(dw, HT - 0.1, 0.012);
+    dg.translate(dw / 2, HT / 2, 0);
+    doorPut(dg, M.meshDoor);
+    for (const e of [0.035 / 2, dw - 0.035 / 2]) {
+      const fg = new THREE.BoxGeometry(0.035, HT - 0.1, 0.02);
+      fg.translate(e, HT / 2, 0.008);
+      doorPut(fg, M.rack);
+    }
+    for (const s of [-1, 1]) {
+      const hg = new THREE.BoxGeometry(dw, 0.035, 0.02);
+      hg.translate(dw / 2, HT / 2 + (s * (HT - 0.1)) / 2, 0.008);
+      doorPut(hg, M.rack);
+    }
+    const hd = new THREE.BoxGeometry(0.022, 0.26, 0.022);
+    hd.translate(dw - 0.055, HT / 2, 0.02);
+    doorPut(hd, M.trim); // 손잡이
+    const lk = new THREE.BoxGeometry(0.05, 0.05, 0.016);
+    lk.translate(dw - 0.055, HT / 2 - 0.2, 0.012);
+    doorPut(lk, M.trim); // 잠금
+    // 랙 번호 — 문 앞면에 붙어 있으니 문과 함께 돈다. 프레임 자리에 남기면
+    // 문이 없어진 자리에 판이 떠 있게 된다.
+    const num = new THREE.BoxGeometry(0.1, 0.036, 0.008);
+    num.translate(0.115, HT - 0.13, 0.014);
+    doorPut(num, M.trim);
+  }
 }
 
 // 항온항습기(CRAC). **서버실에는 냉방이 있어야 한다.**
@@ -605,8 +737,8 @@ function crac(b, w, u, h, M) {
   tube(b, 0.022, HT, dr, M.trim, 'y', 6);
 }
 
-function serverRoom(b, c, M, tally) {
-  // 랙 열 — 통로 폭 1.2m 를 남긴다
+function serverRoom(b, c, M, tally, I) {
+  // 랙 열 — 통로 폭 1.2m 를 남긴다. 랙은 약탈(망문)·파괴 대상이라 저마다 노드다.
   b.mark('furniture', `racks:${c.id}`);
   const along = c.x1 - c.x0 > c.z1 - c.z0;
   const ax = along ? 'x' : 'z';
@@ -618,7 +750,10 @@ function serverRoom(b, c, M, tally) {
     // 나간다. 전부 같은 방향을 보게 하면 앞 열의 배기를 뒤 열이 빨아들인다.
     const face = ri % 2 === 0 ? 1 : -1;
     for (const t of fit(along ? c.x0 : c.z0, along ? c.x1 : c.z1, 0.62, 1.6)) {
-      serverRack(b, t, r, ax, face, M, ++n);
+      const pr = I.spawnPair('rack');
+      const seed = ++n; // 두 포즈가 같은 시드 — 유닛 구성이 같아야 같은 랙이다
+      serverRack(pr.closed, t, r, ax, face, M, seed);
+      serverRack(pr.open, t, r, ax, face, M, seed, 'open');
       tally.rack = (tally.rack ?? 0) + 1;
     }
   });
@@ -631,7 +766,7 @@ function serverRoom(b, c, M, tally) {
   if (w) {
     const len = w.b - w.a;
     for (const t of fit(0, len, 4.5, 1.2).slice(0, 2)) {
-      crac(b, w, w.a + t, c.h, M);
+      crac(I.spawn('crac'), w, w.a + t, c.h, M);
       tally.crac = (tally.crac ?? 0) + 1;
     }
   }
@@ -657,18 +792,19 @@ function serverRoom(b, c, M, tally) {
   b.endMark();
 }
 
-function plaza(b, c, M, tally) {
+function plaza(b, c, M, tally, I) {
   const cx = (c.x0 + c.x1) / 2;
   const cz = (c.z0 + c.z1) / 2;
 
   // 안내 기둥 — 이 층의 목적지에 방향이 적혀 있어야 한다
   b.mark('landmark', 'plaza:pylon');
-  b.box(0.9, 0.12, 0.9, [cx, 0.06, cz], M.steelDark, 0);
-  b.box(0.34, 3.0, 0.34, [cx, 1.5, cz], M.steel, 1.0);
+  const py = I.spawn('pylon');
+  py.box(0.9, 0.12, 0.9, [cx, 0.06, cz], M.steelDark, 0);
+  py.box(0.34, 3.0, 0.34, [cx, 1.5, cz], M.steel, 1.0);
   for (const [y, s] of [[2.55, 0], [2.2, 1], [1.85, 2]]) {
     for (const d of [-1, 1]) {
-      b.box(1.3, 0.24, 0.04, [cx + d * 0.82, y, cz], M.paper, 0);
-      b.box(0.9, 0.1, 0.02, [cx + d * 0.82, y, cz + 0.03], s % 2 ? M.exit : M.screen, 0);
+      py.box(1.3, 0.24, 0.04, [cx + d * 0.82, y, cz], M.paper, 0);
+      py.box(0.9, 0.1, 0.02, [cx + d * 0.82, y, cz + 0.03], s % 2 ? M.exit : M.screen, 0);
     }
   }
   b.endMark();
@@ -689,15 +825,17 @@ function plaza(b, c, M, tally) {
   ]) {
     const x = cx + dx;
     const z = cz + dz;
-    b.box(rot ? 0.52 : 2.0, 0.08, rot ? 2.0 : 0.52, [x, 0.44, z], M.laminate, 0);
+    const nb = I.spawn('bench');
+    nb.box(rot ? 0.52 : 2.0, 0.08, rot ? 2.0 : 0.52, [x, 0.44, z], M.laminate, 0);
     for (const s of [-0.8, 0.8]) {
-      b.box(0.4, 0.4, 0.4, [x + (rot ? 0 : s), 0.2, z + (rot ? s : 0)], M.trim, 0);
+      nb.box(0.4, 0.4, 0.4, [x + (rot ? 0 : s), 0.2, z + (rot ? s : 0)], M.trim, 0);
     }
     tally.bench = (tally.bench ?? 0) + 1;
   }
   b.endMark();
 
-  // 바닥 표시 — 트램 승강 위치. 넓은 바닥이 통째로 비면 방향이 안 읽힌다.
+  // 바닥 표시 — 승강 구역 표시선. 넓은 바닥이 통째로 비면 방향이 안 읽힌다.
+  // (지상 전환으로 로비 안내선으로 재해석 예정 — status.md 5.2)
   b.mark('paint', 'plaza:markings');
   for (const dz of [-5.4, 5.4]) {
     b.box(11.0, 0.012, 0.14, [cx, 0.006, cz + dz], M.ledAmber, 0);
@@ -708,30 +846,49 @@ function plaza(b, c, M, tally) {
   b.endMark();
 }
 
-function office(b, c, M, tally) {
+// 사무 책상 하나. pose 'open' 이면 가운데 서랍이 빠져나와 있다 — 약탈 뒤.
+function deskUnit(b, x, z, M, pose = 'closed') {
+  b.box(1.6, 0.05, 0.75, [x, 0.73, z], M.laminate, 0);
+  // **서랍장 한 쪽, 관 다리 한 쪽.** 예전에는 양옆이 0.7m 짜리 통판이라
+  // 책상 밑이 검은 판때기 둘로 막혀 있었고, 그게 사무실에서 제일 먼저
+  // 눈에 걸리는 덩어리였다. 실제 사무 책상은 한쪽만 막혀 있다.
+  // 서랍장은 **상판과 같은 라미네이트**다. 어두운 강판으로 뒀더니 알베도가
+  // 0.13 이라 책상마다 검은 구멍이 하나씩 뚫린 것처럼 보였다.
+  b.box(0.44, 0.64, 0.68, [x - 0.55, 0.32, z], M.laminate, 0);
+  for (const dy of [0.16, 0.38, 0.56]) {
+    const out = pose === 'open' && dy === 0.38 ? 0.24 : 0; // 가운데 서랍이 빠져 있다
+    b.box(0.38, 0.16, 0.02, [x - 0.55, dy, z + 0.35 + out], M.trim, 0);
+    b.box(0.14, 0.02, 0.02, [x - 0.55, dy + 0.05, z + 0.37 + out], M.steel, 0);
+    if (out) {
+      // 빠져나온 서랍 몸통 — 옆판 둘 · 바닥 · 어두운 속 · 빈 구멍
+      for (const s of [-1, 1]) {
+        b.box(0.02, 0.13, out - 0.02, [x - 0.55 + s * 0.18, dy - 0.005, z + 0.35 + out / 2 - 0.01], M.trim, 0);
+      }
+      b.box(0.36, 0.014, out - 0.02, [x - 0.55, dy - 0.065, z + 0.35 + out / 2 - 0.01], M.trim, 0);
+      b.box(0.33, 0.006, out - 0.05, [x - 0.55, dy - 0.055, z + 0.35 + out / 2 - 0.01], M.rubber, 0);
+      b.box(0.36, 0.15, 0.01, [x - 0.55, dy, z + 0.345], M.rubber, 0); // 서랍이 나간 구멍
+    }
+  }
+  for (const dz of [-0.28, 0.28]) {
+    b.cylinder(0.022, 0.022, 0.71, [x + 0.68, 0.355, z + dz], M.trim, 6);
+  }
+  // 뒷 가림판 — 얕게, 뒤로 물려서. 무릎 공간을 안 먹는다
+  b.box(1.02, 0.32, 0.03, [x + 0.22, 0.52, z - 0.31], M.trim, 0);
+}
+
+function office(b, c, M, tally, I) {
+  // 책상(서랍 약탈)·브라운관(파괴)·의자(파괴)는 서로 다른 상호작용이므로
+  // 각각 노드다 — 책상을 부숴도 브라운관은 남는다.
   b.mark('furniture', `desks:${c.id}`);
   for (const x of fit(c.x0, c.x1, 2.6, 1.5)) {
     for (const z of fit(c.z0, c.z1, 2.2, 1.5)) {
-      b.box(1.6, 0.05, 0.75, [x, 0.73, z], M.laminate, 0);
-      // **서랍장 한 쪽, 관 다리 한 쪽.** 예전에는 양옆이 0.7m 짜리 통판이라
-      // 책상 밑이 검은 판때기 둘로 막혀 있었고, 그게 사무실에서 제일 먼저
-      // 눈에 걸리는 덩어리였다. 실제 사무 책상은 한쪽만 막혀 있다.
-      // 서랍장은 **상판과 같은 라미네이트**다. 어두운 강판으로 뒀더니 알베도가
-      // 0.13 이라 책상마다 검은 구멍이 하나씩 뚫린 것처럼 보였다.
-      b.box(0.44, 0.64, 0.68, [x - 0.55, 0.32, z], M.laminate, 0);
-      for (const dy of [0.16, 0.38, 0.56]) {
-        b.box(0.38, 0.16, 0.02, [x - 0.55, dy, z + 0.35], M.trim, 0);
-        b.box(0.14, 0.02, 0.02, [x - 0.55, dy + 0.05, z + 0.37], M.steel, 0);
-      }
-      for (const dz of [-0.28, 0.28]) {
-        b.cylinder(0.022, 0.022, 0.71, [x + 0.68, 0.355, z + dz], M.trim, 6);
-      }
-      // 뒷 가림판 — 얕게, 뒤로 물려서. 무릎 공간을 안 먹는다
-      b.box(1.02, 0.32, 0.03, [x + 0.22, 0.52, z - 0.31], M.trim, 0);
+      const pr = I.spawnPair('desk');
+      deskUnit(pr.closed, x, z, M);
+      deskUnit(pr.open, x, z, M, 'open');
       // 브라운관과 자판 — 90년대 후반이다. 사람은 +z 쪽에 앉는다.
-      terminal(b, x, 0.755, z - 0.14, 1, M);
+      terminal(I.spawn('crt'), x, 0.755, z - 0.14, 1, M);
       // 의자 — 책상을 본다 (-z 쪽에 상판이 있으므로 face = π)
-      chair(b, [x, 0, z + 0.78], Math.PI, M, M.plasticWarm, true);
+      chair(I.spawn('chair'), [x, 0, z + 0.78], Math.PI, M, M.plasticWarm, true);
       tally.desk = (tally.desk ?? 0) + 1;
     }
   }
@@ -746,7 +903,7 @@ function office(b, c, M, tally) {
 //   2. 뚜껑 **접힌 자리**와 그 위를 가로지르는 **테이프**
 //   3. 앞면의 **라벨**
 // 여기에 크기·각도·개수가 제각각이어야 창고로 보인다.
-function carton(b, at, size, yaw, M) {
+function carton(b, at, size, yaw, M, pose = 'closed') {
   const [w, h, d] = size;
   const [x, y, z] = at;
   const c = Math.cos(yaw);
@@ -755,15 +912,68 @@ function carton(b, at, size, yaw, M) {
   const p = (dx, dy, dz) => [x + dx * c + dz * s, y + dy, z - dx * s + dz * c];
 
   boxAt(b, w, h, d, p(0, h / 2, 0), M.carton, yaw);
-  // 뚜껑 접힌 자리 (길이 방향) 와 그 위를 가로지르는 테이프
-  boxAt(b, w * 0.99, 0.008, 0.014, p(0, h + 0.001, 0), M.cartonDark, yaw);
-  boxAt(b, w * 0.26, 0.005, d * 1.004, p(0, h + 0.004, 0), M.paper, yaw);
-  // 라벨 — 앞면에 붙는다
+  // 라벨 — 앞면에 붙는다 (두 포즈 공통)
   boxAt(b, w * 0.4, h * 0.3, 0.006, p(0, h * 0.55, d / 2 + 0.003), M.paper, yaw);
+
+  if (pose === 'closed') {
+    // 뚜껑 접힌 자리 (길이 방향) 와 그 위를 가로지르는 테이프
+    boxAt(b, w * 0.99, 0.008, 0.014, p(0, h + 0.001, 0), M.cartonDark, yaw);
+    boxAt(b, w * 0.26, 0.005, d * 1.004, p(0, h + 0.004, 0), M.paper, yaw);
+    return;
+  }
+
+  // ── 열림 — 약탈 뒤 ────────────────────────────────────────────────────
+  // 속의 어두운 바닥이 "비었다" 를 말하고, 젖혀진 네 짝이 "열렸다" 를 말한다.
+  boxAt(b, w - 0.02, 0.006, d - 0.02, p(0, h - 0.05, 0), M.cartonDark, yaw);
+  // 로컬에서 짓고 상자의 yaw 로 한 번에 옮긴다 (p 와 같은 변환).
+  const put = (g, m) => {
+    g.rotateY(yaw);
+    g.translate(x, y, z);
+    b.add(g, m);
+  };
+  const F = 1.22; // 수직에서 바깥으로 20도 젖힘
+  for (const sgn of [1, -1]) {
+    // 긴 변의 두 짝 (±z 테두리에 경첩)
+    const fd = (d / 2) * 0.96;
+    const gz = new THREE.BoxGeometry(w * 0.98, 0.008, fd);
+    gz.translate(0, 0, (sgn * fd) / 2); // 경첩변을 원점에
+    gz.rotateX(-sgn * F);
+    gz.translate(0, h, (sgn * d) / 2);
+    put(gz, M.carton);
+    // 짧은 변의 두 짝 (±x 테두리에 경첩)
+    const fw = (w / 2) * 0.96;
+    const gx = new THREE.BoxGeometry(fw, 0.008, d * 0.98);
+    gx.translate((sgn * fw) / 2, 0, 0);
+    gx.rotateZ(sgn * F);
+    gx.translate((sgn * w) / 2, h, 0);
+    put(gx, M.carton);
+  }
 }
 
-function storage(b, c, M, tally) {
-  // 선반 — 벽을 따라. 통로는 비운다
+// 플라스틱 상자 하나. pose 'open' 이면 뚜껑이 비스듬히 걸쳐지고 속이 비어
+// 보인다 — 선반 위라 뚜껑을 옆에 내려놓을 자리가 없다.
+function crate(b, at, yaw, M, pose = 'closed') {
+  const [x, y, z] = at; // y 는 상자 바닥 (선반 면)
+  const [bw, bh, bd] = [0.4, 0.26, 0.34];
+  boxAt(b, bw, bh, bd, [x, y + bh / 2, z], M.crate, yaw);
+  if (pose === 'closed') {
+    boxAt(b, bw + 0.03, 0.035, bd + 0.03, [x, y + bh, z], M.crate, yaw);
+    return;
+  }
+  // 속 — 어두운 바닥
+  boxAt(b, bw - 0.06, 0.01, bd - 0.06, [x, y + bh - 0.06, z], M.rubber, yaw);
+  // 뚜껑 — 테두리에 비스듬히 걸쳐 있다
+  const g = new THREE.BoxGeometry(bw + 0.03, 0.035, bd + 0.03);
+  g.rotateX(-0.55);
+  g.translate(0, bh + 0.05, -0.07);
+  g.rotateY(yaw);
+  g.translate(x, y, z);
+  b.add(g, M.crate);
+}
+
+function storage(b, c, M, tally, I) {
+  // 선반 — 벽을 따라. 통로는 비운다. 선반 틀은 배경이고 **상자가 약탈
+  // 대상**이다 — 뚜껑 열림 포즈를 받을 것은 상자다.
   b.mark('furniture', `shelf:${c.id}`);
   const LEVELS = [0.4, 0.95, 1.5, 2.05];
   let bay = 0;
@@ -803,15 +1013,20 @@ function storage(b, c, M, tally) {
 
           if (r > 0.82) {
             // 플라스틱 상자 — 테두리가 있어 골판지와 실루엣이 다르다
-            const [bw, bh, bd] = [0.4, 0.26, 0.34];
-            boxAt(b, bw, bh, bd, [px, y + bh / 2, pz], M.crate, base + yaw);
-            boxAt(b, bw + 0.03, 0.035, bd + 0.03, [px, y + bh, pz], M.crate, base + yaw);
+            const pr = I.spawnPair('crate');
+            crate(pr.closed, [px, y, pz], base + yaw, M);
+            crate(pr.open, [px, y, pz], base + yaw, M, 'open');
           } else {
             const h = 0.22 + r * 0.2;
-            carton(b, [px, y, pz], [0.3 + r * 0.2, h, 0.3 + (1 - r) * 0.14], base + yaw, M);
-            // 위에 하나 더 얹힌 것도 있다
+            const size = [0.3 + r * 0.2, h, 0.3 + (1 - r) * 0.14];
+            const pr = I.spawnPair('carton');
+            carton(pr.closed, [px, y, pz], size, base + yaw, M);
+            carton(pr.open, [px, y, pz], size, base + yaw, M, 'open');
+            // 위에 하나 더 얹힌 것도 있다 — 따로 약탈되므로 따로 노드다
             if (r > 0.6 && h < 0.3) {
-              carton(b, [px, y + h + 0.005, pz], [0.26, 0.18, 0.28], base - yaw * 1.6, M);
+              const pr2 = I.spawnPair('carton');
+              carton(pr2.closed, [px, y + h + 0.005, pz], [0.26, 0.18, 0.28], base - yaw * 1.6, M);
+              carton(pr2.open, [px, y + h + 0.005, pz], [0.26, 0.18, 0.28], base - yaw * 1.6, M, 'open');
             }
           }
         }
@@ -830,7 +1045,7 @@ function storage(b, c, M, tally) {
 //   2. **통풍 루버** — 열이 나는 물건이라 반드시 있다
 //   3. **경고 딱지** — 노란 바탕. 멀리서도 이것 하나로 읽힌다
 //   4. **위로 나가는 전선관** — 벽에 붙은 상자와 배전반을 가르는 결정적 조각
-function panel(b, w, u, h, M) {
+function panel(b, w, u, h, M, pose = 'closed') {
   const WID = 0.86;
   const DEP = 0.26;
   const y0 = 0.45;
@@ -839,37 +1054,11 @@ function panel(b, w, u, h, M) {
   const box = (uu, v, y, wid, hh, th, m) => wallBox(b, w, uu, v, y, wid, hh, th, m);
 
   box(u, DEP / 2, cy, WID, HT, DEP, M.steelDark); // 함체
-  box(u, DEP + 0.012, cy, WID - 0.04, HT - 0.04, 0.024, M.steel); // 문 두 짝
-  box(u, DEP + 0.026, cy, 0.014, HT - 0.06, 0.01, M.steelDark); // 가운데 이음선
 
-  // 경첩 — 왼쪽 모서리에 셋
+  // 경첩 — 왼쪽 모서리에 셋 (몸통 쪽 반절이라 두 포즈가 같다)
   for (const dy of [-0.55, 0, 0.55]) {
     const at = wallAt(w, u - WID / 2 + 0.03, DEP + 0.02, cy + dy);
     tube(b, 0.018, 0.09, at, M.trim, 'y', 5, true);
-  }
-  // 손잡이와 잠금 — 오른쪽
-  box(u + WID / 2 - 0.09, DEP + 0.055, cy, 0.028, 0.34, 0.028, M.trim);
-  box(u + WID / 2 - 0.09, DEP + 0.03, cy + 0.24, 0.05, 0.05, 0.02, M.trim);
-
-  // 통풍 루버 — 위쪽에 다섯 줄
-  for (let i = 0; i < 5; i++) {
-    box(u - 0.16, DEP + 0.028, cy + 0.56 - i * 0.045, 0.4, 0.018, 0.012, M.rubber);
-  }
-
-  // 경고 딱지 — 노란 바탕에 검은 심볼
-  box(u + 0.22, DEP + 0.028, cy + 0.5, 0.17, 0.17, 0.008, M.warn);
-  box(u + 0.22, DEP + 0.034, cy + 0.5, 0.075, 0.09, 0.006, M.rubber);
-  // 명판
-  box(u - 0.24, DEP + 0.028, cy - 0.58, 0.26, 0.07, 0.006, M.paper);
-
-  // 계기 둘과 표시등 셋
-  for (const du of [-0.06, 0.1]) {
-    const at = wallAt(w, u + du, DEP + 0.04, cy + 0.16);
-    tube(b, 0.05, 0.03, at, M.paper, w.axis === 'x' ? 'z' : 'x', 8, true);
-    tube(b, 0.056, 0.014, at, M.trim, w.axis === 'x' ? 'z' : 'x', 8, true);
-  }
-  for (let i = 0; i < 3; i++) {
-    box(u - 0.3 + i * 0.06, DEP + 0.034, cy + 0.16, 0.028, 0.028, 0.008, i === 1 ? M.ledAmber : M.led);
   }
 
   // **전선관** — 함체 위로 나가 천장으로 들어간다. 이게 있어야 배전반이다.
@@ -880,15 +1069,106 @@ function panel(b, w, u, h, M) {
     const el = wallAt(w, u + du, DEP / 2, top + 0.02);
     tube(b, 0.045, 0.06, el, M.trim, 'y', 6, true);
   }
+
+  if (pose === 'closed') {
+    box(u, DEP + 0.012, cy, WID - 0.04, HT - 0.04, 0.024, M.steel); // 문 두 짝
+    box(u, DEP + 0.026, cy, 0.014, HT - 0.06, 0.01, M.steelDark); // 가운데 이음선
+    // 손잡이와 잠금 — 오른쪽
+    box(u + WID / 2 - 0.09, DEP + 0.055, cy, 0.028, 0.34, 0.028, M.trim);
+    box(u + WID / 2 - 0.09, DEP + 0.03, cy + 0.24, 0.05, 0.05, 0.02, M.trim);
+    // 통풍 루버 — 위쪽에 다섯 줄
+    for (let i = 0; i < 5; i++) {
+      box(u - 0.16, DEP + 0.028, cy + 0.56 - i * 0.045, 0.4, 0.018, 0.012, M.rubber);
+    }
+    // 경고 딱지 — 노란 바탕에 검은 심볼
+    box(u + 0.22, DEP + 0.028, cy + 0.5, 0.17, 0.17, 0.008, M.warn);
+    box(u + 0.22, DEP + 0.034, cy + 0.5, 0.075, 0.09, 0.006, M.rubber);
+    // 명판
+    box(u - 0.24, DEP + 0.028, cy - 0.58, 0.26, 0.07, 0.006, M.paper);
+    // 계기 둘과 표시등 셋 — 문 앞면에. 열림에서는 문짝 로컬로 옮겨 함께 돈다
+    for (const du of [-0.06, 0.1]) {
+      const at = wallAt(w, u + du, DEP + 0.04, cy + 0.16);
+      tube(b, 0.05, 0.03, at, M.paper, w.axis === 'x' ? 'z' : 'x', 8, true);
+      tube(b, 0.056, 0.014, at, M.trim, w.axis === 'x' ? 'z' : 'x', 8, true);
+    }
+    for (let i = 0; i < 3; i++) {
+      box(u - 0.3 + i * 0.06, DEP + 0.034, cy + 0.16, 0.028, 0.028, 0.008, i === 1 ? M.ledAmber : M.led);
+    }
+    return;
+  }
+
+  // ── 열림 — 약탈 뒤. "살짝 열려 있다" 가 상태 표식이다 ──────────────────
+  // 속: 어두운 안쪽 패널과 차단기 줄 셋 (문이 열려야 보이는 것)
+  box(u, DEP - 0.06, cy, WID - 0.1, HT - 0.1, 0.02, M.rubber);
+  for (let i = 0; i < 3; i++) {
+    box(u, DEP - 0.035, cy - 0.18 - i * 0.24, WID - 0.34, 0.11, 0.02, M.steelDark);
+  }
+
+  // 문 두 짝 — 경첩축(양 모서리)으로 벌어진다. 왼짝이 더 열려 "누가 열었다".
+  //
+  // **앞면 디테일은 문의 것이다.** 루버·딱지·명판·계기·표시등·손잡이를 문짝
+  // 로컬에서 지어 문과 함께 돌린다 — 처음에 문짝을 민판으로 뒀더니 열자마자
+  // 앞면이 통째로 사라진 것처럼 보였다. 닫힘과 같은 조각·같은 자리이고,
+  // 닫힘의 (du, v) 를 문짝 로컬로 옮기는 식은 x = du − 경첩, z = v − DEP 다.
+  const lw = (WID - 0.04) / 2;
+  const hingeU = (side) => -side * (WID / 2 - 0.02);
+  for (const [side, swing] of [
+    [1, 0.62],
+    [-1, 0.26],
+  ]) {
+    const parts = [];
+    const pbox = (lx, ly, lz, wid, hh, th, m) => {
+      const g = new THREE.BoxGeometry(wid, hh, th);
+      g.translate(lx, ly, lz);
+      parts.push([g, m]);
+    };
+    const gauge = (lx) => {
+      // 계기 — 닫힘의 tube 쌍과 같은 조각. 축이 문짝 로컬 +z(앞) 다.
+      for (const [r, len, m] of [[0.05, 0.03, M.paper], [0.056, 0.014, M.trim]]) {
+        const g = new THREE.CylinderGeometry(r, r, len, 8);
+        g.rotateX(Math.PI / 2);
+        g.translate(lx, cy + 0.16, 0.04);
+        parts.push([g, m]);
+      }
+    };
+    const L = (du) => du - hingeU(side); // 닫힘의 du -> 문짝 로컬 x
+
+    pbox((side * lw) / 2, cy, 0.012, lw, HT - 0.04, 0.024, M.steel); // 판
+    if (side === 1) {
+      // 왼짝: 루버 · 명판 · 표시등 셋 · 계기 하나
+      // (루버는 닫힘에서 이음선을 살짝 넘는다 — 문짝 폭에 맞춰 0.34 로 줄인다)
+      for (let i = 0; i < 5; i++) pbox(L(-0.17), cy + 0.56 - i * 0.045, 0.028, 0.34, 0.018, 0.012, M.rubber);
+      pbox(L(-0.24), cy - 0.58, 0.028, 0.26, 0.07, 0.006, M.paper);
+      for (let i = 0; i < 3; i++) {
+        pbox(L(-0.3 + i * 0.06), cy + 0.16, 0.034, 0.028, 0.028, 0.008, i === 1 ? M.ledAmber : M.led);
+      }
+      gauge(L(-0.06));
+    } else {
+      // 오른짝: 딱지 · 계기 하나 · 손잡이 · 잠금
+      pbox(L(0.22), cy + 0.5, 0.028, 0.17, 0.17, 0.008, M.warn);
+      pbox(L(0.22), cy + 0.5, 0.034, 0.075, 0.09, 0.006, M.rubber);
+      pbox(L(WID / 2 - 0.09), cy, 0.055, 0.028, 0.34, 0.028, M.trim);
+      pbox(L(WID / 2 - 0.09), cy + 0.24, 0.03, 0.05, 0.05, 0.02, M.trim);
+      gauge(L(0.1));
+    }
+
+    for (const [g, m] of parts) {
+      g.rotateY(-side * swing); // 바깥(방 안쪽)으로 연다
+      g.translate(hingeU(side), 0, DEP);
+      wallPut(b, w, u, g, m);
+    }
+  }
 }
 
-function utility(b, c, M, tally) {
-  // 배전반과 배관 — 사람이 안 쓰는 방
+function utility(b, c, M, tally, I) {
+  // 배전반과 배관 — 사람이 안 쓰는 방. 배전반은 약탈(여닫는 문) 대상이다.
   b.mark('furniture', `plant:${c.id}`);
   for (const w of interiorWalls(c.id)) {
     const len = w.b - w.a;
     for (const t of fit(0, len, 2.4, 1.0).map((v) => v / len)) {
-      panel(b, w, w.a + len * t, c.h, M);
+      const pr = I.spawnPair('panel');
+      panel(pr.closed, w, w.a + len * t, c.h, M);
+      panel(pr.open, w, w.a + len * t, c.h, M, 'open');
       tally.panel = (tally.panel ?? 0) + 1;
     }
   }
@@ -922,16 +1202,26 @@ const BY_USE = {
   corridor: () => {},
 };
 
-export function createProps(scene, M) {
-  const b = new MeshBuilder('Props');
+export function createProps(scene, M, lp) {
+  const b = new MeshBuilder('Props'); // 배경 — 병합 배치
+  const I = interactSet(); // 상호작용 — 물건마다 독립 노드
   const tally = {};
   for (const c of CELLS) {
     const f = BY_USE[c.use];
     if (!f) throw new Error(`소품 표에 용도 '${c.use}' 가 없다 — props.BY_USE 에 추가한다`);
-    f(b, c, M, tally);
-    services(b, c, M, tally);
+    f(b, c, M, tally, I);
+    services(b, c, M, tally, lp);
     if (c.kind === 'corridor') corridorWalls(b, c, M, tally);
   }
   exitSigns(b, M, tally);
-  return { group: b.build(scene), tally };
+  const interactables = Object.values(I.counts).reduce((s, v) => s + v, 0);
+  return {
+    group: b.build(scene),
+    interactables: I.build(scene),
+    open: I.openGroup, // 씬에 안 붙는다 — 굽기·익스포트 전용
+    openCount: I.openCount,
+    interactCount: interactables,
+    interactKinds: I.counts,
+    tally,
+  };
 }

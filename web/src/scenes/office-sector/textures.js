@@ -123,7 +123,7 @@ export function blockWallTextures(seed = 4301, tint = [206, 203, 191]) {
       rough += 0.1 * k;
     }
 
-    // 물 자국 — 지하라 벽이 마르지 않는다
+    // 물 자국 — 배관을 낀 벽은 마르지 않는다
     const d = smoothstep(0.62, 0.95, drip(u, v)) * 0.35;
     r = lerp(r, 168, d);
     gg = lerp(gg, 170, d);
@@ -179,7 +179,7 @@ export function ceilingTileTextures(seed = 4401) {
       h = lerp(h, 0.72, k); // T바가 타일보다 살짝 높다. 그 이상은 필요 없다
     }
 
-    // 물 샌 자국 — 이게 있어야 관리 안 된 지하로 읽힌다
+    // 물 샌 자국 — 이게 있어야 관리 안 된 건물로 읽힌다
     const w = smoothstep(0.68, 0.92, water(u, v));
     r = lerp(r, 186, w * 0.75);
     gg = lerp(gg, 172, w * 0.8);

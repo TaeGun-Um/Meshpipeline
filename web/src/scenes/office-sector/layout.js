@@ -37,7 +37,7 @@ const X = FLOOR.x / 2;
 const Z = FLOOR.z / 2;
 
 // 플라자를 가운데 두고 고리 복도가 감싼다. 방은 고리 바깥에 붙는다.
-// 지하에서 길을 잃지 않으려면 복도가 직선으로 만나야 한다 (facility.md 1장).
+// 실내에서 길을 잃지 않으려면 복도가 직선으로 만나야 한다 (facility.md 1장).
 const PX = 9.0; // 플라자 반폭
 const PZ = 7.0;
 const RC = W.corridor; // 고리 복도 폭
@@ -76,7 +76,7 @@ export const CELLS = [
   cell('officeNW', 'room', -X, RZ, -W.spur / 2, Z, H.room, 'office'),
   cell('officeNE', 'room', W.spur / 2, RZ, X, Z, H.room, 'office'),
 
-  // 남쪽 — 트램 승강장으로 나가는 지선과 설비실
+  // 남쪽 — 탈출구(비상계단·엘리베이터 홀 예정 — status.md 5.2)로 나가는 지선과 설비실
   cell('spurS', 'corridor', -W.spur / 2, -Z, W.spur / 2, -RZ, H.corridor),
   cell('utilSW', 'room', -X, -Z, -W.spur / 2, -RZ, H.room, 'util'),
   cell('utilSE', 'room', W.spur / 2, -Z, X, -RZ, H.room, 'util'),

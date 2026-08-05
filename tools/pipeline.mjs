@@ -9,11 +9,16 @@
 //   3 inspect     GLB가 규약을 지키는지 (금지 확장 / 노말맵 / 루트 트랜스폼)
 //   4 convert     블렌더로 glb -> fbx (텍스처 분리, 위젯 제거)
 //   5 blender     아마추어·액션·스킨 웨이트 보존 확인
-//   6 unity       씬 조립 + PipelineCheck 적합성 검사
+//   6 unity       씬 조립 + 적합성 검사
+//
+// 어느 단계가 도는지는 씬이 정한다 — contract.json 의 scenes.<id>.stages.
+// 오피스 섹터는 4·5(블렌더)가 없다: 캐릭터가 없고, FBX 는 휴머노이드
+// 아바타 때문에만 필요하다. 정적 조각은 GLB 직행이 기준이다.
 //
 // 사용:
-//   node tools/pipeline.mjs           전체
-//   node tools/pipeline.mjs 3 6       특정 단계만
+//   node tools/pipeline.mjs                    vacant-lot 전체 (기준 파이프라인)
+//   node tools/pipeline.mjs office-sector      오피스 섹터 경로
+//   node tools/pipeline.mjs 3 6                특정 단계만 (씬 인자와 섞어도 된다)
 //   BLENDER=... UNITY=... node tools/pipeline.mjs
 import fs from 'node:fs';
 import path from 'node:path';
@@ -49,6 +54,26 @@ const clipNames = Object.keys(contract.assertions.clipSeconds).filter((k) => !k.
 
 const only = process.argv.slice(2).filter((a) => /^\d+$/.test(a)).map(Number);
 const wanted = (n) => only.length === 0 || only.includes(n);
+
+// ── 씬 스펙 — 어느 에셋을, 어느 단계로 (contract.json scenes.<id>) ─────────
+const SCENE_ID = process.argv.slice(2).find((a) => /^[a-z][a-z0-9-]*$/.test(a)) || 'vacant-lot';
+const spec = contract.scenes[SCENE_ID];
+if (!spec) {
+  // 빠진 씬을 기본값으로 때우면 아무도 정하지 않은 목록으로 돈다 (lessons 2.1 규칙 4)
+  console.log(`알 수 없는 씬: ${SCENE_ID}`);
+  console.log(`contract.json 의 scenes 에 있는 것: ${Object.keys(contract.scenes).filter((k) => !k.startsWith('$')).join(', ')}`);
+  process.exit(1);
+}
+
+// 익스포트 파일 접두사는 shots/views.json 의 _tag 가 정한다 — 샷 파일과 같은
+// 규약이다. 여기와 브라우저(__export)가 각자 씬 이름을 적으면 어긋난다.
+const VIEWS = JSON.parse(fs.readFileSync(P('web', 'shots', 'views.json'), 'utf8'));
+if (!VIEWS[SCENE_ID]) {
+  console.log(`views.json 에 '${SCENE_ID}' 항목이 없다 — _tag 없이는 익스포트 파일 이름을 정할 수 없다`);
+  process.exit(1);
+}
+const TAG = VIEWS[SCENE_ID]._tag || '';
+const glbName = (asset) => `${TAG}${asset}.glb`;
 
 // --accept : 브라우저에서 메시를 확정한 뒤 "이 스펙을 승인한다"를 명령 하나로 만드는 것.
 // 규약의 '내용 의존' 값(삼각형·서브메시·정점컬러·노말맵 수)만 실측값으로 갱신하고,
@@ -143,11 +168,23 @@ function stageFreshness() {
       : { t: fs.statSync(p).mtimeMs, which: p };
     if (r.t > src.t) src = r;
   }
-  const out = newestMtime(P('web', 'export'), ['.glb']);
+  // 이 씬의 에셋만 본다. web/export 는 씬을 가리지 않는 작업대라서, 디렉토리
+  // 전체의 최신 파일은 딴 씬의 익스포트일 수 있다.
+  let out = { t: Infinity, which: '' };
+  for (const asset of spec.assets) {
+    const p = P('web', 'export', glbName(asset));
+    if (!fs.existsSync(p)) {
+      assert('freshness', 'exportsUpToDate', false, `${glbName(asset)} 없음 — 브라우저에서 __export 실행`);
+      return;
+    }
+    const m = fs.statSync(p).mtimeMs;
+    if (m < out.t) out = { t: m, which: p };
+  }
   const stale = src.t > out.t;
   assert('freshness', 'exportsUpToDate', !stale,
     stale
-      ? `소스가 더 새로움: ${path.relative(ROOT, src.which)} — 브라우저에서 __export 재실행`
+      ? `소스가 더 새로움: ${path.relative(ROOT, src.which)} (익스포트 중 제일 묵은 것: ` +
+        `${path.basename(out.which)}) — 브라우저에서 __export 재실행`
       : `최신 (${Math.round((out.t - src.t) / 1000)}초 차)`);
 }
 
@@ -160,9 +197,9 @@ function stageInspect() {
   const tol = contract.assertions.rootTranslationMagnitude.tolerance;
 
   // 규약이 지정한 실사용 에셋만 본다 (비교 실험용 산출물은 제외)
-  for (const name of contract.exportRules.exportedAssets) {
-    const file = path.join(dir, `${name}.glb`);
-    if (!fs.existsSync(file)) { assert('inspect', `${name}.exists`, false, '없음'); continue; }
+  for (const name of spec.assets) {
+    const file = path.join(dir, glbName(name));
+    if (!fs.existsSync(file)) { assert('inspect', `${name}.exists`, false, `${glbName(name)} 없음`); continue; }
     const j = readGlbJson(file);
 
     const req = j.extensionsRequired ?? [];
@@ -185,6 +222,15 @@ function stageInspect() {
       assert('inspect', `${name}.normalTextures`, n === expect.normalTexture,
         `${n} (기대 ${expect.normalTexture})`);
     }
+
+    // 빛을 정점에 굽는 씬은 조각마다 COLOR_0 이 있어야 한다. 이 검사는 태그
+    // 도입 전에 남은 딴 씬의 같은 이름 파일(walls·props)이 섞여 드는 것도 잡는다.
+    if (spec.bakedVertexColors) {
+      const prims = (j.meshes ?? []).flatMap((m) => m.primitives ?? []);
+      const colored = prims.filter((p) => p.attributes?.COLOR_0 !== undefined).length;
+      assert('inspect', `${name}.bakedVertexColors`, colored > 0,
+        `COLOR_0 프리미티브 ${colored}/${prims.length}`);
+    }
   }
 }
 
@@ -197,8 +243,8 @@ function stageConvert() {
     return;
   }
   const out = P('unity', 'Assets', 'ProceduralImport', 'fbx_loose');
-  const glbs = contract.exportRules.exportedAssets
-    .map((n) => P('web', 'export', `${n}.glb`))
+  const glbs = spec.assets
+    .map((n) => P('web', 'export', glbName(n)))
     .filter((p) => fs.existsSync(p));
 
   const r = run(BLENDER, ['--background', '--python', P('tools', 'glb-to-fbx.py'),
@@ -256,6 +302,23 @@ function stageBlender() {
 
 function stageUnity() {
   log('\n[6] unity — 씬 조립 + 적합성 검사');
+
+  // 임포트 디렉토리를 쓰는 씬(오피스)은 익스포트를 먼저 복사한다. 태그는 뗀다 —
+  // BuildOfficeScene.cs 는 rock.glb 같은 민이름을 읽는다 (contract 의 $commentImportDir).
+  if (spec.unityImportDir) {
+    const dst = P(...spec.unityImportDir.split('/'));
+    fs.mkdirSync(dst, { recursive: true });
+    for (const asset of spec.assets) {
+      const src = P('web', 'export', glbName(asset));
+      if (!fs.existsSync(src)) {
+        assert('unity', `copy.${asset}`, false, `${glbName(asset)} 없음 — 브라우저에서 __export 실행`);
+        return;
+      }
+      fs.copyFileSync(src, path.join(dst, `${asset}.glb`));
+    }
+    log(`  복사: ${spec.assets.length}개 -> ${spec.unityImportDir}`);
+  }
+
   if (!UNITY || !fs.existsSync(UNITY)) {
     assert('unity', 'unityExists', false, missingTool('unity', UNITY));
     return;
@@ -264,7 +327,7 @@ function stageUnity() {
   const proj = P('unity');
   const logFile = path.join(process.env.TEMP ?? '/tmp', 'pipeline-unity.log');
 
-  for (const method of ['BuildScene.All', 'PipelineCheck.Run']) {
+  for (const method of spec.unityMethods) {
     const r = run(UNITY, ['-batchmode', '-quit', '-projectPath', proj,
       '-executeMethod', method, '-logFile', logFile]);
     const text = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
@@ -296,6 +359,14 @@ function stageUnity() {
         log(`  [FAIL] ${c.stage}/${c.name}  ${c.detail}`);
       }
       if (rep.failed === 0) log('  [PASS] 유니티 전체 통과');
+    } else if (method.startsWith('BuildOfficeScene')) {
+      assert('unity', `${method}.exit`, r.code === 0, `exit=${r.code}`);
+      assert('unity', `${method}.sceneBuilt`, /OFFICE_SCENE_BUILT/.test(text), 'OFFICE_SCENE_BUILT 로그');
+      assert('unity', `${method}.shot`, /OFFICE_SHOT/.test(text), 'Reports/office_scene.png');
+      // 재질 교체가 0이면 씬이 통째로 glTFast 기본(마젠타 아니면 실시간 조명 의존)으로 남은 것이다
+      const bm = text.match(/BAKED_MAT swapped=(\d+) kept=(\d+) unique=(\d+)/);
+      assert('unity', `${method}.bakedMaterials`, !!bm && Number(bm[1]) > 0,
+        bm ? `swapped=${bm[1]} kept=${bm[2]} unique=${bm[3]}` : 'BAKED_MAT 로그 없음');
     } else {
       assert('unity', `${method}.exit`, r.code === 0, `exit=${r.code}`);
     }
@@ -305,9 +376,17 @@ function stageUnity() {
 // ── 실행 ───────────────────────────────────────────────────────────────────
 
 const t0 = Date.now();
-for (const [n, fn] of [[1, stageContract], [2, stageFreshness], [3, stageInspect],
-                       [4, stageConvert], [5, stageBlender], [6, stageUnity]]) {
+log(`씬: ${SCENE_ID}  (단계: ${spec.stages.join(' → ')})`);
+for (const [n, name, fn] of [
+  [1, 'contract', stageContract], [2, 'freshness', stageFreshness],
+  [3, 'inspect', stageInspect], [4, 'convert', stageConvert],
+  [5, 'blender', stageBlender], [6, 'unity', stageUnity],
+]) {
   if (!wanted(n)) continue;
+  if (!spec.stages.includes(name)) {
+    log(`\n[${n}] ${name} — 이 씬의 경로에 없음 (contract.json scenes.${SCENE_ID}.stages)`);
+    continue;
+  }
   try { fn(); } catch (e) {
     failures.push(`stage${n}: ${e.message}`);
     log(`  [FAIL] 단계 ${n} 예외: ${e.message}`);

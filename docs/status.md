@@ -26,7 +26,7 @@
 | 1 | `vacant-lot` 주택가 공터 | **동결 · 파이프라인 기준 씬.** 좌표계·조명 규약을 여기서 확정했고 79항목이 통과했다. core 회귀의 첫 관문 | [scenes/vacant-lot/](scenes/vacant-lot/status.md) |
 | 2 | `night-city` 나이트시티 | **동결.** 여섯 구역 양식과 랜드마크 열. 26뷰가 재현되지 않아 픽셀 회귀 대상이 아니다 — 삼각형 수로 잰다 | [scenes/night-city/](scenes/night-city/status.md) |
 | 3 | `model-test` 모델 테스트 | **동결.** 서브컬처 아바타 실험 — 결론과 규칙이 [character.md](scenes/model-test/character.md) 에 있다 | [scenes/model-test/](scenes/model-test/status.md) |
-| 4 | `office-sector` 오피스 섹터 | **활성 — 유일한 작업 대상.** 지하 연구시설 1층. 실내 생성기·실내 전용 검사·정점 조명 굽기 | [scenes/office-sector/](scenes/office-sector/status.md) |
+| 4 | `office-sector` 오피스 섹터 | **활성 — 유일한 작업 대상.** 회사 사옥 사무층 — 게임 오프닝 무대. 실내 생성기·실내 전용 검사·정점 조명 굽기 | [scenes/office-sector/](scenes/office-sector/status.md) |
 
 **앞으로의 작업은 4번에만 한다** (2026-08-03 사용자 결정). 동결 씬은 빌드
 가능한 상태로 보존하고, 값어치는 학습된 데이터 — `lessons.md` 와 씬별 지식
@@ -126,6 +126,7 @@ onSceneReset('구역 캐시', () => { CACHE = null; });
 
 | 문서 | 무엇 |
 |---|---|
+| `office-sector/story.md` | **게임 스토리** — 이 씬이 게임에서 하는 일과 모델링 목표. 형태 근거의 최상위 |
 | `office-sector/facility.md` | **시설의 내력** — 치수·조명·검사 규칙. **형태를 건드리기 전에 읽는다** |
 | `office-sector/status.md` | **생성기의 구조** — 어디를 고치면 무엇이 바뀌나 · 걸린 것 · 열려 있는 것 |
 | `vacant-lot/status.md` | 동결 · 파이프라인 기준 씬 — 부트스트랩과 규약 실측의 출처 |
