@@ -54,15 +54,28 @@ function interactSet() {
   // 굽기는 받되 **밝기 통계에는 안 들어간다** — 화면에 없는 포즈의 정점이
   // 칸 바닥 통계·분포(p995)에 섞이면 잣대가 씬이 아니게 된다 (bake.js).
   openGroup.userData.bakeStats = false;
+  // 시작 방의 **전(지진 전) 상태** — 인트로 전용. 열림 포즈와 같은 수법으로
+  // 씬 밖에 두고 굽기·익스포트만 태운다. 유니티가 인트로 동안만 켠다.
+  const preGroup = new THREE.Group();
+  preGroup.name = 'StartRoomPre';
+  preGroup.userData.bakeStats = false;
   const counts = {};
   const builders = [];
   const openBuilders = [];
+  const preBuilders = [];
   return {
     group,
     openGroup,
+    preGroup,
     counts,
     get openCount() {
       return openBuilders.length;
+    },
+    // 전 상태 조각 — 상호작용이 아니라 인트로 무대 세트다. 원장에 안 올린다.
+    spawnPre(name) {
+      const nb = new MeshBuilder(name, { ledger: false });
+      preBuilders.push(nb);
+      return nb;
     },
     spawn(kind) {
       const n = (counts[kind] = (counts[kind] ?? 0) + 1);
@@ -86,6 +99,7 @@ function interactSet() {
       for (const nb of builders) nb.build(group);
       scene.add(group);
       for (const nb of openBuilders) nb.build(openGroup);
+      for (const nb of preBuilders) nb.build(preGroup);
       return group;
     },
   };
@@ -876,21 +890,33 @@ function deskUnit(b, x, z, M, pose = 'closed') {
   b.box(1.02, 0.32, 0.03, [x + 0.22, 0.52, z - 0.31], M.trim, 0);
 }
 
+// 책상 격자 — 사무실과 시작 방의 전/후 두 벌이 **같은 좌표**를 쓴다.
+// z 간격 2.05·여백 0.8 — 띠 복도 도입으로 방이 5.8m 로 얕아졌는데
+// (2.2, 1.5) 로는 1열만 서서 사무실이 창고처럼 비었다. 책상 0.75 + 의자
+// 0.78 에 통로를 남기는 최소가 2.05 다. 여백 0.85 는 5.8m 방에서 남는
+// 구간이 정확히 4.1 = 2x2.05 가 되어 부동소수점에 따라 1열로 떨어졌다 —
+// **경계 조건을 등호로 만들지 않는다** (lessons 2.1 규칙 3).
+function deskSeats(c) {
+  const out = [];
+  for (const x of fit(c.x0, c.x1, 2.6, 1.5)) {
+    for (const z of fit(c.z0, c.z1, 2.05, 0.8)) out.push([x, z]);
+  }
+  return out;
+}
+
 function office(b, c, M, tally, I) {
   // 책상(서랍 약탈)·브라운관(파괴)·의자(파괴)는 서로 다른 상호작용이므로
   // 각각 노드다 — 책상을 부숴도 브라운관은 남는다.
   b.mark('furniture', `desks:${c.id}`);
-  for (const x of fit(c.x0, c.x1, 2.6, 1.5)) {
-    for (const z of fit(c.z0, c.z1, 2.2, 1.5)) {
-      const pr = I.spawnPair('desk');
-      deskUnit(pr.closed, x, z, M);
-      deskUnit(pr.open, x, z, M, 'open');
-      // 브라운관과 자판 — 90년대 후반이다. 사람은 +z 쪽에 앉는다.
-      terminal(I.spawn('crt'), x, 0.755, z - 0.14, 1, M);
-      // 의자 — 책상을 본다 (-z 쪽에 상판이 있으므로 face = π)
-      chair(I.spawn('chair'), [x, 0, z + 0.78], Math.PI, M, M.plasticWarm, true);
-      tally.desk = (tally.desk ?? 0) + 1;
-    }
+  for (const [x, z] of deskSeats(c)) {
+    const pr = I.spawnPair('desk');
+    deskUnit(pr.closed, x, z, M);
+    deskUnit(pr.open, x, z, M, 'open');
+    // 브라운관과 자판 — 90년대 후반이다. 사람은 +z 쪽에 앉는다.
+    terminal(I.spawn('crt'), x, 0.755, z - 0.14, 1, M);
+    // 의자 — 책상을 본다 (-z 쪽에 상판이 있으므로 face = π)
+    chair(I.spawn('chair'), [x, 0, z + 0.78], Math.PI, M, M.plasticWarm, true);
+    tally.desk = (tally.desk ?? 0) + 1;
   }
   b.endMark();
 }
@@ -1190,6 +1216,151 @@ function utility(b, c, M, tally, I) {
   b.endMark();
 }
 
+// 화장실 — 덕트 탈출 스토리의 경유 방 (story.md 2장의 5).
+//
+// 프로토타입 수준이다 — 형태 단계라 조각은 상자다 (lessons 3.13.1: 그러라고
+// 나눈 단계다). 화장실을 화장실로 만드는 것 넷은 적어 둔다. 디테일 단계에서
+// 이 목록에 대고 확인한다: **부스 칸막이와 문**, **변기**, **세면 카운터와
+// 세면볼**, **거울**.
+function washroom(b, c, M, tally) {
+  const walls = interiorWalls(c.id).sort((p, q) => q.b - q.a - (p.b - p.a));
+  if (!walls.length) return;
+
+  // ── 부스 — 제일 긴 벽(맞은편 방과의 경계 = 문 없는 벽)에 앉는다 ──────
+  const w = walls[0];
+  b.mark('furniture', `booth:${c.id}`);
+  const D = 1.5; // 부스 깊이
+  const PH = 1.9; // 칸막이 높이
+  const len = w.b - w.a;
+  const seats = fit(0, len, 1.0, 0.35);
+  // 옆 칸막이 — 부스 사이와 양 끝
+  const edges = [seats[0] - 0.5, ...seats.map((t) => t + 0.5)];
+  for (const t of edges) {
+    wallBox(b, w, w.a + t, D / 2, 0.15 + PH / 2, 0.04, PH, D, M.trim);
+  }
+  for (const t of seats) {
+    const u = w.a + t;
+    // 문판 — 살짝 들려 있다 (바닥 0.15 띄움). 열림 포즈는 디테일 단계에서.
+    wallBox(b, w, u, D - 0.02, 0.15 + PH / 2, 0.62, PH, 0.04, M.laminate);
+    // 변기 — 상자 둘 (몸통 + 등판 물탱크)
+    wallBox(b, w, u, 0.35, 0.21, 0.4, 0.42, 0.55, M.paper);
+    wallBox(b, w, u, 0.11, 0.5, 0.46, 0.5, 0.18, M.paper);
+    tally.booth = (tally.booth ?? 0) + 1;
+  }
+  b.endMark();
+
+  // ── 세면 카운터 — 부스 반대쪽에서 제일 긴 벽 조각 ─────────────────────
+  const across = walls.find((q) => q !== w && q.axis === w.axis && q.b - q.a > 1.4) ?? walls.find((q) => q !== w && q.b - q.a > 1.4);
+  if (across) {
+    b.mark('furniture', `basin:${c.id}`);
+    const v = across;
+    const cl = Math.min(v.b - v.a - 0.4, 3.2);
+    const cm = (v.a + v.b) / 2;
+    wallBox(b, v, cm, 0.3, 0.82, cl, 0.06, 0.6, M.laminate); // 상판
+    wallBox(b, v, cm, 0.29, 0.41, cl - 0.2, 0.76, 0.55, M.trim); // 하부장
+    // 세면볼 — 상판 위 오목한 대접 (프로토: 낮은 상자 테)
+    for (const t of fit(0, cl, 0.9, 0.3)) {
+      const u = cm - cl / 2 + t;
+      wallBox(b, v, u, 0.3, 0.88, 0.42, 0.05, 0.36, M.paper);
+      tally.basin = (tally.basin ?? 0) + 1;
+    }
+    // 거울 — 카운터 위 띠. 진짜 반사는 없다 — 매끈한 어두운 판으로 읽힌다
+    // (M.screen 은 발광이라 거울이 형광판이 된다 — 재질을 이름으로 믿지 않는다)
+    wallBox(b, v, cm, 0.04, 1.5, cl - 0.3, 0.7, 0.03, M.steelDark);
+    b.endMark();
+  }
+}
+
+// 시작 사무실 방 — A 가 깨어나는 곳 (story.md 2장, use 'start' 인 칸 하나).
+//
+// 씬의 기본 상태는 **지진 직후(후)** 다: 책상·상호작용은 그대로 서고, 천장
+// 타일과 등 파편이 떨어지고 서류가 흩어지고, **띠 복도로 나가는 유일한 문이
+// 잔해로 막힌다** — 덕트 탈출 퍼즐의 게이트다. checkReach 는 문 규칙만
+// 보므로 이 방을 갇힌 방으로 치지 않는다 — 실제 차단은 게임 콜라이더의 몫.
+//
+// **전(인트로) 상태는 씬 밖**이다 (startroom_pre — 약탈 열림 포즈와 같은
+// 수법): 같은 책상 격자(deskSeats — 한 출처)가 흐트러짐 없이 서고, 문짝이
+// 닫혀 있다. 문은 **불투명**이다 — 인트로 중 문 너머로 "후" 상태인 복도가
+// 보이면 안 된다 (status.md 5.2). 조명의 전/후(정상/정전)는 파손 단계에서
+// 층 전체와 함께 간다.
+function startOffice(b, c, M, tally, I) {
+  office(b, c, M, tally, I); // 책상·브라운관·의자 — 후에도 그대로 선다
+
+  // 이 방의 유일한 출입구 — 띠 복도 쪽 door 런
+  const run = wallRuns().find((r) => (r.from === c.id || r.to === c.id) && r.rule === 'door');
+  const { gaps } = openingsOf(run);
+  const [g0, g1] = gaps[0];
+  const gm = (g0 + g1) / 2;
+  const cz = (c.z0 + c.z1) / 2;
+  const cx = (c.x0 + c.x1) / 2;
+  const inward = run.axis === 'x' ? Math.sign(cz - run.at) : Math.sign(cx - run.at);
+  // 문 자리의 로컬 (u, v) -> 세계. v 는 벽 중심에서 방 안쪽으로.
+  const at = (u, v, y) => (run.axis === 'x' ? [u, y, run.at + inward * v] : [run.at + inward * v, y, u]);
+
+  // ── 후 — 잔해와 파손 흔적 ─────────────────────────────────────────────
+  // 병합 props 가 아니라 **개별 노드 하나(rubble_01)** 다. 유니티 인트로가
+  // 전 상태를 켜는 동안 이걸 꺼야 한다 — 병합에 넣으면 정갈한 방 한가운데
+  // 잔해가 남는다. (나중에 "잔해 치우기" 상호작용이 될 수도 있는 자리다.)
+  const db = I.spawn('rubble');
+  b.mark('furniture', `start:${c.id}`);
+  // 문을 막은 잔해 더미 — 콘크리트 덩어리를 문 폭만큼 쌓는다
+  const rocks = [
+    [gm - 0.26, 0.18, 0.34, 0.52, 0.36, 0.5, 0.3],
+    [gm + 0.22, 0.16, 0.3, 0.46, 0.32, 0.42, -0.4],
+    [gm - 0.02, 0.5, 0.32, 0.58, 0.3, 0.48, 0.15],
+    [gm + 0.12, 0.76, 0.3, 0.4, 0.24, 0.36, -0.2],
+    [gm - 0.24, 0.68, 0.28, 0.34, 0.2, 0.3, 0.5],
+    [gm + 0.02, 1.02, 0.3, 0.44, 0.26, 0.4, -0.1],
+  ];
+  for (const [u, y, v, w, h, d, yaw] of rocks) boxAt(db, w, h, d, at(u, v, y), M.rock, yaw);
+  // 기울어 걸친 슬래브 조각 둘 — 더미를 "무너져 내린 것" 으로 만든다
+  for (const [du, tilt, len] of [[-0.34, 1.05, 1.5], [0.3, 1.25, 1.2]]) {
+    const g = new THREE.BoxGeometry(0.7, 0.07, len);
+    g.translate(0, 0, len / 2);
+    g.rotateX(-tilt);
+    if (run.axis === 'z') g.rotateY(Math.PI / 2);
+    const p = at(gm + du, 0.1, 0.06);
+    g.translate(p[0], p[1], p[2]);
+    db.add(g, M.rock);
+  }
+  tally.rubble = (tally.rubble ?? 0) + 1;
+
+  // 떨어진 천장 타일과 등 파편 — A 를 맞힌 그것들. 통로 가운데에 흩는다.
+  const aisleZ = (c.z0 + c.z1) / 2;
+  for (let i = 0; i < 4; i++) {
+    const r = hash2(i * 7 + 3, Math.round(c.x0 * 13) + i);
+    const x = c.x0 + 1.2 + r * (c.x1 - c.x0 - 2.4);
+    const z = aisleZ + (hash2(i * 11, i * 5 + 1) - 0.5) * 1.6;
+    boxAt(db, 0.58, 0.018, 0.58, [x, 0.01, z], M.ceilOf('room'), r * 2.6);
+    tally.tileFallen = (tally.tileFallen ?? 0) + 1;
+  }
+  // 등 반사갓 파편 — 깨어나는 자리 옆
+  boxAt(db, 1.1, 0.05, 0.55, [c.x0 + 2.0, 0.03, aisleZ + 0.4], M.steel, 0.35);
+  // 흩어진 서류
+  for (let i = 0; i < 9; i++) {
+    const r1 = hash2(i * 3 + 1, i + 17);
+    const r2 = hash2(i * 5 + 2, i + 29);
+    const x = c.x0 + 0.8 + r1 * (c.x1 - c.x0 - 1.6);
+    const z = c.z0 + 0.8 + r2 * (c.z1 - c.z0 - 1.6);
+    boxAt(db, 0.21, 0.004, 0.3, [x, 0.004, z], M.paper, r1 * 3.1);
+  }
+  b.endMark();
+
+  // ── 전 — 인트로 전용 (씬 밖) ──────────────────────────────────────────
+  // 방 자체(책상·의자·브라운관)는 전/후가 **같으므로 복제하지 않는다** —
+  // 복제하면 씬의 상호작용 노드와 같은 자리에 겹친다. 전 상태에서 달라지는
+  // 것은 둘뿐이다: 잔해가 없고(rubble_01 을 끈다), **문짝이 닫혀 있다**.
+  // 그래서 pre 조각은 닫힌 문짝 하나다. 문은 불투명이다 — 인트로 중 문
+  // 너머로 "후" 상태인 복도가 보이면 안 된다 (status.md 5.2).
+  const pre = I.spawnPre('startroom_pre');
+  const dw = g1 - g0;
+  const leaf = at(gm, 0, H.door / 2 - 0.01);
+  boxAt(pre, run.axis === 'x' ? dw - 0.04 : 0.05, H.door - 0.06, run.axis === 'x' ? 0.05 : dw - 0.04, leaf, M.laminate, 0);
+  // 손잡이
+  const hnd = at(gm + dw / 2 - 0.12, 0.05, 1.02);
+  boxAt(pre, 0.04, 0.04, 0.16, hnd, M.trim, 0);
+}
+
 // ── 조립 ───────────────────────────────────────────────────────────────────
 
 const BY_USE = {
@@ -1199,6 +1370,8 @@ const BY_USE = {
   office,
   store: storage,
   util: utility,
+  wash: washroom,
+  start: startOffice,
   corridor: () => {},
 };
 
@@ -1219,6 +1392,7 @@ export function createProps(scene, M, lp) {
     group: b.build(scene),
     interactables: I.build(scene),
     open: I.openGroup, // 씬에 안 붙는다 — 굽기·익스포트 전용
+    pre: I.preGroup, // 시작 방의 전(지진 전) 상태 — 역시 씬 밖
     openCount: I.openCount,
     interactCount: interactables,
     interactKinds: I.counts,

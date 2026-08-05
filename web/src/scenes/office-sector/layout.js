@@ -71,15 +71,34 @@ export const CELLS = [
   cell('server', 'server', RX, -1.0, X, RZ, H.room),
   cell('officeE', 'room', RX, -RZ, X, -1.0, H.room, 'office'),
 
-  // 북쪽 — 사무실 둘 (고리 복도에서 북쪽 지선이 갈라진다)
-  cell('spurN', 'corridor', -W.spur / 2, RZ, W.spur / 2, Z, H.corridor),
-  cell('officeNW', 'room', -X, RZ, -W.spur / 2, Z, H.room, 'office'),
-  cell('officeNE', 'room', W.spur / 2, RZ, X, Z, H.room, 'office'),
+  // 북쪽 — 띠 복도 하나에 사무실 넷과 화장실이 매달린다.
+  // 원래 23.1m 짜리 방 둘이었다 — 176㎡ 사무실은 그렇다 쳐도 같은 크기의
+  // 설비실은 격납고다 (facility.md 2.3). 생성기 가설의 첫 검증이기도 하다:
+  // 여기 사각형만 바꾸면 벽·문·조명·소품·검사가 전부 따라와야 한다.
+  //
+  // **띠 복도(bandN·bandS)가 있어야 한다.** 처음에 방만 쪼갰더니 고리 복도
+  // (x ±11.4)에 안 닿는 외곽 방 넷이 갇혔다 — checkReach 가 잡았다. 고리에서
+  // 띠 복도가 갈라지고, 방은 전부 띠 복도에 문을 낸다.
+  // 화장실은 지선(배관 코어) 옆 — 덕트 탈출 스토리의 경유 방이다 (story.md).
+  cell('bandN', 'corridor', -X, RZ, X, RZ + W.spur, H.corridor),
+  cell('spurN', 'corridor', -W.spur / 2, RZ + W.spur, W.spur / 2, Z, H.corridor),
+  cell('officeN1', 'room', -X, RZ + W.spur, -13.2, Z, H.room, 'office'),
+  cell('officeN2', 'room', -13.2, RZ + W.spur, -W.spur / 2, Z, H.room, 'office'),
+  cell('washN', 'room', W.spur / 2, RZ + W.spur, 5.5, Z, H.room, 'wash'),
+  // officeN3 이 **시작 방**이다 (use 'start') — A 가 깨어나는 곳. 화장실
+  // 바로 옆이라 덕트 탈출 동선이 제일 짧다 (story.md 2장).
+  cell('officeN3', 'room', 5.5, RZ + W.spur, 14.5, Z, H.room, 'start'),
+  cell('officeN4', 'room', 14.5, RZ + W.spur, X, Z, H.room, 'office'),
 
-  // 남쪽 — 탈출구(비상계단·엘리베이터 홀 예정 — status.md 5.2)로 나가는 지선과 설비실
-  cell('spurS', 'corridor', -W.spur / 2, -Z, W.spur / 2, -RZ, H.corridor),
-  cell('utilSW', 'room', -X, -Z, -W.spur / 2, -RZ, H.room, 'util'),
-  cell('utilSE', 'room', W.spur / 2, -Z, X, -RZ, H.room, 'util'),
+  // 남쪽 — 북쪽 띠와 같은 구조. 탈출구(비상계단·엘리베이터 홀 예정 —
+  // status.md 5.2)로 나가는 지선, 설비실 넷과 창고 (창고가 화장실 자리다).
+  cell('bandS', 'corridor', -X, -RZ - W.spur, X, -RZ, H.corridor),
+  cell('spurS', 'corridor', -W.spur / 2, -Z, W.spur / 2, -RZ - W.spur, H.corridor),
+  cell('utilS1', 'room', -X, -Z, -13.2, -RZ - W.spur, H.room, 'util'),
+  cell('utilS2', 'room', -13.2, -Z, -W.spur / 2, -RZ - W.spur, H.room, 'util'),
+  cell('storeS', 'room', W.spur / 2, -Z, 5.5, -RZ - W.spur, H.room, 'store'),
+  cell('utilS3', 'room', 5.5, -Z, 14.5, -RZ - W.spur, H.room, 'util'),
+  cell('utilS4', 'room', 14.5, -Z, X, -RZ - W.spur, H.room, 'util'),
 ];
 
 export const byId = Object.fromEntries(CELLS.map((c) => [c.id, c]));

@@ -76,6 +76,8 @@ class OfficeSector extends Scene {
     // 약탈 뒤의 열림 포즈. **씬에는 안 붙는다** (화면 비용 0) — 빛 굽기와
     // 익스포트만 태운다. 유니티가 닫힘/열림 노드를 1프레임에 토글한다.
     built.interactables_open = props.open;
+    // 시작 방의 전(지진 전) 상태 — 인트로 전용, 같은 수법으로 씬 밖.
+    built.startroom_pre = props.pre;
     built.fixtures = await step('등', 82, () => createFixtures(scene, M, lp));
 
     // ── 조명 ─────────────────────────────────────────────────────────────
@@ -92,7 +94,8 @@ class OfficeSector extends Scene {
       bake = await step('빛 굽기', 90, () =>
         bakeVertexLight(
           [built.rock, built.floors, built.walls, built.ceilings, built.props,
-           built.interactables, built.interactables_open, built.fixtures],
+           built.interactables, built.interactables_open, built.startroom_pre,
+           built.fixtures],
           lp
         )
       );

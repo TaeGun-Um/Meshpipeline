@@ -157,8 +157,8 @@ vacant-lot 은 `BuildScene.cs`, 오피스는 `BuildOfficeScene.cs` 다. 방식�
 정점색, 언릿)로 갈아 끼운다. 발광·유리는 재질 이름으로 보존한다.
 
 ```
-브라우저에서:  for (const k of ['rock','floors','walls','ceilings','props',
-                                'fixtures','interactables','interactables_open'])
+브라우저에서:  for (const k of ['rock','floors','walls','ceilings','props','fixtures',
+                                'interactables','interactables_open','startroom_pre'])
                  await __export(k);        // of_rock.glb 등 — _tag 가 접두사
 파이프라인:    node tools/pipeline.mjs office-sector
                  (태그를 떼며 unity/Assets/ProceduralImport/office/ 로 복사까지 한다)

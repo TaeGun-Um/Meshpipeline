@@ -83,7 +83,8 @@
       "unityMethods": ["BuildScene.All", "PipelineCheck.Run"]
     },
     "office-sector": {
-      "assets": ["rock", "floors", "walls", "ceilings", "props", "fixtures", "interactables", "interactables_open"],
+      "assets": ["rock", "floors", "walls", "ceilings", "props", "fixtures", "interactables", "interactables_open", "startroom_pre"],
+      "$commentPre": "startroom_pre 는 시작 방(officeN3)의 지진 전 상태 — 인트로 전용. 씬 밖 그룹이라 브라우저 화면 비용 0, 유니티는 비활성으로 들여와 인트로 동안만 켠다.",
       "$commentInteract": "interactables 는 상호작용 소품 — 물건마다 독립 노드다 (크랙·약탈 포즈용 개별 콜라이더·상태). props 는 배경 병합. 분리 사정은 web/src/scenes/office-sector/props.js 의 interactSet 머리말.",
       "$commentOpen": "interactables_open 은 약탈 뒤의 열림 포즈 (rack_07_open 등, 닫힘과 같은 번호). 브라우저 씬에는 안 붙고 굽기·익스포트만 탄다. 유니티는 임포트 후 루트를 비활성으로 두고 약탈 시 닫힘/열림을 토글한다.",
       "stages": ["contract", "freshness", "inspect", "unity"],
