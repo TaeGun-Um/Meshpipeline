@@ -116,6 +116,7 @@ node tools/pipeline.mjs --accept         # 새 스펙을 승인 (아래 참고)
 | [docs/architecture.md](docs/architecture.md) | **아키텍처** — 계층 구조, 의존 방향, 왜 이렇게 나눴는가 |
 | [docs/modules.md](docs/modules.md) | 기능 모듈 — 텍스처·지오메트리·스켈레탈·익스포트·임포트 |
 | [docs/pipeline.md](docs/pipeline.md) | **익스포트** 파이프라인 6단계, 규약(contract), 검사 항목 |
+| [docs/game-project.md](docs/game-project.md) | **게임 프로젝트 계획** — 파이프라인/게임 분리, 납품물 계약, 단계 계획 |
 | [docs/verification.md](docs/verification.md) | **검증** — 무엇이 버그를 잡았고 무엇이 시간만 썼는가 |
 | [docs/toolchain.md](docs/toolchain.md) | 언어·프레임워크·엔진 버전과 설치 상태 |
 | [docs/references.md](docs/references.md) | 학습 자료와 실측 기록 |

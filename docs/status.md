@@ -116,6 +116,7 @@ onSceneReset('구역 캐시', () => { CACHE = null; });
 | `architecture.md` | 계층 구조, 의존 방향 |
 | `modules.md` | 기능 모듈 — 텍스처·지오메트리·스켈레탈·익스포트 |
 | `pipeline.md` | **익스포트** 6단계 (glb→fbx→유니티). 씬 생성 쪽이 아니다 |
+| `game-project.md` | **게임 프로젝트 계획** — 파이프라인과 게임의 분리, 납품물 계약, 단계 계획 |
 | `verification.md` | 무엇이 버그를 잡았고 무엇이 시간만 썼는가 |
 | `toolchain.md` · `references.md` | 버전 · 학습 자료와 실측 기록 |
 | `status.md` | 이 문서 |
