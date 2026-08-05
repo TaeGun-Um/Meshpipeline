@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import { MeshBuilder } from '../../core/builder.js';
 import { hash2 } from '../../core/textures.js';
 import { CELLS, H, interiorWalls, onWall, wallRuns, openingsOf } from './layout.js';
+import { ductPlan } from './duct.js';
 
 // 축에 안 맞는 조각. MeshBuilder.box 는 축 정렬만 낸다.
 function boxAt(b, w, h, d, at, mat, yaw = 0) {
@@ -268,30 +269,53 @@ function terminal(b, x, y, z, dir, M) {
 
   // ── 자판 ─────────────────────────────────────────────────────────────
   //
-  // 자판은 **줄이 보여야** 자판이다. 키를 하나씩 내면 책상 34개에 2천 개가
-  // 넘으므로, 줄을 세 토막으로 끊어 낸다 — 눈높이에서는 그것으로 읽힌다.
+  // 자판은 줄이 아니라 **키가 보여야** 자판이다. 줄을 세 토막으로 끊어 내던
+  // 판은 눈높이에서 "널판 위 막대" 로 읽혔다 (2026-08-06 지적). 키를 하나씩
+  // 낸다 — 단말기당 상자 약 80개인데, 삼각형 예산 판단은 브라우저가 아니라
+  // 유니티에서 한다 (memory: browser-is-a-preview).
   const kz = z + f * 0.24;
   b.box(0.44, 0.016, 0.17, [x, y + 0.008, kz], M.crt, 0); // 몸체
-  b.box(0.44, 0.022, 0.03, [x, y + 0.019, kz - f * 0.07], M.crt, 0); // 뒤가 높다
-  for (let r = 0; r < 5; r++) {
-    const rz = kz - f * (0.048 - r * 0.026);
-    const ry = y + 0.021 + (4 - r) * 0.0022;
-    // 좌·중·우 세 토막. 줄마다 폭이 달라야 자판처럼 어긋나 보인다.
-    const segs = [
-      [-0.145, 0.1],
-      [-0.03, 0.1],
-      [0.085, 0.09 + (r % 2) * 0.02],
-    ];
-    for (const [dx, sw] of segs) {
-      b.box(sw, 0.008, 0.019, [x + f * dx, ry, rz], M.keycap, 0);
-    }
+  b.box(0.44, 0.024, 0.028, [x, y + 0.02, kz - f * 0.071], M.crt, 0); // 뒤 능선이 높다
+  // r 은 줄 번호 — 뒤(작은 r)가 높은 경사. 키 밑동은 몸체에 살짝 잠긴다.
+  const key = (dx, d, w, r) =>
+    b.box(w, 0.014, 0.019, [x + f * dx, y + 0.0225 - r * 0.0015, kz + f * d], M.keycap, 0);
+  for (let i = 0; i < 8; i++) key(-0.175 + i * 0.042, -0.044, 0.026, -1); // 기능키 줄 — 성기게
+  for (let r = 0; r < 4; r++) {
+    const d = -0.018 + r * 0.024;
+    for (let i = 0; i < 12; i++) key(-0.18 + i * 0.024, d, 0.02, r); // 본판 12열
+    key(0.111, d, 0.03, r); // 줄 끝의 넓은 키 — 백스페이스·엔터·시프트
   }
-  b.box(0.16, 0.008, 0.019, [x - f * 0.02, y + 0.021, kz + f * 0.056], M.keycap, 0); // 스페이스
-  b.box(0.075, 0.008, 0.07, [x + f * 0.16, y + 0.024, kz - f * 0.01], M.keycap, 0); // 숫자판
+  key(-0.045, 0.074, 0.12, 4); // 스페이스
+  for (const dx of [-0.18, -0.152]) key(dx, 0.074, 0.022, 4); // 왼쪽 보조키
+  for (const dx of [0.048, 0.076, 0.104]) key(dx, 0.074, 0.022, 4); // 오른쪽 보조키
+  for (let r = 0; r < 4; r++)
+    for (let i = 0; i < 3; i++) key(0.15 + i * 0.024, -0.018 + r * 0.024, 0.02, r); // 숫자판 4x3
 
-  // 마우스와 패드
-  b.box(0.11, 0.006, 0.13, [x + f * 0.31, y + 0.003, kz], M.crtDark, 0);
-  b.box(0.055, 0.028, 0.095, [x + f * 0.31, y + 0.02, kz], M.crt, 0);
+  // ── 마우스 ───────────────────────────────────────────────────────────
+  //
+  // 상자 하나는 마우스가 아니다 (2026-08-06 지적). 밑판 위에 **눌린 반구**
+  // 껍데기(단면이 곡선이면 곡선으로 — lessons.md 3.13.2), 앞에 스크롤 휠,
+  // 뒤로 케이블 꼬리까지 있어야 마우스로 읽힌다.
+  const mx = x + f * 0.31;
+  b.box(0.11, 0.006, 0.13, [mx, y + 0.003, kz], M.crtDark, 0); // 패드
+  b.box(0.05, 0.006, 0.088, [mx, y + 0.009, kz], M.crtDark, 0); // 밑판
+  let g = new THREE.SphereGeometry(0.034, 12, 7, 0, Math.PI * 2, 0, Math.PI / 2);
+  g.scale(0.85, 0.62, 1.45); // 눌리고 길쭉한 반구 = 손등 곡면
+  g.translate(mx, y + 0.012, kz);
+  b.add(g, M.crt);
+  g = new THREE.CylinderGeometry(0.008, 0.008, 0.006, 10);
+  g.rotateZ(Math.PI / 2); // 축을 좌우로 눕힌다 — 앞으로 구르는 휠
+  g.translate(mx, y + 0.0235, kz - f * 0.028);
+  b.add(g, M.crtDark);
+  g = new THREE.CylinderGeometry(0.003, 0.003, 0.17, 6); // 마우스 꼬리
+  g.rotateX(Math.PI / 2);
+  g.rotateY(f * 0.35); // 본체 쪽으로 비스듬히
+  g.translate(mx - f * 0.03, y + 0.004, kz - f * 0.14);
+  b.add(g, M.rubber);
+  g = new THREE.CylinderGeometry(0.003, 0.003, 0.1, 6); // 자판 선
+  g.rotateX(Math.PI / 2);
+  g.translate(x - f * 0.08, y + 0.004, kz - f * 0.135);
+  b.add(g, M.rubber);
 }
 
 // ── 천장 설비 ──────────────────────────────────────────────────────────────
@@ -454,31 +478,222 @@ function corridorWalls(b, c, M, tally) {
 
 // ── 칸 종류별 ──────────────────────────────────────────────────────────────
 
-function cafeteria(b, c, M, tally, I) {
-  // 식탁 — 4인 원탁이 아니라 긴 테이블. 급식 시설은 대개 그렇다.
-  // 식탁·의자는 파괴 대상이라 저마다 노드다 (interactSet 머리말).
-  b.mark('furniture', `tables:${c.id}`);
-  for (const x of fit(c.x0, c.x1, 3.1, 1.6)) {
-    for (const z of fit(c.z0, c.z1, 2.6, 1.6)) {
-      const tb = I.spawn('table');
-      tb.box(2.0, 0.06, 0.8, [x, 0.74, z], M.laminate, 0);
-      for (const dx of [-0.85, 0.85]) {
-        for (const dz of [-0.32, 0.32]) tb.box(0.05, 0.72, 0.05, [x + dx, 0.37, z + dz], M.trim, 0);
-      }
-      // 의자 — 양쪽에 둘씩. **식탁을 바라보게** 돌린다.
-      // face 는 앉은 사람이 보는 방향이므로 -z 쪽 의자는 +z 를 본다.
-      for (const dz of [-0.66, 0.66]) {
-        for (const dx of [-0.5, 0.5]) {
-          chair(I.spawn('chair'), [x + dx, 0, z + dz], dz < 0 ? 0 : Math.PI, M, M.plastic);
-        }
-      }
-      tally.table = (tally.table ?? 0) + 1;
+// 긴 식탁 하나 + 둘러앉은 의자 — 식당과 카페가 나눠 쓴다
+function longTable(b, x, z, M, I, tally) {
+  const tb = I.spawn('table');
+  tb.box(2.0, 0.06, 0.8, [x, 0.74, z], M.laminate, 0);
+  for (const dx of [-0.85, 0.85]) {
+    for (const dz of [-0.32, 0.32]) tb.box(0.05, 0.72, 0.05, [x + dx, 0.37, z + dz], M.trim, 0);
+  }
+  for (const dz of [-0.66, 0.66]) {
+    for (const dx of [-0.5, 0.5]) {
+      chair(I.spawn('chair'), [x + dx, 0, z + dz], dz < 0 ? 0 : Math.PI, M, M.plastic);
     }
   }
-  b.endMark();
+  tally.table = (tally.table ?? 0) + 1;
+}
 
-  // 자판기 — 제일 긴 벽에 줄지어. 게임에서도 카페테리아의 표식이다.
-  const walls = interiorWalls(c.id).sort((p, q) => q.b - q.a - (p.b - p.a));
+// 식당 — 긴 식탁 줄 (음식 권역의 가운데). 배식 카운터는 주방(kitchen)이
+// 식당 경계에 세운다 — 한때 식당 서쪽 벽에 있었는데 주방이 생기며 옮겼다.
+function dining(b, c, M, tally, I) {
+  b.mark('furniture', `tables:${c.id}`);
+  for (const x of fit(c.x0, c.x1, 3.1, 1.6)) {
+    for (const z of fit(c.z0, c.z1, 2.6, 1.6)) longTable(b, x, z, M, I, tally);
+  }
+  b.endMark();
+}
+
+// 주방 — 배식 카운터(식당 경계) · 조리 라인(레인지·후드) · 싱크 · 냉장고 ·
+// 냄비 선반. 버너·냄비·싱크볼은 **원기둥**이다 (lessons.md 3.13.2).
+function kitchen(b, c, M, tally, I) {
+  const cx = (c.x0 + c.x1) / 2;
+
+  // ── 배식 카운터 — 남쪽 경계(식당과 트인 곳)에 선다. 트레이 레일은 관 ──
+  b.mark('furniture', `serving:${c.id}`);
+  const zS = c.z0 + 0.55;
+  const len = c.x1 - c.x0 - 1.6;
+  b.box(len, 0.92, 0.75, [cx, 0.46, zS], M.steel, 0);
+  b.box(len + 0.1, 0.05, 0.85, [cx, 0.945, zS], M.laminate, 0);
+  for (const v of [-0.52, -0.44, -0.36]) {
+    tube(b, 0.016, len, [cx, 0.9, zS + v], M.trim, 'x', 6);
+  }
+  // 위생 가림판 — 카운터 위 유리와 지지 기둥
+  b.box(len - 0.4, 0.38, 0.015, [cx, 1.32, zS - 0.1], M.glass, 0);
+  for (const t of fit(0, len - 0.4, 1.6, 0.2)) {
+    b.box(0.03, 0.34, 0.03, [cx - (len - 0.4) / 2 + t, 1.1, zS - 0.1], M.trim, 0);
+  }
+  // 배식 웰 — 상판에 박힌 스테인리스 사각 구덩이 넷 (테두리 판 + 어두운 속).
+  // 이게 있어야 '배식대' 지 그냥 긴 탁자가 아니다
+  for (const t of fit(0, len - 1.2, 1.35, 0.5)) {
+    const wx = cx - (len - 1.2) / 2 + t;
+    b.box(0.9, 0.02, 0.5, [wx, 0.972, zS], M.steelDark, 0);
+    b.box(0.8, 0.016, 0.4, [wx, 0.976, zS], M.rubber, 0);
+  }
+  b.endMark();
+  tally.serving = 1;
+
+  // ── 조리 라인 — 북쪽 외벽. 레인지 버너는 원판, 후드는 위로 관이 나간다 ──
+  const wn = interiorWalls(c.id).find((q) => q.rule === 'solid' && q.b - q.a > 5);
+  if (wn) {
+    b.mark('furniture', `range:${c.id}`);
+    const cm = (wn.a + wn.b) / 2;
+    const L = Math.min(wn.b - wn.a - 0.8, 6.5);
+    wallBox(b, wn, cm, 0.35, 0.45, L, 0.9, 0.68, M.steel); // 조리대 라인
+    wallBox(b, wn, cm, 0.35, 0.925, L + 0.06, 0.05, 0.72, M.steelDark); // 상판
+    // 레인지 — 어두운 쿡탑 + 원형 버너 넷
+    wallBox(b, wn, cm - 0.9, 0.35, 0.96, 1.5, 0.02, 0.66, M.rubber);
+    for (const [du, dv] of [[-1.25, 0.18], [-1.25, 0.52], [-0.55, 0.18], [-0.55, 0.52]]) {
+      const [px, , pz] = wallAt(wn, cm + du, dv, 0);
+      tube(b, 0.14, 0.018, [px, 0.978, pz], M.steelDark, 'y', 10, true);
+    }
+    // 오븐 — 레인지 하부의 문 + 가로 손잡이 관 + 노브 원기둥 넷
+    wallBox(b, wn, cm - 0.9, 0.705, 0.45, 1.34, 0.5, 0.03, M.steelDark);
+    {
+      const [ox, , oz] = wallAt(wn, cm - 0.9, 0.735, 0);
+      tube(b, 0.016, 1.15, [ox, 0.64, oz], M.trim, wn.axis, 6);
+      for (const du of [-1.4, -1.15, -0.65, -0.4]) {
+        const g = new THREE.CylinderGeometry(0.025, 0.025, 0.02, 8);
+        g.rotateX(Math.PI / 2);
+        const [kx, , kz] = wallAt(wn, cm + du, 0.72, 0);
+        g.translate(kx, 0.9, kz);
+        b.add(g, M.trim);
+      }
+    }
+    // 후드 — 아래가 넓고 위로 좁아지는 **사각뿔대**다. 상자 후드는 없다 —
+    // 4각 원기둥(=각뿔대)을 45도 돌려 만든다 (lessons.md 3.13.2).
+    const [hx, , hz] = wallAt(wn, cm - 0.9, 0.38, 0);
+    {
+      const g = new THREE.CylinderGeometry(0.62, 1.3, 0.5, 4, 1);
+      g.rotateY(Math.PI / 4);
+      g.scale(1, 1, 0.47); // 바닥 1.84x0.86 -> 천장 0.88x0.41
+      g.translate(hx, 2.15, hz);
+      b.add(g, M.steel);
+      // 하단 립과 조명 띠
+      wallBox(b, wn, cm - 0.9, 0.38, 1.88, 1.9, 0.05, 0.92, M.steelDark);
+      wallBox(b, wn, cm - 0.9, 0.38, 1.905, 1.2, 0.015, 0.3, M.lamp);
+    }
+    tube(b, 0.16, c.h - 2.4, [hx, 2.4 + (c.h - 2.4) / 2, hz], M.steel, 'y', 10);
+    // 싱크 — 조리대 오른쪽에 원형 볼 둘과 수전
+    for (const du of [0.9, 1.5]) {
+      const [px, , pz] = wallAt(wn, cm + du, 0.35, 0);
+      tube(b, 0.19, 0.03, [px, 0.94, pz], M.steelDark, 'y', 10, true);
+      tube(b, 0.16, 0.02, [px, 0.945, pz], M.rubber, 'y', 10, true);
+    }
+    // 수전 — 기둥 위에 **반원 구즈넥(토러스 반쪽)**. 직관 두 개를 꺾어
+    // 붙이면 수전이 아니라 파이프다 (lessons.md 3.13.2).
+    {
+      const [fx, , fz] = wallAt(wn, cm + 1.2, 0.14, 0);
+      tube(b, 0.018, 0.34, [fx, 1.07, fz], M.trim, 'y', 6); // 기둥
+      const arc = new THREE.TorusGeometry(0.12, 0.015, 6, 10, Math.PI);
+      if (wn.axis === 'x') arc.rotateY(Math.PI / 2);
+      arc.translate(fx, 1.24, fz + (wn.axis === 'x' ? wn.inward * 0.12 : 0));
+      b.add(arc, M.trim);
+      const [sx, , sz] = wallAt(wn, cm + 1.2, 0.38, 0);
+      tube(b, 0.013, 0.06, [sx, 1.21, sz], M.trim, 'y', 6); // 토출구
+    }
+    // 냄비 선반 — 벽에 띠 선반 + 원기둥 냄비들. 절반은 뚜껑(원판+꼭지),
+    // 절반은 옆손잡이 관 — 같은 원통 줄이면 통조림이다
+    wallBox(b, wn, cm, 0.3, 1.62, L - 1.0, 0.04, 0.4, M.steel);
+    for (const t of fit(0, L - 1.2, 0.55, 0.2)) {
+      const r = 0.1 + hash2(Math.round(t * 7), 3) * 0.07;
+      const hgt = 0.16 + r * 0.5;
+      const [px, , pz] = wallAt(wn, cm - (L - 1.2) / 2 + t, 0.3, 0);
+      tube(b, r, hgt, [px, 1.64 + hgt / 2, pz], M.steel, 'y', 8);
+      if (hash2(Math.round(t * 13), 7) > 0.5) {
+        tube(b, r * 0.94, 0.015, [px, 1.64 + hgt + 0.008, pz], M.steelDark, 'y', 8, true); // 뚜껑
+        tube(b, 0.02, 0.03, [px, 1.64 + hgt + 0.03, pz], M.trim, 'y', 6); // 꼭지
+      } else {
+        for (const s of [-1, 1]) {
+          const g = new THREE.CylinderGeometry(0.012, 0.012, 0.09, 6);
+          g.rotateZ(Math.PI / 2);
+          g.translate(px + s * (r + 0.04), 1.64 + hgt - 0.05, pz);
+          b.add(g, M.trim); // 옆손잡이
+        }
+      }
+      tally.pot = (tally.pot ?? 0) + 1;
+    }
+    b.endMark();
+    tally.range = 1;
+    tally.sink = 1;
+  }
+
+  // ── 냉장고 둘 — 조리 라인과 **다른 벽**. 약탈 대상이다.
+  // "다른 조각(q !== wn)" 만 걸렀더니 같은 북쪽 벽의 다른 조각이 잡혀
+  // 냉장고가 조리대 속에 박혔다 (#7) — 같은 벽면(at)인지로 거른다.
+  const we = interiorWalls(c.id).find(
+    (q) => q.rule === 'solid' && (q.axis !== wn.axis || Math.abs(q.at - wn.at) > 0.05) && q.b - q.a > 2.4
+  );
+  if (we) {
+    b.mark('furniture', `fridge:${c.id}`);
+    for (const t of [-0.8, 0.2]) {
+      const u = (we.a + we.b) / 2 + t;
+      const pr = I.spawnPair('fridge');
+      for (const pose of ['closed', 'open']) {
+        const g = pr[pose];
+        // 몸통은 통짜 상자가 아니라 **판 다섯 장** — 등·옆 둘·천판·바닥 굽.
+        // 통짜로 두면 문을 여는 순간 속이 없는 게 들킨다 (#1 사물함과 같은
+        // 병, 2026-08-06 재지적).
+        wallBox(g, we, u, 0.03, 1.0, 0.82, 2.0, 0.06, M.steel); // 등판
+        for (const s of [-1, 1]) wallBox(g, we, u + s * 0.39, 0.4, 1.0, 0.04, 2.0, 0.78, M.steel);
+        wallBox(g, we, u, 0.4, 1.97, 0.82, 0.06, 0.78, M.steel); // 천판
+        wallBox(g, we, u, 0.4, 0.08, 0.82, 0.16, 0.78, M.steelDark); // 굽 — 컴프레서 칸
+        // 속 — 선반 셋과 남은 것들. 선반이 비면 열어 볼 이유가 없다.
+        for (const y of [0.55, 1.0, 1.45]) wallBox(g, we, u, 0.37, y, 0.7, 0.024, 0.6, M.paper);
+        // 병은 몸통 원기둥 + 어깨 원뿔대 + 뚜껑 — 단면이 원이면 원기둥으로
+        // (lessons.md 3.13.2). 캔·반찬통·컵도 제 단면대로.
+        const item = (geo, mat) => wallPut(g, we, u, geo, mat);
+        let q = new THREE.CylinderGeometry(0.036, 0.036, 0.2, 10);
+        q.translate(-0.14, 0.662, 0.3);
+        item(q, M.porcelain); // 병 몸통 (아래 선반)
+        q = new THREE.CylinderGeometry(0.014, 0.034, 0.05, 10);
+        q.translate(-0.14, 0.787, 0.3);
+        item(q, M.porcelain); // 병 어깨
+        q = new THREE.CylinderGeometry(0.015, 0.015, 0.02, 8);
+        q.translate(-0.14, 0.822, 0.3);
+        item(q, M.trim); // 뚜껑
+        q = new THREE.CylinderGeometry(0.03, 0.03, 0.09, 10);
+        q.translate(0.1, 1.057, 0.25);
+        item(q, M.steelDark); // 캔 (가운데 선반)
+        wallBox(g, we, u - 0.15, 0.32, 1.052, 0.16, 0.08, 0.16, M.paper); // 반찬통
+        for (const dx of [0.05, 0.13]) {
+          q = new THREE.CylinderGeometry(0.02, 0.026, 0.06, 9);
+          q.translate(dx, 1.492, 0.35);
+          item(q, M.porcelain); // 컵 둘 (위 선반) — 아래가 좁은 원뿔대
+        }
+      }
+      // 닫힘 — 문이 몸통 앞면보다 돌출 + 세로 손잡이
+      wallBox(pr.closed, we, u, 0.805, 1.0, 0.78, 1.92, 0.03, M.bezel);
+      wallBox(pr.closed, we, u + 0.3, 0.84, 1.15, 0.05, 0.5, 0.04, M.trim);
+      // 열림 — 경첩을 원점으로 **먼저** 옮기고 돌린다. 옮겨 둔 채 돌리면
+      // 문이 경첩을 궤도로 돌아 몸통에서 떨어져 나간다 (#1 에서 잡은 규칙).
+      const swing = (geo) => {
+        geo.rotateY(-2.0);
+        geo.translate(0, 0, 0.805);
+        return geo;
+      };
+      let d = new THREE.BoxGeometry(0.78, 1.92, 0.03);
+      d.translate(0.39, 1.0, 0);
+      wallPut(pr.open, we, u - 0.39, swing(d), M.bezel); // 문판 — 경첩은 서쪽 모서리
+      d = new THREE.BoxGeometry(0.05, 0.5, 0.04);
+      d.translate(0.69, 1.15, 0.035);
+      wallPut(pr.open, we, u - 0.39, swing(d), M.trim); // 손잡이 — 문을 따라간다
+      for (const y of [0.62, 1.28]) {
+        d = new THREE.BoxGeometry(0.6, 0.13, 0.05);
+        d.translate(0.39, y, -0.04);
+        wallPut(pr.open, we, u - 0.39, swing(d), M.paper); // 문 안쪽 바구니 둘
+      }
+      tally.fridge = (tally.fridge ?? 0) + 1;
+    }
+    b.endMark();
+  }
+}
+
+// 카페테리아 — 자판기 줄과 원탁 (음식 권역의 작은 쪽, 식당과 트여 있다)
+function cafe(b, c, M, tally, I) {
+  // 자판기 — 제일 긴 막힌 벽에 줄지어. 게임에서도 이 방의 표식이다.
+  const walls = interiorWalls(c.id)
+    .filter((q) => q.rule === 'solid')
+    .sort((p, q) => q.b - q.a - (p.b - p.a));
   const w = walls[0];
   if (w) {
     b.mark('furniture', `vending:${c.id}`);
@@ -495,6 +710,584 @@ function cafeteria(b, c, M, tally, I) {
     tally.vending = (tally.vending ?? 0) + seats.length;
     b.endMark();
   }
+
+  // 원탁 — 상판도 기둥도 받침도 **원기둥**이다 (lessons.md 3.13.2).
+  // 서서 마시는 카페 테이블은 사각이 아니다.
+  b.mark('furniture', `cafetable:${c.id}`);
+  for (const x of fit(c.x0 + 1.2, c.x1, 2.6, 1.2)) {
+    for (const z of fit(c.z0, c.z1, 2.8, 1.5)) {
+      const tb = I.spawn('table');
+      tube(b, 0.5, 0.045, [x, 0.735, z], M.laminate, 'y', 12, true);
+      tube(b, 0.05, 0.68, [x, 0.38, z], M.trim, 'y', 8);
+      tube(b, 0.26, 0.035, [x, 0.02, z], M.steelDark, 'y', 10, true);
+      // 의자 셋 — 원탁을 보고 둘러앉는다
+      for (const k of [0, 1, 2]) {
+        const a = (k / 3) * Math.PI * 2 + 0.5;
+        chair(I.spawn('chair'), [x + Math.sin(a) * 0.82, 0, z + Math.cos(a) * 0.82], a + Math.PI, M, M.plastic);
+      }
+      tally.table = (tally.table ?? 0) + 1;
+    }
+  }
+  b.endMark();
+}
+
+// 사물함 하나 — 휴게실·샤워실의 약탈 소품. 문에 통풍 슬릿과 손잡이.
+//
+// 몸통은 통짜 상자가 아니라 **판 다섯**(등·옆 둘·천·바닥)이다 — 열면 속이
+// 보여야 한다. 통짜로 두고 선반을 그 속에 넣었더니 "안에 빈 공간이 없다"
+// 는 지적을 받았다 (자판기 #64 와 같은 병).
+function locker(pr, w, u, M) {
+  const H0 = 1.85;
+  const WID = 0.45;
+  const DEP = 0.5;
+  for (const pose of ['closed', 'open']) {
+    const bb = pr[pose];
+    wallBox(bb, w, u, 0.035, H0 / 2 + 0.06, WID, H0, 0.03, M.steelDark); // 등판
+    for (const s of [-1, 1]) {
+      wallBox(bb, w, u + s * (WID / 2 - 0.015), 0.27, H0 / 2 + 0.06, 0.03, H0, DEP - 0.04, M.steelDark);
+    }
+    wallBox(bb, w, u, 0.27, H0 + 0.045, WID, 0.03, DEP - 0.04, M.steelDark); // 천판
+    wallBox(bb, w, u, 0.27, 0.075, WID, 0.03, DEP - 0.04, M.steelDark); // 바닥판
+    // 속 — 선반과 옷걸이 봉은 두 포즈 공통 (닫혀 있어도 실제로 있다)
+    wallBox(bb, w, u, 0.27, 1.35, WID - 0.07, 0.02, DEP - 0.1, M.steel);
+    wallBox(bb, w, u, 0.27, 0.45, WID - 0.07, 0.02, DEP - 0.1, M.steel);
+    const [rx, , rz] = wallAt(w, u, 0.27, 0);
+    tube(bb, 0.011, WID - 0.1, [rx, 1.6, rz], M.trim, w.axis, 6);
+  }
+  // 닫힘 — 문이 몸통 앞면(0.5)보다 살짝 돌출 (겹평면 금지)
+  wallBox(pr.closed, w, u, 0.515, H0 / 2 + 0.06, 0.4, H0 - 0.1, 0.024, M.steel);
+  for (const y of [1.55, 0.5]) {
+    for (const dy of [0, 0.05, 0.1]) wallBox(pr.closed, w, u, 0.53, y + dy, 0.22, 0.014, 0.006, M.rubber);
+  }
+  wallBox(pr.closed, w, u + 0.13, 0.535, 1.05, 0.03, 0.1, 0.02, M.trim); // 손잡이
+  // 열림 — 문이 **경첩(왼쪽 변)을 원점에 두고 돌아간** 뒤 제자리로 간다.
+  // 순서를 반대로(이동 후 회전) 했더니 문이 몸통에서 떨어져 허공을 돌았다.
+  {
+    const g = new THREE.BoxGeometry(0.4, H0 - 0.1, 0.024);
+    g.translate(0.2, H0 / 2 + 0.06, 0); // 경첩변을 로컬 원점에
+    g.rotateY(-1.9); // 활짝 젖힘
+    g.translate(0, 0, 0.5); // 몸통 앞면 평면으로
+    wallPut(pr.open, w, u - 0.2, g, M.steel);
+  }
+}
+
+// 직원휴게실 — 소파·원형 탁자·자판기·사물함. 사람이 쉬는 흔적.
+function lounge(b, c, M, tally, I) {
+  const cx = (c.x0 + c.x1) / 2;
+  const cz = (c.z0 + c.z1) / 2;
+
+  // 소파 둘 — 등받이는 기울고 팔걸이는 **원기둥**이다 (각목 팔걸이는 벤치다)
+  b.mark('furniture', `sofa:${c.id}`);
+  const sofa = (x, z, yaw) => {
+    const s = I.spawn('sofa');
+    const put = (g, m) => {
+      g.rotateY(yaw);
+      g.translate(x, 0, z);
+      s.add(g, m);
+    };
+    const box = (w2, h, d, lx, ly, lz, m, tilt = 0) => {
+      const g = new THREE.BoxGeometry(w2, h, d);
+      if (tilt) g.rotateX(tilt);
+      g.translate(lx, ly, lz);
+      put(g, m);
+    };
+    // **조각끼리 맞닿아야 한다** — 쿠션이 틀 위에, 등쿠션이 방석 위에,
+    // 팔걸이가 받침 위에. 좌표를 따로 잡았다가 전부 공중부양했다 (#2 지적).
+    box(1.9, 0.22, 0.66, 0, 0.11, 0, M.trim); // 틀 0 ~ 0.22
+    box(1.9, 0.55, 0.12, 0, 0.395, -0.34, M.trim, -0.12); // 등판 — 틀에서 오른다
+    for (const dx of [-0.47, 0.47]) {
+      box(0.88, 0.16, 0.56, dx, 0.3, 0.03, M.plasticWarm); // 방석 — 틀 위(0.22)
+      box(0.88, 0.36, 0.12, dx, 0.56, -0.3, M.plasticWarm, -0.12); // 등쿠션 — 방석 위, 등판에 기댐
+    }
+    for (const dx of [-0.89, 0.89]) {
+      box(0.14, 0.25, 0.6, dx, 0.345, 0, M.trim); // 팔걸이 받침 — 틀에서 오른다
+      const g = new THREE.CylinderGeometry(0.09, 0.09, 0.6, 8);
+      g.rotateX(Math.PI / 2);
+      g.translate(dx, 0.5, 0);
+      put(g, M.plasticWarm); // 팔걸이 — 받침 위의 눕힌 원기둥
+    }
+    tally.sofa = (tally.sofa ?? 0) + 1;
+  };
+  sofa(cx - 0.3, cz + 0.75, Math.PI); // 마주 본다
+  sofa(cx - 0.3, cz - 0.75, 0);
+  // 낮은 원탁 — 소파 사이
+  tube(b, 0.42, 0.04, [cx - 0.3, 0.42, cz], M.laminate, 'y', 12, true);
+  tube(b, 0.04, 0.4, [cx - 0.3, 0.21, cz], M.trim, 'y', 8);
+  tube(b, 0.2, 0.03, [cx - 0.3, 0.015, cz], M.steelDark, 'y', 10, true);
+  b.endMark();
+
+  // 자판기 하나 — **서쪽 벽 고정** (샤워실 경계 z-벽). find 첫 번째로 뽑고
+  // 주석에는 "동쪽" 이라 적어 둘 다 틀렸었다 — 벽은 순서가 아니라 방위·
+  // 평면으로 고른다 (status.md 4.1 의 16).
+  const walls = interiorWalls(c.id).filter((q) => q.rule === 'solid');
+  const wv = walls.filter((q) => q.axis === 'z' && q.b - q.a > 1.6).sort((p, q) => p.at - q.at)[0];
+  if (wv) {
+    b.mark('furniture', `vending:${c.id}`);
+    vendor(I.spawn('vend'), wv, (wv.a + wv.b) / 2, [1.0, 1.92, M.vend], 5, M);
+    tally.vending = (tally.vending ?? 0) + 1;
+    b.endMark();
+  }
+
+  // 사물함 줄 — **북쪽 외벽 고정** (자판기와 다른 평면). `?? wv` 로 같은 벽에
+  // 겹쳐 세우던 잠재 자리는 없앴다 — 벽이 없으면 사물함도 없는 게 맞다.
+  const wl = walls.filter((q) => q.axis === 'x' && q.b - q.a > 2.0).sort((p, q) => q.at - p.at)[0];
+  if (wl) {
+    b.mark('furniture', `lockers:${c.id}`);
+    for (const t of fit(0, wl.b - wl.a, 0.5, 0.4).slice(0, 6)) {
+      locker(I.spawnPair('locker'), wl, wl.a + t, M);
+      tally.locker = (tally.locker ?? 0) + 1;
+    }
+    b.endMark();
+  }
+}
+
+// 샤워실 — 부스·샤워 기둥·벤치·사물함. 위생 권역의 가운데 칸이다.
+function shower(b, c, M, tally, I) {
+  const walls = interiorWalls(c.id).filter((q) => q.rule === 'solid');
+  // 부스 — **서쪽 벽 고정** (화장실 경계 z-벽). "제일 긴 벽" 정렬은 동·서
+  // z-벽 길이가 같아 배열 순서가 승자를 정하는 복권이었다 — 벽은 순서가
+  // 아니라 방위·평면으로 고른다 (status.md 4.1 의 16). 서쪽이어야 하는
+  // 이유: 화장실 부스가 같은 벽의 반대면에 붙어 젖은 배관이 한 벽으로
+  // 모인다. (옛 주석의 "배관 코어" 는 이번에 없앤 spurN 이라 근거를 갱신)
+  const zWalls = walls.filter((q) => q.axis === 'z');
+  const w = (zWalls.length ? zWalls.sort((p, q) => p.at - q.at) : walls)[0];
+  if (!w) return;
+  b.mark('furniture', `shower:${c.id}`);
+  const D = 1.0;
+  const PH = 2.0;
+  const len = w.b - w.a;
+  const seats = fit(0, len, 1.05, 0.3);
+  const edges = [seats[0] - 0.5, ...seats.map((t) => t + 0.5)];
+  for (const t of edges) wallBox(b, w, w.a + t, D / 2, 0.1 + PH / 2, 0.04, PH, D, M.trim);
+  for (const t of seats) {
+    const u = w.a + t;
+    // 샤워 기둥 — **로컬(+x 벽따라, +z 안쪽)에서 짓고 wallPut 으로 한 번에
+    // 옮긴다.** 조각마다 축·inward 삼각함수를 따로 쓰다 배관·목·헤드·레버가
+    // 제각각 떠 있었다 (#4 지적 — 의자·경첩과 같은 교훈).
+    const put = (g, m) => wallPut(b, w, u, g, m);
+    const cyl = (r0, r1, h, lx, ly, lz, m, tiltX = 0, seg = 6) => {
+      const g = new THREE.CylinderGeometry(r0, r1, h, seg);
+      if (tiltX) g.rotateX(tiltX);
+      g.translate(lx, ly, lz);
+      put(g, m);
+    };
+    // 기둥 꼭대기에서 **암이 아래로 꺾여** 나가고 그 끝에 헤드가 아래를
+    // 본다. 목이 헤드 위로 솟아 안테나가 됐던 판을 다시 짰고, 헤드가
+    // 1.7m(얼굴 높이)라 칸막이 상단에 걸려 보이던 것을 1.9m 로 올렸다
+    // (2026-08-06 지적 — 샤워 헤드는 머리 위에 있어야 샤워기다).
+    cyl(0.018, 0.018, 2.0, 0, 1.0, 0.09, M.trim); // 수직 배관 (꼭대기 2.0)
+    cyl(0.014, 0.014, 0.26, 0, 1.94, 0.2, M.trim, 2.05); // 암 — 위에서 아래-안쪽으로
+    cyl(0.02, 0.062, 0.07, 0, 1.86, 0.32, M.steel, 0.35); // 헤드 — 아래가 넓은 원뿔대
+    // 살수판 — 헤드와 **같은 축**에 있어야 한다. 좌표를 눈짐작으로 두었더니
+    // 원판이 원뿔대에서 3cm 벗어나 떠 있었다 (2026-08-06 재지적). 헤드
+    // 밑면 중심 = 헤드 중심 - (h/2 + t/2)·축, 축 = (0, cos0.35, sin0.35).
+    cyl(0.052, 0.052, 0.014, 0, 1.82, 0.306, M.steelDark, 0.35, 10);
+    // 수전 몸통 + 십자 손잡이(교차 원기둥 둘)
+    const body = new THREE.BoxGeometry(0.12, 0.05, 0.05);
+    body.translate(0, 1.1, 0.075);
+    put(body, M.steel);
+    cyl(0.008, 0.008, 0.1, 0, 1.1, 0.11, M.trim, Math.PI / 2);
+    {
+      const g = new THREE.CylinderGeometry(0.008, 0.008, 0.1, 6);
+      g.rotateZ(Math.PI / 2);
+      g.translate(0, 1.1, 0.11);
+      put(g, M.trim);
+    }
+    // 비누 선반 — 칸막이 구석의 **사분원 판** (곡면이 이 물건답다).
+    // 부채꼴이 방 안쪽(+x·+z)을 보게 놓는다
+    {
+      const q = new THREE.CylinderGeometry(0.15, 0.15, 0.02, 6, 1, false, 0, Math.PI / 2);
+      q.translate(0.33, 1.05, 0.02);
+      put(q, M.paper);
+    }
+    // 커튼 봉 — 부스 입구(칸막이 끝선)를 가로지르는 관
+    {
+      const g = new THREE.CylinderGeometry(0.013, 0.013, 0.94, 6);
+      g.rotateZ(Math.PI / 2);
+      g.translate(0, 1.98, D - 0.05);
+      put(g, M.trim);
+    }
+    tally.shower = (tally.shower ?? 0) + 1;
+  }
+  b.endMark();
+
+  // 벤치와 사물함 — **동쪽 벽 고정** (부스의 맞은편 z-벽). find 첫 번째로
+  // 두면 부스 벽 선택을 고칠 때 이쪽이 북쪽 벽으로 밀려 사물함 셋이 하나로
+  // 줄었다 — 짝이 되는 벽은 둘 다 방위로 고정해야 같이 버틴다.
+  const across = walls.filter((q) => q.axis === 'z' && q !== w && q.b - q.a > 1.2).sort((p, q) => q.at - p.at)[0];
+  if (across) {
+    b.mark('furniture', `bench:${c.id}`);
+    const cm = (across.a + across.b) / 2;
+    wallBox(b, across, cm, 0.35, 0.44, Math.min(across.b - across.a - 0.4, 1.8), 0.05, 0.3, M.laminate);
+    for (const s of [-0.7, 0.7]) wallBox(b, across, cm + s, 0.35, 0.21, 0.05, 0.42, 0.26, M.trim);
+    for (const t of fit(0, across.b - across.a, 0.5, 0.25).slice(0, 3)) {
+      const u = across.a + t;
+      if (Math.abs(u - cm) < 1.1) continue; // 벤치 자리는 비운다
+      locker(I.spawnPair('locker'), across, u, M);
+      tally.locker = (tally.locker ?? 0) + 1;
+    }
+    b.endMark();
+  }
+}
+
+// 관제실 — 진입 사슬의 가운데. 서버실 유리를 향한 콘솔 줄과 상황판.
+function control(b, c, M, tally, I) {
+  // 콘솔 — 유리벽(서버실 쪽, 북쪽 z1)을 보고 앉는다. 화면은 사람 쪽(-z).
+  b.mark('furniture', `console:${c.id}`);
+  const zC = c.z1 - 1.35; // 콘솔 줄
+  for (const x of fit(c.x0, c.x1, 2.2, 1.0)) {
+    const tb = I.spawnPair('desk');
+    for (const pose of ['closed', 'open']) {
+      const d = tb[pose];
+      d.box(1.8, 0.05, 0.85, [x, 0.73, zC], M.laminate, 0);
+      d.box(0.44, 0.64, 0.7, [x - 0.6, 0.32, zC], M.laminate, 0);
+      for (const dy of [0.16, 0.38, 0.56]) {
+        const out = pose === 'open' && dy === 0.38 ? 0.22 : 0;
+        d.box(0.38, 0.16, 0.02, [x - 0.6, dy, zC + 0.36 + out], M.trim, 0);
+      }
+      d.box(0.05, 0.72, 0.05, [x + 0.78, 0.36, zC - 0.3], M.trim, 0);
+      d.box(0.05, 0.72, 0.05, [x + 0.78, 0.36, zC + 0.3], M.trim, 0);
+    }
+    // 브라운관 둘 — 화면이 남쪽(앉은 사람)을 본다
+    terminal(I.spawn('crt'), x - 0.35, 0.755, zC + 0.12, -1, M);
+    terminal(I.spawn('crt'), x + 0.42, 0.755, zC + 0.12, -1, M);
+    // 기울인 제어반 — 두 브라운관 사이의 경사 패널 + 버튼. 직각 책상과
+    // 모니터만으로는 관제 콘솔이 아니다 (lessons.md 3.13.2)
+    {
+      const g = new THREE.BoxGeometry(0.3, 0.018, 0.2);
+      g.rotateX(-0.45);
+      g.translate(x + 0.035, 0.815, zC + 0.16);
+      b.add(g, M.steelDark);
+      for (let k = 0; k < 4; k++) {
+        const btn = new THREE.BoxGeometry(0.05, 0.012, 0.04);
+        btn.rotateX(-0.45);
+        btn.translate(x - 0.05 + (k % 2) * 0.17, 0.82 + (k < 2 ? 0.028 : -0.012), zC + 0.13 + (k < 2 ? 0.06 : 0));
+        b.add(btn, k === 0 ? M.warn : M.trim);
+      }
+    }
+    // 구즈넥 마이크 — 원판 받침 + 기울어 오르는 목 + 머리 (콘솔 하나 걸러)
+    if (Math.round(x * 10) % 2 === 0) {
+      tube(b, 0.035, 0.014, [x - 0.62, 0.762, zC - 0.18], M.steelDark, 'y', 8, true);
+      const stem = new THREE.CylinderGeometry(0.006, 0.006, 0.2, 6);
+      stem.rotateX(0.4);
+      stem.translate(x - 0.62, 0.86, zC - 0.14);
+      b.add(stem, M.trim);
+      const mic = new THREE.CylinderGeometry(0.018, 0.014, 0.05, 8);
+      mic.rotateX(1.2);
+      mic.translate(x - 0.62, 0.96, zC - 0.1);
+      b.add(mic, M.rubber);
+    }
+    chair(I.spawn('chair'), [x, 0, zC - 0.85], 0, M, M.plastic, true);
+    tally.console = (tally.console ?? 0) + 1;
+  }
+  b.endMark();
+
+  // 상황판 — 남쪽 벽(기계실 경계)에 모니터 뱅크. 관제실의 표식이다.
+  const w = interiorWalls(c.id).find((q) => q.rule !== 'glass' && q.b - q.a > 3.0);
+  if (w) {
+    b.mark('furniture', `statusboard:${c.id}`);
+    const cm = (w.a + w.b) / 2;
+    wallBox(b, w, cm, 0.05, 1.55, 3.4, 1.3, 0.06, M.crtDark);
+    for (let r = 0; r < 2; r++) {
+      for (let k = 0; k < 4; k++) {
+        wallBox(b, w, cm - 1.275 + k * 0.85, 0.085, 1.86 - r * 0.62, 0.76, 0.54, 0.012, r + k === 2 ? M.exit : M.screen);
+      }
+    }
+    b.endMark();
+    tally.statusboard = 1;
+  }
+}
+
+// 기계실 — 공조기·펌프·탱크·배관. 펌프 몸통과 탱크는 **원기둥**이다.
+function machine(b, c, M, tally, I) {
+  const cx = (c.x0 + c.x1) / 2;
+  const cz = (c.z0 + c.z1) / 2;
+
+  // 공조기(AHU) — 큰 함체. 루버·점검 뚜껑은 **방 안쪽(남면)** 을 본다 —
+  // 처음에 북면(벽 쪽)에 붙여 아무도 못 보는 디테일이었다.
+  b.mark('service', `ahu:${c.id}`);
+  const ax = c.x0 + 2.2;
+  // 벽에 붙인다 — 방 가운데 떠 있으면 자리가 애매하다 (#11)
+  const az = c.z1 - 0.87;
+  // 베이스 채널 + 방진 마운트(짧은 고무 원기둥 넷) — 기계는 바닥에 바로
+  // 앉지 않는다
+  b.box(3.0, 0.1, 1.5, [ax, 0.17, az], M.steelDark, 0);
+  for (const [sx, sz] of [[-1.3, -0.55], [1.3, -0.55], [-1.3, 0.55], [1.3, 0.55]]) {
+    tube(b, 0.07, 0.12, [ax + sx, 0.06, az + sz], M.rubber, 'y', 8, true);
+  }
+  b.box(3.0, 1.8, 1.5, [ax, 1.12, az], M.steel, 1.2);
+  // 패널 리브 — 함체 남면의 세로 이음선. 민짜 상자를 패널 조립체로 만든다
+  for (const dx of [-1.0, -0.33, 0.33, 1.0]) {
+    b.box(0.03, 1.7, 0.02, [ax + dx, 1.12, az - 0.762], M.steelDark, 0);
+  }
+  for (let i = 0; i < 6; i++) {
+    b.box(1.15, 0.07, 0.025, [ax - 0.67, 0.62 + i * 0.15, az - 0.765], M.steelDark, 0);
+  }
+  // 점검문 — 틀 + 문판 + 경첩 둘 + 손잡이 + 명판. 민짜 사각판은 문이 아니다
+  b.box(0.56, 0.86, 0.02, [ax + 0.66, 1.15, az - 0.762], M.steelDark, 0); // 틀
+  b.box(0.5, 0.8, 0.025, [ax + 0.66, 1.15, az - 0.768], M.trim, 0); // 문판
+  for (const dy of [-0.28, 0.28]) {
+    b.box(0.03, 0.1, 0.035, [ax + 0.44, 1.15 + dy, az - 0.765], M.steelDark, 0); // 경첩
+  }
+  b.box(0.025, 0.12, 0.04, [ax + 0.86, 1.15, az - 0.77], M.steelDark, 0); // 손잡이
+  b.box(0.22, 0.09, 0.015, [ax - 0.05, 1.85, az - 0.765], M.paper, 0); // 명판
+  // 흡입 팬 — 서쪽 옆면의 **원형** 하우징 (원판 + 토러스 링). 상자 옆에
+  // 원이 하나 있어야 기계로 읽힌다 (lessons.md 3.13.2)
+  {
+    const disc = new THREE.CylinderGeometry(0.4, 0.4, 0.05, 14);
+    disc.rotateZ(Math.PI / 2);
+    disc.translate(ax - 1.53, 1.05, az);
+    b.add(disc, M.steelDark);
+    const ring = new THREE.TorusGeometry(0.4, 0.032, 6, 14);
+    ring.rotateY(Math.PI / 2);
+    ring.translate(ax - 1.54, 1.05, az);
+    b.add(ring, M.trim);
+  }
+  tube(b, 0.3, c.h - 2.02, [ax + 0.8, 2.02 + (c.h - 2.02) / 2, az], M.steel, 'y', 10);
+  b.endMark();
+  tally.ahu = 1;
+
+  // 펌프 두 쌍 — 눕힌 원통 몸통 + 모터 원통 + 받침. 배관의 무릎은
+  // **사분 토러스 엘보**다 — 직관을 직각으로 맞대면 부러진 관이다
+  // (lessons.md 3.13.2). 밸브 핸드휠도 토러스다.
+  b.mark('service', `pumps:${c.id}`);
+  for (const [px, pz] of [
+    [cx + 1.2, cz - 1.2],
+    [cx + 3.2, cz - 1.2],
+  ]) {
+    b.box(1.3, 0.18, 0.7, [px, 0.09, pz], M.steelDark, 0); // 기초 패드
+    // 새들 받침 — 몸통·모터가 패드에 **닿아야 한다.** 원통 밑이 떠 있었다
+    // (#2·3 재지적)
+    for (const [dx, ww] of [[-0.45, 0.32], [0.02, 0.32], [0.42, 0.26]]) {
+      b.box(ww, 0.14, 0.5, [px + dx, 0.25, pz], M.steelDark, 0);
+    }
+    tube(b, 0.21, 0.7, [px - 0.2, 0.5, pz], M.vendBlue, 'x', 10, true); // 펌프 몸통
+    tube(b, 0.24, 0.05, [px + 0.16, 0.5, pz], M.steelDark, 'x', 10, true); // 몸통-모터 플랜지
+    tube(b, 0.16, 0.45, [px + 0.42, 0.5, pz], M.steelDark, 'x', 10, true); // 모터
+    // 모터 냉각핀 — 얇은 원판 넷. 민짜 원통은 모터가 아니다
+    for (const dx of [0.3, 0.4, 0.5, 0.6]) {
+      tube(b, 0.175, 0.014, [px + dx, 0.5, pz], M.steelDark, 'x', 10, true);
+    }
+    b.box(0.14, 0.1, 0.12, [px + 0.42, 0.63, pz], M.trim, 0); // 단자함
+    // 토출 배관 — **천장을 뚫고 곧장 위로.** 남쪽 벽으로 눕혀 보냈더니
+    // 배전반 줄과 엉켰다 (#2 재지적). 탱크 상부 배관·배전반 전선관과 같은
+    // 문법이라 방이 정리된다.
+    tube(b, 0.09, 0.06, [px - 0.57, 0.74, pz], M.steelDark, 'y', 8, true); // 토출 플랜지
+    tube(b, 0.07, c.h - 0.77, [px - 0.55, 0.77 + (c.h - 0.77) / 2, pz], M.steel, 'y', 8);
+    {
+      // 밸브 — 수직관 중간. 보닛 + 수평 스템(통로 쪽) + 핸드휠 + 허브 + 스포크
+      const vy = 1.5;
+      tube(b, 0.055, 0.1, [px - 0.55, vy, pz], M.steel, 'y', 8, true); // 보닛
+      const stem = new THREE.CylinderGeometry(0.02, 0.02, 0.16, 6);
+      stem.rotateX(Math.PI / 2);
+      stem.translate(px - 0.55, vy, pz + 0.12);
+      b.add(stem, M.trim);
+      const wz = pz + 0.21;
+      const wheel = new THREE.TorusGeometry(0.085, 0.016, 6, 12);
+      wheel.translate(px - 0.55, vy, wz); // 기본 XY 평면 — 통로를 본다
+      b.add(wheel, M.warn);
+      const hub = new THREE.CylinderGeometry(0.026, 0.026, 0.04, 8);
+      hub.rotateX(Math.PI / 2);
+      hub.translate(px - 0.55, vy, wz);
+      b.add(hub, M.warn);
+      for (const ang of [0, Math.PI / 2]) {
+        const sp = new THREE.CylinderGeometry(0.011, 0.011, 0.165, 6);
+        sp.rotateZ(Math.PI / 2);
+        sp.rotateZ(ang); // 휠 평면(XY) 안에서 교차
+        sp.translate(px - 0.55, vy, wz);
+        b.add(sp, M.warn);
+      }
+    }
+    tally.pump = (tally.pump ?? 0) + 1;
+  }
+  b.endMark();
+
+  // 탱크 둘 — 수직 원통에 **반구 돔 머리**. 뚜껑이 평평하면 드럼통이다
+  // (lessons.md 3.13.2). 몸통에 압력 게이지 원판이 붙는다.
+  b.mark('service', `tanks:${c.id}`);
+  for (const [tx, r, h] of [
+    [c.x1 - 1.5, 0.55, 2.0],
+    [c.x1 - 3.0, 0.4, 1.7],
+  ]) {
+    tube(b, r, h, [tx, h / 2 + 0.08, cz - 1.4], M.steel, 'y', 12, true);
+    const dome = new THREE.SphereGeometry(r, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+    dome.translate(tx, h + 0.08, cz - 1.4);
+    b.add(dome, M.steel);
+    tube(b, r + 0.04, 0.08, [tx, 0.04, cz - 1.4], M.steelDark, 'y', 12, true);
+    tube(b, 0.05, c.h - h - r - 0.08, [tx, (h + r + 0.08 + c.h) / 2, cz - 1.4], M.trim, 'y', 6); // 상부 배관
+    // 게이지 — 방 쪽 몸통에 작은 원판 + 바늘
+    {
+      const g = new THREE.CylinderGeometry(0.06, 0.06, 0.025, 10);
+      g.rotateX(Math.PI / 2);
+      g.translate(tx, 1.35, cz - 1.4 + r + 0.012);
+      b.add(g, M.paper);
+      b.box(0.008, 0.045, 0.01, [tx, 1.36, cz - 1.4 + r + 0.028], M.vend, 0);
+    }
+    tally.tank = (tally.tank ?? 0) + 1;
+  }
+  b.endMark();
+
+  // 천장 배관 — 설비실과 같은 규율 (원기둥 + 행어)
+  b.mark('service', `pipes:${c.id}`);
+  const len = c.x1 - c.x0 - 0.4;
+  for (const [off, r, m] of [
+    [-0.5, 0.1, M.steel],
+    [0, 0.14, M.steelDark],
+    [0.5, 0.08, M.steel],
+  ]) {
+    tube(b, r, len, [cx, 2.4 + off * 0.18, cz - 0.3 + off], m, 'x', 8);
+    for (const t of fit(cx - len / 2, cx + len / 2, 2.6, 0.6)) {
+      b.box(0.03, c.h - 2.4 - off * 0.18, 0.03, [t, (c.h + 2.4 + off * 0.18) / 2, cz - 0.3 + off], M.trim, 0);
+    }
+  }
+  b.endMark();
+
+  // 배전반 한 줄 — 제일 긴 막힌 벽. 옛 설비실(배전반 방)을 이 방에 합쳤으므로
+  // 개수 상한 없이 벽 길이만큼 선다 (2026-08-05 병합).
+  const w = interiorWalls(c.id)
+    .filter((q) => q.rule === 'solid' && q.b - q.a > 3)
+    .sort((p, q) => q.b - q.a - (p.b - p.a))[0];
+  if (w) {
+    b.mark('furniture', `plant:${c.id}`);
+    for (const t of fit(0, w.b - w.a, 2.4, 1.0)) {
+      const pr = I.spawnPair('panel');
+      panel(pr.closed, w, w.a + t, c.h, M);
+      panel(pr.open, w, w.a + t, c.h, M, 'open');
+      tally.panel = (tally.panel ?? 0) + 1;
+    }
+    b.endMark();
+  }
+}
+
+// 비상계단 — 지상으로 올라가는 2련 계단. 난간은 **관**이다.
+// 위쪽은 어두운 통으로 막혀 있다 — 지진 직후라 위층 개방은 파손·탈출
+// 단계의 몫이다 (story.md 2장 6).
+//
+// **층계는 아래가 찬 덩어리다.** 처음에 얇은 판을 공중에 계단식으로 띄웠더니
+// 계단이 아니라 떠 있는 블록 줄이었다 — 부어 만든 콘크리트 계단은 바닥부터
+// 차오른다. 참(landing)도 기둥처럼 바닥부터 채운다.
+//
+// **방 치수에서 련 폭·단 수가 나온다** — 계단실은 계단이 벽에 딱 맞붙는
+// 크기다. 입구는 엘리베이터 베이 쪽(동쪽 벽 문)이다 (2026-08-05 스크린샷
+// 지시): 베이 문으로 들어와 -> 동쪽 련 옆 빈 바닥을 따라 북쪽으로 -> 서쪽
+// 련을 남쪽으로 오름 -> 남쪽 끝 참에서 꺾여 동쪽 련이 어두운 상부 통
+// 속으로 사라진다 (위층 개방은 파손·탈출 단계 몫). 북쪽 복도 문은 유예
+// 공간(련이 시작되기 전)으로 열린다.
+function stairwell(b, c, M, tally) {
+  b.mark('furniture', `stair:${c.id}`);
+  const rise = 0.17;
+  const tread = 0.27;
+  const N = 12;
+  const w2 = (c.x1 - c.x0 - 0.3) / 2; // 두 련이 방 폭을 꽉 채운다
+  const xA = c.x0 + 0.08 + w2 / 2; // 오름 련 — 서쪽
+  const xB = c.x1 - 0.08 - w2 / 2; // 되오름 련 — 동쪽 (베이 문 쪽)
+  const zTop = c.z1 - 0.95; // 북쪽 유예 뒤 1련 첫 단
+
+  // 1련(서) — 북에서 남으로 오른다. 단마다 바닥까지 채운 상자
+  for (let i = 0; i < N; i++) {
+    const h = rise * (i + 1);
+    b.box(w2, h, tread, [xA, h / 2, zTop - tread * (i + 0.5)], M.rock, 0.6);
+  }
+  const yL = rise * (N + 1); // 참 윗면
+  const zL1 = zTop - tread * N; // 참 북쪽 끝 (1련 꼭대기와 잇닿는다)
+  const LD = Math.max(1.2, zL1 - c.z0 - 0.12); // 남쪽 벽까지 채운다
+  b.box(c.x1 - c.x0 - 0.16, yL, LD, [(c.x0 + c.x1) / 2, yL / 2, zL1 - LD / 2], M.rock, 0.6);
+  // 2련(동) — 참 위에 얹혀 북쪽으로 되오르며 **샤프트 속으로 계속 올라간다.**
+  // 정체불명의 검은 상자로 가리던 것을 걷어냈다 (#9) — 계단은 위층으로
+  // 이어지는 것처럼 보여야 한다. 막힘(잔해)은 파손 단계의 몫이다.
+  for (let i = 1; i <= 10; i++) {
+    const h = rise * i;
+    b.box(w2, h, tread, [xB, yL + h / 2, zL1 + tread * (i - 0.5)], M.rock, 0.6);
+  }
+  // 상부 참 조각 — 2련 꼭대기(어둠 직전)의 슬래브. 올려다보면 실루엣이 남는다
+  const yU = yL + rise * 11;
+  b.box(w2, 0.16, 0.9, [xB, yU - 0.08, zL1 + tread * 10.5 + 0.45], M.rock, 0.6);
+
+  // 샤프트 — 방 천장이 없는 대신(shell.buildCeilings) 벽이 위로 계속 올라
+  // 어두운 통이 된다. 꼭대기는 캡 슬래브. 스콘스 위로는 직사광이 안 가므로
+  // 상부는 굽기에서 자연히 어둠에 잠긴다.
+  const SH = 5.5;
+  const cx2 = (c.x0 + c.x1) / 2;
+  const cz2 = (c.z0 + c.z1) / 2;
+  b.box(c.x1 - c.x0, SH - c.h, 0.12, [cx2, (SH + c.h) / 2, c.z0 + 0.06], M.wall, 1.0);
+  b.box(c.x1 - c.x0, SH - c.h, 0.12, [cx2, (SH + c.h) / 2, c.z1 - 0.06], M.wall, 1.0);
+  b.box(0.12, SH - c.h, c.z1 - c.z0 - 0.24, [c.x0 + 0.06, (SH + c.h) / 2, cz2], M.wall, 1.0);
+  b.box(0.12, SH - c.h, c.z1 - c.z0 - 0.24, [c.x1 - 0.06, (SH + c.h) / 2, cz2], M.wall, 1.0);
+  b.box(c.x1 - c.x0, 0.15, c.z1 - c.z0, [cx2, SH + 0.075, cz2], M.rock, 1.2);
+
+  // 난간 — 1련 안쪽(동측)에 경사 관 + 수직 지주. 2련 것은 통 속이라 안 낸다
+  const rail = (x, za, ya, zb, yb) => {
+    const len = Math.hypot(zb - za, yb - ya);
+    const g = new THREE.CylinderGeometry(0.021, 0.021, len, 6);
+    g.rotateX(Math.atan2(zb - za, yb - ya));
+    g.translate(x, (ya + yb) / 2, (za + zb) / 2);
+    b.add(g, M.warn);
+    for (const t of [0.12, 0.5, 0.88]) {
+      const z = za + (zb - za) * t;
+      const yr = ya + (yb - ya) * t;
+      tube(b, 0.013, 0.86, [x, yr - 0.43, z], M.trim, 'y', 6);
+    }
+  };
+  rail(xA + w2 / 2 + 0.05, zTop - 0.15, 1.05, zL1 + 0.15, 1.05 + rise * (N - 1));
+  b.endMark();
+  tally.stair = 1;
+}
+
+// 엘리베이터 홀 — 닫힌 문 두 짝과 호출반, 층 표시.
+function elevatorHall(b, c, M, tally) {
+  // 문은 남쪽 외벽(막힌 벽)에 낸다 — 승강로는 벽 너머(매립 쪽) 상상 속이다
+  const w = interiorWalls(c.id)
+    .filter((q) => q.rule === 'solid')
+    .sort((p, q) => q.b - q.a - (p.b - p.a))[0];
+  if (!w) return;
+  b.mark('furniture', `elev:${c.id}`);
+  const cm = (w.a + w.b) / 2;
+  for (const s of [-1.6, 1.6]) {
+    const u = cm + s;
+    // 틀 — **둘레 띠 셋**이다. 처음에 통판 하나로 세웠더니 문짝이 그 속에
+    // 묻혀 검은 판만 남았다 — 자판기 진열창(#64)과 같은 병.
+    for (const [du, y, wid, h] of [
+      [-0.62, 1.09, 0.12, 2.18],
+      [0.62, 1.09, 0.12, 2.18],
+      [0, 2.24, 1.36, 0.12],
+    ]) {
+      wallBox(b, w, u + du, 0.06, y, wid, h, 0.12, M.steelDark);
+    }
+    // 문 두 짝 — 틀 앞면 바로 뒤 1cm. 벽 쪽으로 깊이 물렸더니 시커먼 빈
+    // 구멍으로 보였다 (#10). 가운데 틈이 보여야 문이다
+    for (const d of [-1, 1]) {
+      wallBox(b, w, u + d * 0.28, 0.095, 1.04, 0.54, 2.08, 0.03, M.steel);
+    }
+    wallBox(b, w, u, 0.113, 1.04, 0.02, 2.08, 0.02, M.rubber); // 틈
+    wallBox(b, w, u, 0.095, 2.13, 1.12, 0.1, 0.03, M.steel); // 문 위 막음판
+    // 문지방 — 바닥의 스테인리스 띠
+    wallBox(b, w, u, 0.1, 0.012, 1.3, 0.024, 0.16, M.steelDark);
+    // 층 표시 — 문 위 발광 띠 + **삼각 프리즘 화살표** (3각 원기둥 —
+    // 위를 가리켜야 '올라가는 승강기' 다. lessons.md 3.13.2)
+    wallBox(b, w, u, 0.065, 2.42, 0.5, 0.12, 0.03, M.screen);
+    {
+      const tri = new THREE.CylinderGeometry(0.05, 0.05, 0.018, 3);
+      tri.rotateX(Math.PI / 2); // 축을 벽 법선으로
+      tri.rotateZ(Math.PI); // 꼭짓점이 위를 본다
+      const [tx2, , tz2] = wallAt(w, u - 0.42, 0.07, 0);
+      tri.translate(tx2, 2.42, tz2);
+      b.add(tri, M.exit);
+    }
+    tally.elev = (tally.elev ?? 0) + 1;
+  }
+  // 호출반 — 두 문 사이. 버튼은 **원형**이다 (사각 버튼 승강기는 없다)
+  wallBox(b, w, cm, 0.06, 1.1, 0.14, 0.3, 0.04, M.steel);
+  for (const [y, m] of [
+    [1.16, M.exit],
+    [1.04, M.trim],
+  ]) {
+    const g = new THREE.CylinderGeometry(0.024, 0.024, 0.014, 10);
+    g.rotateX(Math.PI / 2);
+    const [bx2, , bz2] = wallAt(w, cm, 0.088, 0);
+    g.translate(bx2, y, bz2);
+    b.add(g, m);
+  }
+  b.endMark();
 }
 
 // 자판기 하나.
@@ -548,7 +1341,31 @@ function vendor(b, w, u, spec, idx, M) {
   box(0, F + 0.028, HT - 0.22, WID - 0.16, 0.14, 0.01, idx % 2 ? M.vendBlue : M.vend);
 
   // ── 진열칸 속 — 선반과 상품. 이제 창 너머로 실제로 보인다 ────────────
+  //
+  // **음료는 원기둥이다** (lessons.md 3.13.2 — 사용자 지시). 상자로 냈더니
+  // "이게 음료 자판기라면 안에 직육면체가 있으면 안 된다" 는 지적을 받았다.
+  // 캔(낮고 통통)과 병(캔보다 크고 목이 좁아진다) 두 종을 섞는다.
   const PAL = [M.vend, M.vendBlue, M.plastic, M.plasticWarm, M.warn, M.crate];
+  const drink = (du, v, yBase, r, m) => {
+    // 선반 위에 서는 음료 — 벽 좌표로 옮겨 놓는다
+    const put = (r0, r1, h, yc, mm, seg = 8) => {
+      const g = new THREE.CylinderGeometry(r0, r1, h, seg);
+      const [px, py, pz] = wallAt(w, u + du, v, yc);
+      g.translate(px, py, pz);
+      b.add(g, mm);
+    };
+    if (r < 0.6) {
+      put(0.029, 0.029, 0.115, yBase + 0.0575, m); // 캔 몸통
+      put(0.026, 0.029, 0.012, yBase + 0.121, M.steel); // 캔 윗테 — 은색으로 좁아진다
+    } else {
+      // 페트병 — 몸통·**어깨(원뿔대)**·목·뚜껑. 원기둥 두 개를 쌓으면 병이
+      // 아니라 굴뚝이다 (#8 지적, lessons.md 3.13.2)
+      put(0.027, 0.027, 0.125, yBase + 0.0625, m); // 몸통
+      put(0.011, 0.027, 0.045, yBase + 0.1475, m); // 어깨 — 좁아지는 원뿔대
+      put(0.011, 0.011, 0.028, yBase + 0.184, m); // 목
+      put(0.0125, 0.0125, 0.018, yBase + 0.207, M.paper); // 뚜껑 — 색이 다르다
+    }
+  };
   for (let s = 0; s < 4; s++) {
     const sy = yBot + 0.13 + s * 0.21;
     box(gC, 0.5, sy - 0.075, gW, 0.014, 0.5, M.steelDark); // 선반
@@ -556,9 +1373,8 @@ function vendor(b, w, u, spec, idx, M) {
       const r = hash2(idx * 17 + s * 5 + k, s * 7 + k);
       if (r < 0.12) continue; // 다 팔린 줄
       const m = PAL[Math.floor(r * PAL.length) % PAL.length];
-      const ph = 0.13 + r * 0.03;
       // 선반 윗면(sy-0.068)에 바닥을 붙인다 — 띄우면 유리 너머로 뜬 게 보인다
-      box(gL + 0.06 + (k * (gW - 0.12)) / 4, 0.55, sy - 0.068 + ph / 2, 0.055, ph, 0.05, m);
+      drink(gL + 0.06 + (k * (gW - 0.12)) / 4, 0.55, sy - 0.068, r, m);
     }
   }
 
@@ -753,17 +1569,18 @@ function crac(b, w, u, h, M) {
 
 function serverRoom(b, c, M, tally, I) {
   // 랙 열 — 통로 폭 1.2m 를 남긴다. 랙은 약탈(망문)·파괴 대상이라 저마다 노드다.
+  //
+  // **열은 세로(z)로 달리고, 전 랙이 한 방향(서쪽)을 본다** (2026-08-05
+  // 사용자 지시 — 가로 열·콜드/핫 교대 배치를 뒤집었다). 관제실 유리(남쪽)
+  // 에서 보면 통로들이 세로로 늘어서고, 통로마다 한쪽 벽은 앞면(표시등),
+  // 반대쪽은 뒷면이 된다.
   b.mark('furniture', `racks:${c.id}`);
-  const along = c.x1 - c.x0 > c.z1 - c.z0;
-  const ax = along ? 'x' : 'z';
-  const rows = fit(along ? c.z0 : c.x0, along ? c.z1 : c.x1, 2.2, 1.4);
+  const ax = 'z';
+  const face = -1; // 전부 서쪽(관제실 문에서 들어와 처음 보는 쪽)을 본다
+  const rows = fit(c.x0, c.x1, 2.2, 1.4); // 열이 x 방향으로 늘어선다
   let n = 0;
-  rows.forEach((r, ri) => {
-    // **열이 번갈아 돈다.** 실제 데이터센터의 콜드/핫 아일 배치다 — 앞면끼리
-    // 마주 본 통로로 찬 바람이 들어가고, 뒷면끼리 마주 본 통로로 더운 바람이
-    // 나간다. 전부 같은 방향을 보게 하면 앞 열의 배기를 뒤 열이 빨아들인다.
-    const face = ri % 2 === 0 ? 1 : -1;
-    for (const t of fit(along ? c.x0 : c.z0, along ? c.x1 : c.z1, 0.62, 1.6)) {
+  rows.forEach((r) => {
+    for (const t of fit(c.z0, c.z1, 0.62, 1.6)) {
       const pr = I.spawnPair('rack');
       const seed = ++n; // 두 포즈가 같은 시드 — 유닛 구성이 같아야 같은 랙이다
       serverRack(pr.closed, t, r, ax, face, M, seed);
@@ -784,23 +1601,18 @@ function serverRoom(b, c, M, tally, I) {
       tally.crac = (tally.crac ?? 0) + 1;
     }
   }
-  // 급기 덕트 — **콜드 아일(앞면끼리 마주 본 통로) 위**에만 놓는다.
-  // 처음에는 랙 열 좌표(r)에 그대로 놓아서 덕트가 통로가 아니라 랙 꼭대기를
-  // 달리고 있었다 — 주석("통로 위")과 코드가 달랐다. 열이 번갈아 도는 배치라
-  // 콜드 아일은 (0,1) (2,3)… 쌍의 중점이다.
-  const lo = along ? c.x0 : c.z0;
-  const hi = along ? c.x1 : c.z1;
-  for (let i = 0; i + 1 < rows.length; i += 2) {
+  // 급기 덕트 — **통로 위**에 놓는다. 처음에는 랙 열 좌표(r)에 그대로 놓아서
+  // 덕트가 통로가 아니라 랙 꼭대기를 달리고 있었다 — 주석("통로 위")과
+  // 코드가 달랐다. 단방향 배치라 통로는 이웃한 열 사이마다 하나다.
+  for (let i = 0; i + 1 < rows.length; i++) {
     const r = (rows[i] + rows[i + 1]) / 2;
     const y = c.h - 0.3;
-    const A = lo + 0.4;
-    const B = hi - 0.4;
-    const at = (t) => (along ? [t, y, r] : [r, y, t]);
-    const s = (l, hh, cr) => (along ? [l, hh, cr] : [cr, hh, l]);
-    b.box(...s(B - A, 0.26, 0.34), at((A + B) / 2), M.steel, 1.2);
+    const A = c.z0 + 0.4;
+    const B = c.z1 - 0.4;
+    b.box(0.34, 0.26, B - A, [r, y, (A + B) / 2], M.steel, 1.2);
     for (const t of fit(A, B, 2.0, 0.6)) {
-      b.box(...s(0.26, 0.08, 0.26), at(t), M.steel, 0);
-      b.box(...s(0.22, 0.02, 0.22), [at(t)[0], y - 0.18, at(t)[2]], M.rubber, 0);
+      b.box(0.26, 0.08, 0.26, [r, y, t], M.steel, 0);
+      b.box(0.22, 0.02, 0.22, [r, y - 0.18, t], M.rubber, 0);
     }
   }
   b.endMark();
@@ -810,15 +1622,29 @@ function plaza(b, c, M, tally, I) {
   const cx = (c.x0 + c.x1) / 2;
   const cz = (c.z0 + c.z1) / 2;
 
-  // 안내 기둥 — 이 층의 목적지에 방향이 적혀 있어야 한다
+  // 안내판 — 기둥에 얹힌 양면 디렉토리 보드. 색띠만 매단 첫 판은 "뭔지
+  // 감도 안 온다" 는 지적을 받았다 (#3) — 안내판을 안내판으로 만드는 것:
+  // **어두운 보드 + 헤더 띠 + 글줄 + 방향 화살표(삼각 프리즘)**.
   b.mark('landmark', 'plaza:pylon');
   const py = I.spawn('pylon');
-  py.box(0.9, 0.12, 0.9, [cx, 0.06, cz], M.steelDark, 0);
-  py.box(0.34, 3.0, 0.34, [cx, 1.5, cz], M.steel, 1.0);
-  for (const [y, s] of [[2.55, 0], [2.2, 1], [1.85, 2]]) {
-    for (const d of [-1, 1]) {
-      py.box(1.3, 0.24, 0.04, [cx + d * 0.82, y, cz], M.paper, 0);
-      py.box(0.9, 0.1, 0.02, [cx + d * 0.82, y, cz + 0.03], s % 2 ? M.exit : M.screen, 0);
+  py.box(0.8, 0.1, 0.8, [cx, 0.05, cz], M.steelDark, 0);
+  py.box(0.16, 2.5, 0.16, [cx, 1.35, cz], M.steel, 1.0);
+  for (const d of [-1, 1]) {
+    const z = cz + d * 0.09;
+    py.box(1.5, 1.05, 0.05, [cx, 1.9, z], M.crtDark, 0); // 보드
+    py.box(1.5, 0.2, 0.024, [cx, 2.35, z + d * 0.02], M.vend, 0); // 헤더 띠
+    py.box(1.1, 0.09, 0.012, [cx - 0.08, 2.35, z + d * 0.04], M.paper, 0); // 헤더 글줄
+    for (let i = 0; i < 4; i++) {
+      const y = 2.1 - i * 0.17;
+      // 글줄 — 긴 줄 + 짧은 줄 (표 형태로 읽힌다)
+      py.box(0.62, 0.055, 0.012, [cx - 0.1, y, z + d * 0.032], M.paper, 0);
+      py.box(0.22, 0.055, 0.012, [cx + 0.42, y, z + d * 0.032], M.paper, 0);
+      // 방향 화살표 — 삼각 프리즘. 줄마다 좌우로 번갈아 가리킨다
+      const tri = new THREE.CylinderGeometry(0.05, 0.05, 0.016, 3);
+      tri.rotateX(Math.PI / 2);
+      tri.rotateZ((i % 2 ? -1 : 1) * (Math.PI / 2)); // 꼭짓점이 좌/우
+      tri.translate(cx - 0.6, y, z + d * 0.034);
+      py.add(tri, M.exit);
     }
   }
   b.endMark();
@@ -1226,8 +2052,12 @@ function washroom(b, c, M, tally) {
   const walls = interiorWalls(c.id).sort((p, q) => q.b - q.a - (p.b - p.a));
   if (!walls.length) return;
 
-  // ── 부스 — 제일 긴 벽(맞은편 방과의 경계 = 문 없는 벽)에 앉는다 ──────
-  const w = walls[0];
+  // ── 부스 — **동쪽 벽 고정.** "제일 긴 벽" 으로 골랐더니 같은 길이의
+  // 서쪽 벽이 순서 우연으로 먼저 잡혀, 부스 문판이 북서쪽 덕트 그릴을
+  // 통째로 가렸다 (냉장고 #7 과 같은 병 — 벽은 순서가 아니라 자리로
+  // 고른다). 덕트 포트는 북서, 부스는 동쪽 — 서로 비킨다.
+  const zWalls = walls.filter((q) => q.axis === 'z' && q.rule === 'solid');
+  const w = (zWalls.length ? zWalls.sort((p, q) => q.at - p.at) : walls)[0];
   b.mark('furniture', `booth:${c.id}`);
   const D = 1.5; // 부스 깊이
   const PH = 1.9; // 칸막이 높이
@@ -1240,11 +2070,32 @@ function washroom(b, c, M, tally) {
   }
   for (const t of seats) {
     const u = w.a + t;
-    // 문판 — 살짝 들려 있다 (바닥 0.15 띄움). 열림 포즈는 디테일 단계에서.
-    wallBox(b, w, u, D - 0.02, 0.15 + PH / 2, 0.62, PH, 0.04, M.laminate);
-    // 변기 — 상자 둘 (몸통 + 등판 물탱크)
-    wallBox(b, w, u, 0.35, 0.21, 0.4, 0.42, 0.55, M.paper);
-    wallBox(b, w, u, 0.11, 0.5, 0.46, 0.5, 0.18, M.paper);
+    // 문판 — 개구를 거의 채운다 (0.62 로 뒀더니 칸이 듬성듬성 뚫려 보였다 — #5)
+    wallBox(b, w, u, D - 0.02, 0.15 + PH / 2, 0.94, PH, 0.04, M.laminate);
+    // 변기 — 도기다: 타원 사발(스케일한 원기둥) + 시트 링(납작 토러스) +
+    // 물탱크·뚜껑·버튼. 흰 상자 둘은 변기가 아니다 (#5).
+    const put = (g, m) => wallPut(b, w, u, g, m);
+    const tank = new THREE.BoxGeometry(0.42, 0.5, 0.16);
+    tank.translate(0, 0.62, 0.11);
+    put(tank, M.porcelain);
+    const lid = new THREE.BoxGeometry(0.44, 0.045, 0.18);
+    lid.translate(0, 0.89, 0.11);
+    put(lid, M.porcelain);
+    const btn = new THREE.CylinderGeometry(0.024, 0.024, 0.02, 8);
+    btn.translate(0.1, 0.92, 0.11);
+    put(btn, M.trim);
+    const neckB = new THREE.BoxGeometry(0.2, 0.28, 0.22);
+    neckB.translate(0, 0.26, 0.24);
+    put(neckB, M.porcelain);
+    const bowl = new THREE.CylinderGeometry(0.16, 0.105, 0.36, 10);
+    bowl.scale(1, 1, 1.3);
+    bowl.translate(0, 0.2, 0.42);
+    put(bowl, M.porcelain);
+    const seat = new THREE.TorusGeometry(0.15, 0.026, 6, 12);
+    seat.rotateX(Math.PI / 2);
+    seat.scale(1, 1, 1.3);
+    seat.translate(0, 0.4, 0.42);
+    put(seat, M.porcelain);
     tally.booth = (tally.booth ?? 0) + 1;
   }
   b.endMark();
@@ -1258,10 +2109,29 @@ function washroom(b, c, M, tally) {
     const cm = (v.a + v.b) / 2;
     wallBox(b, v, cm, 0.3, 0.82, cl, 0.06, 0.6, M.laminate); // 상판
     wallBox(b, v, cm, 0.29, 0.41, cl - 0.2, 0.76, 0.55, M.trim); // 하부장
-    // 세면볼 — 상판 위 오목한 대접 (프로토: 낮은 상자 테)
+    // 세면볼 — **도기 사발**(위가 넓은 원뿔대) + 테 링 + 구즈넥 수전.
+    // 납작한 흰 상자는 세면대가 아니다 (#6).
     for (const t of fit(0, cl, 0.9, 0.3)) {
       const u = cm - cl / 2 + t;
-      wallBox(b, v, u, 0.3, 0.88, 0.42, 0.05, 0.36, M.paper);
+      const put = (g, m) => wallPut(b, v, u, g, m);
+      const bowl = new THREE.CylinderGeometry(0.18, 0.115, 0.14, 10);
+      bowl.translate(0, 0.795, 0.32);
+      put(bowl, M.porcelain);
+      const rim = new THREE.TorusGeometry(0.175, 0.014, 6, 12);
+      rim.rotateX(Math.PI / 2);
+      rim.translate(0, 0.868, 0.32);
+      put(rim, M.porcelain);
+      // 수전 — 기둥 + 반원 구즈넥 + 토출구 (주방과 같은 문법)
+      const riser = new THREE.CylinderGeometry(0.013, 0.013, 0.2, 6);
+      riser.translate(0, 0.95, 0.12);
+      put(riser, M.trim);
+      const arc = new THREE.TorusGeometry(0.075, 0.011, 6, 10, Math.PI);
+      arc.rotateY(Math.PI / 2);
+      arc.translate(0, 1.05, 0.195);
+      put(arc, M.trim);
+      const tip = new THREE.CylinderGeometry(0.009, 0.009, 0.04, 6);
+      tip.translate(0, 1.03, 0.27);
+      put(tip, M.trim);
       tally.basin = (tally.basin ?? 0) + 1;
     }
     // 거울 — 카운터 위 띠. 진짜 반사는 없다 — 매끈한 어두운 판으로 읽힌다
@@ -1303,16 +2173,52 @@ function startOffice(b, c, M, tally, I) {
   // 잔해가 남는다. (나중에 "잔해 치우기" 상호작용이 될 수도 있는 자리다.)
   const db = I.spawn('rubble');
   b.mark('furniture', `start:${c.id}`);
-  // 문을 막은 잔해 더미 — 콘크리트 덩어리를 문 폭만큼 쌓는다
+  // 문을 막은 잔해 더미 — 상자를 쌓으면 낙석이 아니라 짐짝이다 (#13).
+  // **저폴리 암석(이코사헤드론)** 을 비균등 스케일·회전으로 우그려 쌓는다
+  // (lessons.md 3.13.2 — 기하 형태를 아끼지 않는다).
+  // 문 폭을 가득 채우고 방 안쪽으로 흘러내린 더미 — 몇 덩이만 세우면
+  // 낙석이 아니라 조형물이다 (#5 재지적: 더 풍부하게).
+  //   [u(문 축), y, v(방 안쪽), 반지름, 회전, 눌림]
   const rocks = [
-    [gm - 0.26, 0.18, 0.34, 0.52, 0.36, 0.5, 0.3],
-    [gm + 0.22, 0.16, 0.3, 0.46, 0.32, 0.42, -0.4],
-    [gm - 0.02, 0.5, 0.32, 0.58, 0.3, 0.48, 0.15],
-    [gm + 0.12, 0.76, 0.3, 0.4, 0.24, 0.36, -0.2],
-    [gm - 0.24, 0.68, 0.28, 0.34, 0.2, 0.3, 0.5],
-    [gm + 0.02, 1.02, 0.3, 0.44, 0.26, 0.4, -0.1],
+    // 1층 — 문턱을 가득 채우는 큰 덩이들
+    [gm - 0.42, 0.22, 0.3, 0.34, 0.7, 1.05],
+    [gm - 0.02, 0.26, 0.32, 0.38, 0.4, 1.2],
+    [gm + 0.4, 0.2, 0.28, 0.32, 1.2, 0.85],
+    [gm - 0.25, 0.24, 0.68, 0.3, 1.9, 0.8],
+    [gm + 0.22, 0.22, 0.72, 0.28, 2.4, 1.1],
+    [gm - 0.02, 0.2, 1.05, 0.24, 0.9, 0.75],
+    // 2층 — 틈에 얹힌 중간 덩이들
+    [gm - 0.3, 0.62, 0.34, 0.26, 0.9, 1.15],
+    [gm + 0.08, 0.68, 0.38, 0.3, 2.1, 0.9],
+    [gm + 0.38, 0.58, 0.3, 0.22, 1.6, 0.75],
+    [gm - 0.06, 0.6, 0.75, 0.22, 2.9, 0.95],
+    // 3층 — 꼭대기, 상인방 가까이
+    [gm - 0.2, 1.02, 0.3, 0.24, 2.8, 1.05],
+    [gm + 0.16, 1.12, 0.28, 0.22, 0.5, 0.95],
+    [gm - 0.02, 1.42, 0.26, 0.2, 1.3, 0.8],
   ];
-  for (const [u, y, v, w, h, d, yaw] of rocks) boxAt(db, w, h, d, at(u, v, y), M.rock, yaw);
+  let ri = 0;
+  for (const [u, y, v, r, spin, squash] of rocks) {
+    const g = new THREE.IcosahedronGeometry(r, 0);
+    g.scale(1.25, squash, 0.95); // 비균등 — 구형이면 바위가 아니라 공이다
+    g.rotateY(spin);
+    g.rotateX(hash2(ri, 5) * 0.9);
+    const p = at(u, v, y);
+    g.translate(p[0], p[1], p[2]);
+    db.add(g, M.rock);
+    ri++;
+  }
+  // 잔 부스러기 — 더미 발치에서 방 안쪽으로 흩어진 알갱이들
+  for (let i = 0; i < 12; i++) {
+    const r = 0.05 + hash2(i * 7, 11) * 0.09;
+    const g = new THREE.IcosahedronGeometry(r, 0);
+    g.scale(1.2, 0.75, 1.0);
+    g.rotateY(hash2(i, 3) * 3);
+    const spread = 0.5 + hash2(i * 5, 19) * 1.1; // 문에서 방 안쪽으로
+    const p = at(gm - 0.9 + hash2(i * 3, 7) * 1.8, spread, r * 0.6);
+    g.translate(p[0], p[1], p[2]);
+    db.add(g, M.rock);
+  }
   // 기울어 걸친 슬래브 조각 둘 — 더미를 "무너져 내린 것" 으로 만든다
   for (const [du, tilt, len] of [[-0.34, 1.05, 1.5], [0.3, 1.25, 1.2]]) {
     const g = new THREE.BoxGeometry(0.7, 0.07, len);
@@ -1364,8 +2270,16 @@ function startOffice(b, c, M, tally, I) {
 // ── 조립 ───────────────────────────────────────────────────────────────────
 
 const BY_USE = {
-  cafeteria,
+  dining,
+  cafe,
+  kitchen,
   server: serverRoom,
+  control,
+  machine,
+  lounge,
+  shower,
+  stair: stairwell,
+  elev: elevatorHall,
   plaza,
   office,
   store: storage,
@@ -1374,6 +2288,140 @@ const BY_USE = {
   start: startOffice,
   corridor: () => {},
 };
+
+// ── 탈출 덕트 — 계획(duct.js)대로 몸통·포트 틀·그릴을 짓는다 ───────────────
+//
+// 몸통은 북쪽 공동구 안의 **수평** 사각 덕트다 (오르내림 없음 — 2026-08-05
+// 사용자 결정). 상자 하나가 아니라 판 넷(바닥·천장·옆판 둘)이다 — 안을
+// 기어가며 보는 길이므로, 통상자로 내면 백페이스 컬링으로 속이 안 보인다.
+// 방에서 보이는 것은 벽의 그릴뿐이고, 커버는 약탈 소품과 같은 상호작용
+// 짝이다: 닫힘 = 벽의 루버 그릴, 열림 = 옆에 기대어 놓은 그릴 + 뻥 뚫린
+// 개구 (레퍼런스: 하프라이프의 벽 환기구).
+function escapeDuct(b, M, tally, I) {
+  const p = ductPlan();
+  const t = p.t;
+
+  b.mark('service', 'escduct');
+  for (const r of p.runs) {
+    const zc = (p.vz0 + p.vz1) / 2;
+    const midY = (p.floorY + p.headY) / 2;
+    // 판은 미터 UV(tile 1)다 — 0 으로 뒀더니 텍스처가 관 길이만큼 늘어나
+    // 내부가 줄무늬 스트레치로 보였다 (#14)
+    const box = (x0, x1, y, h, z0, z1, m) => {
+      if (x1 - x0 < 0.01) return;
+      b.box(x1 - x0, h, z1 - z0, [(x0 + x1) / 2, y, (z0 + z1) / 2], m, 1.0);
+    };
+
+    // 바닥·천장 — 통짜
+    box(r.a, r.b, p.y0 + t / 2, t, p.vz0, p.vz1, M.steel);
+    box(r.a, r.b, p.topY - t / 2, t, p.vz0, p.vz1, M.steel);
+    // 북쪽 옆판 — 통짜. 바닥과 천장 **사이**만 (모서리 겹침 없음)
+    box(r.a, r.b, midY, p.clear, p.vz1 - t, p.vz1, M.steel);
+    // 남쪽 옆판 — 포트 자리를 비켜 쪼갠다 (벽 개구와 같은 폭)
+    let cur = r.a;
+    for (const d of [...p.ports].sort((q, w) => q.x - w.x)) {
+      box(cur, d.x - p.portW / 2, midY, p.clear, p.vz0, p.vz0 + t, M.steel);
+      cur = d.x + p.portW / 2;
+    }
+    box(cur, r.b, midY, p.clear, p.vz0, p.vz0 + t, M.steel);
+    // 끝 캡 — 안쪽 치수로 막는다 (판들과 겹치지 않게)
+    box(r.a, r.a + t, midY, p.clear, p.vz0 + t, p.vz1 - t, M.steelDark);
+    box(r.b - t, r.b, midY, p.clear, p.vz0 + t, p.vz1 - t, M.steelDark);
+    // 이음 플랜지 — 1.5m 마다 안쪽으로 도드라진 띠 넷. 끝없는 민짜 통이
+    // 아니라 **덕트 마디**로 읽히게 한다 (#14). 포트 개구는 비킨다
+    for (const u of fit(r.a + 0.4, r.b - 0.4, 1.5, 0.2)) {
+      if (p.ports.some((d) => Math.abs(d.x - u) < p.portW / 2 + 0.12)) continue;
+      box(u - 0.02, u + 0.02, p.floorY + 0.017, 0.035, p.vz0 + t, p.vz1 - t, M.steelDark);
+      box(u - 0.02, u + 0.02, p.headY - 0.017, 0.035, p.vz0 + t, p.vz1 - t, M.steelDark);
+      box(u - 0.02, u + 0.02, midY, p.clear - 0.08, p.vz0 + t, p.vz0 + t + 0.035, M.steelDark);
+      box(u - 0.02, u + 0.02, midY, p.clear - 0.08, p.vz1 - t - 0.035, p.vz1 - t, M.steelDark);
+    }
+    // 받침 다리 — 공동구 바닥(buildRock, 윗면 y=0)에 선다
+    for (const u of fit(r.a, r.b, 1.6, 0.3)) {
+      for (const s of [p.vz0 + 0.08, p.vz1 - 0.08]) {
+        b.box(0.05, p.y0, 0.05, [u, p.y0 / 2, s], M.trim, 0);
+      }
+    }
+  }
+
+  // 포트 틀 — 벽 개구 둘레를 문틀처럼 두른다: 개구 안쪽을 딛고 벽면보다
+  // 1.5cm 돌출 (겹평면 없음 — 문틀·브라운관의 교훈 그대로).
+  const JT = 0.23; // 벽 0.2 + 양쪽 1.5cm
+  for (const d of p.ports) {
+    const w2 = p.portW / 2;
+    for (const [x0, x1, y0, y1] of [
+      [d.x - w2 - 0.02, d.x - w2 + 0.04, p.sill - 0.02, p.headY + 0.02], // 좌
+      [d.x + w2 - 0.04, d.x + w2 + 0.02, p.sill - 0.02, p.headY + 0.02], // 우
+      [d.x - w2 + 0.04, d.x + w2 - 0.04, p.headY - 0.04, p.headY + 0.02], // 상
+      [d.x - w2 + 0.04, d.x + w2 - 0.04, p.sill - 0.02, p.sill + 0.04], // 하 (문턱)
+    ]) {
+      b.box(x1 - x0, y1 - y0, JT, [(x0 + x1) / 2, (y0 + y1) / 2, d.z], M.trim, 0);
+    }
+  }
+  b.endMark();
+
+  // ── 그릴 커버 — 상호작용 짝. 판 크기는 개구에서 나온다 ────────────────
+  const GW = p.portW + 0.1; // 개구 둘레를 0.05 씩 덮는다
+  const GH = p.clear + 0.12;
+  for (const d of p.ports) {
+    const pr = I.spawnPair('vent');
+    // 닫힘 — 벽 개구 위에 붙은 그릴 (방 쪽 벽면에서 2mm 띄운다)
+    ventCover(pr.closed, [d.x, p.sill - 0.06, d.z - 0.1 - 0.016], 'wall', M, GW, GH);
+    // 열림 — 떼어낸 그릴이 개구 옆 벽에 기대어 있다 (레퍼런스 그대로).
+    // 어느 옆인지는 계획이 정한다 (d.lean — 그 방 가구를 비킨 쪽).
+    // 기운 판의 윗변이 벽을 파고들지 않게, 판 높이만큼 z 를 물린다
+    ventCover(pr.open, [d.x + d.lean * (p.portW / 2 + 0.55), 0.02, d.z - 0.11 - GH * 0.29], 'lean', M, GW, GH);
+    tally.vent = (tally.vent ?? 0) + 1;
+  }
+}
+
+// 루버 그릴 한 장 — 수직으로 세워 짓고(원점 = 아랫변 중앙, 정면 -z),
+// mode 'wall' 이면 그대로 벽에 붙고 'lean' 이면 벽에 기대어 선다.
+// W x H 는 호출자가 개구에서 유도한다 (escapeDuct).
+function ventCover(b, at, mode, M, W, H) {
+  const [x, y, z] = at;
+  const put = (g, m) => {
+    if (mode === 'lean') g.rotateX(0.28); // 윗변이 벽(+z) 쪽으로 기운다
+    g.translate(x, y, z);
+    b.add(g, m);
+  };
+  // 색은 어두운 강판이 아니라 **밝은 도장**이다 — 어두운 알베도를 주면
+  // 통짜 검은 판이 된다 (천장 그릴 시절에 실제로 그랬다). 레퍼런스의
+  // 그릴도 밝은 도장이다.
+  // 테 — 네 변
+  for (const [dx, dy, w, h] of [
+    [0, 0.03, W, 0.06],
+    [0, H - 0.03, W, 0.06],
+    [-(W / 2 - 0.03), H / 2, 0.06, H - 0.12],
+    [W / 2 - 0.03, H / 2, 0.06, H - 0.12],
+  ]) {
+    const g = new THREE.BoxGeometry(w, h, 0.028);
+    g.translate(dx, dy, 0);
+    put(g, M.crt);
+  }
+  // 루버 — 비스듬한 날들, 날 사이 틈으로 뒤의 어둠이 보인다.
+  // 이게 있어야 환기구로 읽힌다 (레퍼런스의 그릴). 날을 얇게 두고 틈을
+  // 넓힌다 — 틈이 좁으면 통짜 판으로 보인다 (천장 그릴 시절의 교훈).
+  const n = Math.round((H - 0.17) / 0.078);
+  for (let i = 0; i < n; i++) {
+    const g = new THREE.BoxGeometry(W - 0.12, 0.055, 0.012);
+    g.rotateX(0.45);
+    g.translate(0, 0.099 + i * 0.078, 0);
+    put(g, M.crt);
+  }
+  // 귀퉁이 나사 넷 — 걸려 있던 그릴 마감 (status.md 5.2 의 '그릴 나사')
+  for (const [sx, sy] of [
+    [-W / 2 + 0.032, 0.032],
+    [W / 2 - 0.032, 0.032],
+    [-W / 2 + 0.032, H - 0.032],
+    [W / 2 - 0.032, H - 0.032],
+  ]) {
+    const g = new THREE.CylinderGeometry(0.015, 0.015, 0.014, 6);
+    g.rotateX(Math.PI / 2);
+    g.translate(sx, sy, -0.02);
+    put(g, M.trim);
+  }
+}
 
 export function createProps(scene, M, lp) {
   const b = new MeshBuilder('Props'); // 배경 — 병합 배치
@@ -1386,6 +2434,7 @@ export function createProps(scene, M, lp) {
     services(b, c, M, tally, lp);
     if (c.kind === 'corridor') corridorWalls(b, c, M, tally);
   }
+  escapeDuct(b, M, tally, I);
   exitSigns(b, M, tally);
   const interactables = Object.values(I.counts).reduce((s, v) => s + v, 0);
   return {

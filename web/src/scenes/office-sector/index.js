@@ -24,6 +24,7 @@ import { lightPlan, createFixtures, createRealLights, createAmbient } from './li
 import { createProps } from './props.js';
 import { checkPlan, checkReach, CELLS, H, FLOOR } from './layout.js';
 import { checkInterior, checkLighting } from './check.js';
+import { ductPlan, checkDuct } from './duct.js';
 import { BAKED, bakeVertexLight, meanAlbedo } from './bake.js';
 
 class OfficeSector extends Scene {
@@ -112,6 +113,8 @@ class OfficeSector extends Scene {
 
     const reach = checkReach();
     const interior = checkInterior(lp);
+    // 탈출 루트 — 덕트가 서 있는 것과 길이 이어지는 것은 다르다 (duct.js)
+    const duct = checkDuct(ductPlan());
     // 바닥 재질의 반사율까지 넘긴다 — 조도만 재면 어두운 바닥을 깐 방이
     // "밝다" 로 통과한다 (bake.meanAlbedo 주석).
     const albedo = {};
@@ -129,6 +132,9 @@ class OfficeSector extends Scene {
       carton: '골판지 상자',
       crate: '플라스틱 상자',
       desk: '책상 서랍',
+      vent: '덕트 점검구',
+      locker: '사물함',
+      fridge: '냉장고',
     };
     const labelOf = (name) => {
       const l = KIND_LABEL[name.split('_')[0]];
@@ -152,7 +158,7 @@ class OfficeSector extends Scene {
       interact,
       stats: [
         `칸 ${plan.cells} · 벽 ${walls.runs}구간`,
-        `문 ${walls.tally.door + walls.tally.wide + walls.tally.glass}`,
+        `문 ${walls.tally.door + walls.tally.wide + walls.tally.glass} · 덕트 포트 ${duct.ports}`,
         bake
           ? `등 ${fixtures} · 구운 광원 ${lp.emitters.length} · 밝기폭 ${lum.span.toFixed(1)}배`
           : `등 ${fixtures} · 실시간 광원 ${lights}`,
@@ -172,6 +178,7 @@ class OfficeSector extends Scene {
           ...reach.unreachable.map((id) => ({ msg: `${id} 로 갈 수 없다 — 문이 없다` })),
           ...walls.tally.narrow.map((m) => ({ msg: `${m} 구간이 좁아 문을 못 냈다` })),
           ...interior.faults.map((m) => ({ msg: m })),
+          ...duct.faults.map((m) => ({ msg: m })),
           ...lum.faults.map((m) => ({ msg: m })),
         ],
       },

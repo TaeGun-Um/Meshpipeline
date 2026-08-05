@@ -33,6 +33,8 @@ export function buildMaterials() {
     room: vinylWarm,
     cafeteria: vinylCool,
     server: serverFloor,
+    control: serverFloor, // 관제실 — 서버실과 같은 전산 권역의 마감
+    kitchen: vinylCool, // 주방 — 식당과 같은 계열
   };
 
   // **노말을 세게 주면 안 된다.** 천장은 바로 아래 등을 정면으로 받는 면이라,
@@ -46,6 +48,8 @@ export function buildMaterials() {
     room: ceilTile,
     cafeteria: ceilTile,
     server: ceilTile,
+    control: ceilTile,
+    kitchen: ceilTile,
   };
 
   const pick = (table, kind, what) => {
@@ -110,6 +114,7 @@ export function buildMaterials() {
       transparent: true,
       opacity: 0.4,
     }),
+    porcelain: solid('Porcelain', 0xeceae4, 0.32), // 변기·세면볼 — 도기 흰색
     carton: solid('Carton', 0xa8906a, 0.9), // 골판지
     cartonDark: solid('CartonDark', 0x826d4e, 0.92), // 골판지 접힌 자리
     crate: solid('Crate', 0x2f5d54, 0.68), // 플라스틱 상자

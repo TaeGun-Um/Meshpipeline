@@ -16,9 +16,14 @@ export const H = {
   door: 2.1, // 문 상인방
   corridor: 2.7, // 복도 천장. 제일 낮다 — 여기가 기준선
   room: 3.0,
-  plaza: 5.6, // 두 배 이상. 창이 없으니 높이가 유일한 위계다
+  plaza: 5.6, // 두 배 이상. 높이가 첫 위계다
   slab: 0.35, // 마감 천장과 구조 슬래브 사이 (덕트·배관이 지나간다)
 };
+
+// 외벽 상단 — 외곽 벽은 방 천장이 아니라 **층 전체의 최고점**까지 선다.
+// 방 천장(3.0)까지만 세우면 천장 위 설비 공간의 옆구리가 뚫린다.
+// 지하 1층이라 이 위가 지표(1층 슬래브)다 (facility.md 2.4).
+export const EAVE = H.plaza + H.slab;
 
 // ── 수평 ───────────────────────────────────────────────────────────────────
 export const W = {
@@ -32,14 +37,18 @@ export const W = {
 };
 
 // ── 층 외곽 ────────────────────────────────────────────────────────────────
-export const FLOOR = { x: 48, z: 34 };
+//
+// 처음 48x34 에 플라자 18x14(252㎡)였다가, 홀이 쓸데없이 넓다는 지시로
+// 플라자를 **절반(12.6x10 = 126㎡)** 으로 줄이고 층 전체를 그만큼 당겼다
+// (2026-08-05). 방 스트립의 깊이는 그대로다 — 준 것은 홀과 그 고리뿐이다.
+export const FLOOR = { x: 42.6, z: 30 };
 const X = FLOOR.x / 2;
 const Z = FLOOR.z / 2;
 
 // 플라자를 가운데 두고 고리 복도가 감싼다. 방은 고리 바깥에 붙는다.
 // 실내에서 길을 잃지 않으려면 복도가 직선으로 만나야 한다 (facility.md 1장).
-const PX = 9.0; // 플라자 반폭
-const PZ = 7.0;
+const PX = 6.3; // 플라자 반폭
+const PZ = 5.0;
 const RC = W.corridor; // 고리 복도 폭
 const RX = PX + RC; // 고리 바깥 x
 const RZ = PZ + RC;
@@ -54,6 +63,15 @@ const RZ = PZ + RC;
 // 용도를 따로 둔다.
 const cell = (id, kind, x0, z0, x1, z1, h, use = kind) => ({ id, kind, x0, z0, x1, z1, h, use });
 
+// **방은 권역으로 묶는다** (2026-08-05 사용자 지시 — story.md 의 층 성격).
+//   전산 권역(동)   문 -> 관제실 -> 서버실. 서버실은 관제실을 거쳐야만 들어간다.
+//                   기계실이 그 아래 붙는다 (관제실과 내부 문)
+//   음식 권역(서)   식당과 카페테리아가 붙어 있고 사이가 트인다
+//   위생 권역(북서) 휴게실 -> 샤워실 -> 배관 코어(spurN) -> 화장실이 한 줄
+//   수직 동선(남)   엘리베이터 홀과 비상계단이 남쪽 지선 양옆
+// 중복이던 사무실 넷·설비실 넷·창고 둘은 사무실 둘(시작 방 = 서버관리부서
+// + 일반 사무)·설비실 하나(병합)·창고 하나로 줄였다 — 그 자리에 회의실·
+// 휴게실·샤워실·관제실·기계실·엘리베이터·비상계단이 들어온다.
 export const CELLS = [
   cell('plaza', 'plaza', -PX, -PZ, PX, PZ, H.plaza),
 
@@ -63,42 +81,59 @@ export const CELLS = [
   cell('ringW', 'corridor', -RX, -PZ, -PX, PZ, H.corridor),
   cell('ringE', 'corridor', PX, -PZ, RX, PZ, H.corridor),
 
-  // 서쪽 — 카페테리아와 창고
-  cell('cafe', 'cafeteria', -X, -3.0, -RX, RZ, H.room),
-  cell('storeW', 'room', -X, -RZ, -RX, -3.0, H.room, 'store'),
+  // 서쪽 — 음식 권역. 둘 다 kind 'cafeteria' 라 사이가 트인다 (open)
+  cell('dineW', 'cafeteria', -X, -1.8, -RX, RZ, H.room, 'dining'),
+  cell('cafeW', 'cafeteria', -X, -RZ, -RX, -1.8, H.room, 'cafe'),
 
-  // 동쪽 — 서버룸과 사무실
-  cell('server', 'server', RX, -1.0, X, RZ, H.room),
-  cell('officeE', 'room', RX, -RZ, X, -1.0, H.room, 'office'),
+  // 동쪽 — 전산 권역. 진입 사슬이 형태다: 복도 --문--> 관제실 --유리+문-->
+  // 서버실. 서버실의 다른 모든 경계는 막힌 벽이다 (PAIR: corridor|server solid).
+  // 동쪽 스트립에 있던 기계실은 남쪽 설비실과 **하나로 합쳐** 남동 밴드로
+  // 내려갔고(합계 152 -> 92㎡ 축소), 그만큼 서버실이 컸다 (2026-08-05
+  // 사용자 지시 — 81 -> 156㎡). 관제실은 남동 모서리(bandS 끝)까지 내려
+  // 앉는다 — 어중간히 두면 고리 복도와 1.2m 만 접해 문이 안 들어간다
+  // (tooNarrow 신고가 잡았다). 남쪽으로 기계실과 내부 문이 닿는다.
+  cell('serverE', 'server', RX, -5.0, X, RZ, H.room),
+  cell('controlE', 'control', RX, -RZ - W.spur, X, -5.0, H.room),
 
-  // 북쪽 — 띠 복도 하나에 사무실 넷과 화장실이 매달린다.
-  // 원래 23.1m 짜리 방 둘이었다 — 176㎡ 사무실은 그렇다 쳐도 같은 크기의
-  // 설비실은 격납고다 (facility.md 2.3). 생성기 가설의 첫 검증이기도 하다:
-  // 여기 사각형만 바꾸면 벽·문·조명·소품·검사가 전부 따라와야 한다.
-  //
-  // **띠 복도(bandN·bandS)가 있어야 한다.** 처음에 방만 쪼갰더니 고리 복도
-  // (x ±11.4)에 안 닿는 외곽 방 넷이 갇혔다 — checkReach 가 잡았다. 고리에서
-  // 띠 복도가 갈라지고, 방은 전부 띠 복도에 문을 낸다.
-  // 화장실은 지선(배관 코어) 옆 — 덕트 탈출 스토리의 경유 방이다 (story.md).
-  cell('bandN', 'corridor', -X, RZ, X, RZ + W.spur, H.corridor),
-  cell('spurN', 'corridor', -W.spur / 2, RZ + W.spur, W.spur / 2, Z, H.corridor),
-  cell('officeN1', 'room', -X, RZ + W.spur, -13.2, Z, H.room, 'office'),
-  cell('officeN2', 'room', -13.2, RZ + W.spur, -W.spur / 2, Z, H.room, 'office'),
-  cell('washN', 'room', W.spur / 2, RZ + W.spur, 5.5, Z, H.room, 'wash'),
-  // officeN3 이 **시작 방**이다 (use 'start') — A 가 깨어나는 곳. 화장실
-  // 바로 옆이라 덕트 탈출 동선이 제일 짧다 (story.md 2장).
-  cell('officeN3', 'room', 5.5, RZ + W.spur, 14.5, Z, H.room, 'start'),
-  cell('officeN4', 'room', 14.5, RZ + W.spur, X, Z, H.room, 'office'),
+  // 북서 — **주방.** 회의실과 그 앞 복도 구간을 허물어 식당에 합쳤다
+  // (2026-08-05 사용자 지시). kind 'kitchen' — 식당과는 트이고(open),
+  // 복도와는 직원 출입문 하나다. 배식 카운터가 식당 경계에 선다 (props).
+  cell('kitchenNW', 'kitchen', -X, RZ, -12.0, Z, H.room, 'kitchen'),
 
-  // 남쪽 — 북쪽 띠와 같은 구조. 탈출구(비상계단·엘리베이터 홀 예정 —
-  // status.md 5.2)로 나가는 지선, 설비실 넷과 창고 (창고가 화장실 자리다).
-  cell('bandS', 'corridor', -X, -RZ - W.spur, X, -RZ, H.corridor),
-  cell('spurS', 'corridor', -W.spur / 2, -Z, W.spur / 2, -RZ - W.spur, H.corridor),
-  cell('utilS1', 'room', -X, -Z, -13.2, -RZ - W.spur, H.room, 'util'),
-  cell('utilS2', 'room', -13.2, -Z, -W.spur / 2, -RZ - W.spur, H.room, 'util'),
-  cell('storeS', 'room', W.spur / 2, -Z, 5.5, -RZ - W.spur, H.room, 'store'),
-  cell('utilS3', 'room', 5.5, -Z, 14.5, -RZ - W.spur, H.room, 'util'),
-  cell('utilS4', 'room', 14.5, -Z, X, -RZ - W.spur, H.room, 'util'),
+  // 북쪽 — 띠 복도(주방 동쪽부터)에 방들이 매달린다. **띠 복도가 있어야
+  // 한다** — 처음에 방만 쪼갰더니 고리 복도에 안 닿는 외곽 방들이 갇혔다
+  // (checkReach 가 잡았다).
+  // 위생 권역: 화장실 -> 샤워실 -> 휴게실이 한 줄로 **직접** 붙는다.
+  // 화장실·휴게실 자리를 맞바꾸고 사이의 지선(spurN, 옛 배관 코어)을
+  // 없앴다 (2026-08-05 사용자 지시 — 의미 없는 복도였다. 젖은 방 둘이
+  // 붙으니 배관도 한 벽으로 모인다).
+  cell('bandN', 'corridor', -12.0, RZ, X, RZ + W.spur, H.corridor),
+  cell('washN', 'room', -12.0, RZ + W.spur, -7.4, Z, H.room, 'wash'),
+  cell('showerN', 'room', -7.4, RZ + W.spur, -3.8, Z, H.room, 'shower'),
+  cell('loungeN', 'room', -3.8, RZ + W.spur, 5.5, Z, H.room, 'lounge'),
+  // officeN3 이 **시작 방**이다 (use 'start') — A 의 서버관리부서 사무실.
+  // 옆의 일반 사무실과 둘로 나뉘어 있었는데 사이 벽을 허물어 하나로 합쳤다
+  // (2026-08-05 사용자 지시) — 북동쪽 전체가 서버관리부서의 큰 사무실이다.
+  cell('officeN3', 'room', 5.5, RZ + W.spur, X, Z, H.room, 'start'),
+
+  // 남쪽 — 수직 동선과 지원 공간 (2026-08-05 개편).
+  //   엘리베이터는 **방이 아니라 트인 베이**다 — 방 안에 엘리베이터가 있는
+  //   것이 이상하다는 지시로 둘러싼 벽을 부쉈다. kind 'corridor' 라 띠 복도와
+  //   벽 없이 이어지고, 남쪽 벽 중앙(홀 정면 축 x=0)에 문 두 짝이 선다.
+  //   비상계단은 계단이 벽에 딱 맞붙는 폭(3.0)만 받는다. 지선(spurS)은
+  //   베이에 흡수됐다 (spurN 과 같은 이유 — 의미 없는 복도).
+  // 띠 복도 동쪽 끝은 관제실 문 앞에서 끝난다 (관제실이 모서리를 차지한다)
+  cell('bandS', 'corridor', -X, -RZ - W.spur, RX, -RZ, H.corridor),
+  // 비상계단은 엘리베이터 베이 **바로 옆**이고 입구가 베이 쪽(동쪽 벽)이다
+  // (2026-08-05 스크린샷 지시 — 창고와 자리를 맞바꿨다). 계단은 베이 문으로
+  // 들어와 북쪽으로 돌아 서쪽 련을 오른다 (props.stairwell 이 방 치수에서
+  // 유도한다). 창고는 남서쪽으로 갔다.
+  cell('storeS', 'room', -X, -Z, -5.8, -RZ - W.spur, H.room, 'store'),
+  cell('stairS', 'room', -5.8, -Z, -1.0, -RZ - W.spur, H.room, 'stair'),
+  cell('elevS', 'corridor', -1.0, -Z, 7.0, -RZ - W.spur, H.corridor, 'elev'),
+  // 기계·전기실 — 기계실+설비실 병합 방. 전산 권역과 같은 남동 사분면이고,
+  // 베이에서 옆문으로도 통한다.
+  cell('utilSE', 'room', 7.0, -Z, X, -RZ - W.spur, H.room, 'machine'),
 ];
 
 export const byId = Object.fromEntries(CELLS.map((c) => [c.id, c]));
@@ -117,18 +152,33 @@ export const byId = Object.fromEntries(CELLS.map((c) => [c.id, c]));
 // 'corridor|cafeteria' 라고 적었더니 조회 키는 'cafeteria|corridor' 라 못
 // 찾았다 — 아래 자기 검사가 그걸 로드 시점에 잡는다.
 const PAIR = {
-  'cafeteria|cafeteria': 'open',
+  'cafeteria|cafeteria': 'open', // 식당-카페테리아 사이가 트인다 (음식 권역)
+  'cafeteria|control': 'solid',
   'cafeteria|corridor': 'wide',
+  'cafeteria|kitchen': 'open', // 주방은 식당의 연장이다 — 배식대가 경계를 맡는다
   'cafeteria|plaza': 'wide',
   'cafeteria|room': 'solid',
   'cafeteria|server': 'solid',
+  'control|control': 'open',
+  'control|corridor': 'door', // 진입 사슬의 첫 문: 복도 -> 관제실
+  'control|kitchen': 'solid',
+  'control|plaza': 'solid',
+  'control|room': 'door', // 관제실 <-> 기계실 내부 문
+  'control|server': 'glass', // 진입 사슬의 둘째 문: 관제실 -> 서버실 (유리 + 문)
   'corridor|corridor': 'open',
+  'corridor|kitchen': 'door', // 주방 직원 출입문 (띠 복도 서쪽 끝)
   'corridor|plaza': 'open',
   'corridor|room': 'door',
-  'corridor|server': 'glass',
+  // **서버실은 복도에서 못 들어간다** (2026-08-05 사용자 지시) — 문도
+  // 유리도 없다. 유일한 출입은 관제실 경유다 (control|server).
+  'corridor|server': 'solid',
+  'kitchen|kitchen': 'open',
+  'kitchen|plaza': 'solid',
+  'kitchen|room': 'solid',
+  'kitchen|server': 'solid',
   'plaza|plaza': 'open',
   'plaza|room': 'door',
-  'plaza|server': 'glass',
+  'plaza|server': 'solid',
   'room|room': 'solid',
   'room|server': 'solid',
   'server|server': 'open',
@@ -158,6 +208,52 @@ function pairRule(a, b) {
   if (!r) throw new Error(`벽 규칙에 '${k}' 가 없다 — layout.PAIR 에 추가한다`);
   return r;
 }
+
+// ── 칸 짝 덮어쓰기 — 특정 두 칸 사이만 규칙을 바꾼다 ───────────────────────
+//
+// PAIR 는 종류(kind) 단위라 "이 문만 없앤다" 를 못 한다. 출입 동선 정리는
+// 여기서 한다 (2026-08-05 스크린샷 지시). 키는 **칸 id** 알파벳순.
+//   식당 권역   서쪽 개구 둘(dineW-ringW·ringN)과 카페 남문, 주방 뒷문을
+//               막았다 — 출입은 식당 북쪽(bandN)과 카페 동쪽(ringW·ringS)만
+//   전산 권역   기계실 남쪽 복도 문과 관제실 복도끝 문을 막았다 — 기계실은
+//               베이 옆문·관제실 내부문으로, 관제실은 고리 복도 끝 문으로
+const CELL_OVERRIDE = {
+  'bandN|kitchenNW': 'solid',
+  'bandS|cafeW': 'solid',
+  'bandS|controlE': 'solid',
+  'bandS|utilSE': 'solid',
+  'cafeW|ringS': 'solid', // 카페 출입은 서쪽 고리(ringW) 문 하나만
+  'dineW|ringN': 'solid',
+  'dineW|ringW': 'solid',
+  'elevS|stairS': 'solid', // 계단실 출입은 북쪽 복도 문 하나만
+};
+
+// 표가 스스로를 검사한다 — 키가 정렬돼 있나, 실제 칸 id 를 가리키나
+(() => {
+  for (const k of Object.keys(CELL_OVERRIDE)) {
+    const parts = k.split('|');
+    if (parts.join('|') !== [...parts].sort().join('|')) {
+      throw new Error(`layout.CELL_OVERRIDE 키 '${k}' 가 정렬돼 있지 않다`);
+    }
+    for (const id of parts) {
+      if (!CELLS.some((c) => c.id === id)) {
+        throw new Error(`layout.CELL_OVERRIDE 가 없는 칸 '${id}' 를 가리킨다 — 칸을 개명했으면 여기도 고친다`);
+      }
+    }
+  }
+})();
+
+function ruleBetween(c, other) {
+  return CELL_OVERRIDE[[c.id, other.id].sort().join('|')] ?? pairRule(c.kind, other.kind);
+}
+
+// ── 외곽 — 이웃이 없는 경계 ────────────────────────────────────────────────
+//
+// **지하 1층이라 전부 막힌 벽이다** (facility.md 2.4). 창은 없다 — 벽 너머는
+// 매립과 공동구다. 한때 지상 사옥으로 전환해 외곽 창을 냈다가(2026-08-05)
+// 무대가 지하 1층으로 확정되며 되돌렸다 — 창 내는 법은 서버룸 유리벽과
+// git 히스토리에 남아 있다.
+const extRule = () => 'solid';
 
 // ── 경계를 훑어 구간으로 쪼갠다 ────────────────────────────────────────────
 
@@ -194,7 +290,7 @@ function edgeSpans(c, side) {
     const px = along === 'x' ? m : fixed;
     const pz = along === 'x' ? fixed : m;
     const other = cellAt(px + off[0], pz + off[1]);
-    raw.push({ a, b, other, rule: other ? pairRule(c.kind, other.kind) : 'solid' });
+    raw.push({ a, b, other, rule: other ? ruleBetween(c, other) : extRule(c) });
   }
 
   // **이웃이 같으면 합친다.** 자를 지점을 모든 칸의 경계에서 모으므로,
@@ -346,6 +442,7 @@ export function openingsOf(run) {
   const m = (run.a + run.b) / 2;
   return { gaps: [[m - width / 2, m + width / 2]], tooNarrow: false };
 }
+
 
 // ── 붙일 자리 ──────────────────────────────────────────────────────────────
 //
