@@ -58,9 +58,21 @@ export function buildMaterials() {
     return m;
   };
 
+  // 문 팻말 — 라벨마다 텍스처 한 장. **빌드 한 번의 수명**이라 모듈 캐시가
+  // 아니다 (buildMaterials 는 빌드마다 새로 돈다 — scenestate 등록이 필요 없는
+  // 유일한 종류의 캐시다). 같은 라벨이 여러 문에 걸려도 한 장만 굽는다.
+  const signCache = new Map();
+
   return {
     floorOf: (k) => pick(FLOOR_BY, k, '바닥'),
     ceilOf: (k) => pick(CEIL_BY, k, '천장'),
+    signOf: (label) => {
+      if (!signCache.has(label)) {
+        // 반복 1x1 — 팻말은 면 하나를 통째로 채운다 (b.box 의 tile=0 과 짝)
+        signCache.set(label, tex(TEX.signTextures(label), 1, 1));
+      }
+      return signCache.get(label);
+    },
 
     wall: tex(TEX.blockWallTextures(), 1, 1),
     wallLow: tex(TEX.blockWallTextures(4311, [122, 132, 130]), 1, 1), // 굽도리 띠

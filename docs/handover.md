@@ -19,10 +19,14 @@
 없고 백로그도 없다. 값어치는 거기서 학습한 데이터다: `lessons.md` 의 규칙,
 씬별 지식 문서, core 로 굳은 코드. **참조는 하되 고치지 않는다.**
 
+> **지금 하던 일** (2026-08-06): 챕터 0 **[전] 상태의 디테일 패스**.
+> 이어받을 체크리스트는 [`scenes/office-sector/status.md`](scenes/office-sector/status.md)
+> **5.0 절**에 있다 — 거기부터 열면 된다.
+
 | | |
 |---|---|
 | 오피스 — 형태의 근거 | [`scenes/office-sector/facility.md`](scenes/office-sector/facility.md) — **치수를 고치기 전에 읽는다** |
-| 오피스 — 생성기 구조·남은 일 | [`scenes/office-sector/status.md`](scenes/office-sector/status.md) |
+| 오피스 — 생성기 구조·남은 일 | [`scenes/office-sector/status.md`](scenes/office-sector/status.md) (5.0 = 다음 할 일) |
 | 동결 씬의 지식 | 각 씬의 `status.md` 가 "지식이 어디 있나" 표를 들고 있다 |
 
 ## 1. 5분 안에 파악하기
