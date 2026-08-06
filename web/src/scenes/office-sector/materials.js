@@ -73,6 +73,13 @@ export function buildMaterials() {
       }
       return signCache.get(label);
     },
+    // 자판기 옆면 광고 — 종류마다 한 장. 상자 조각으로 때우던 것을 인쇄물
+    // 한 장으로 바꿨다 (2026-08-06 지시). signOf 와 같은 캐시 규약이다.
+    vendSideOf: (kind) => {
+      const key = `vend:${kind}`;
+      if (!signCache.has(key)) signCache.set(key, tex(TEX.vendSideTextures(kind), 1, 1));
+      return signCache.get(key);
+    },
 
     wall: tex(TEX.blockWallTextures(), 1, 1),
     wallLow: tex(TEX.blockWallTextures(4311, [122, 132, 130]), 1, 1), // 굽도리 띠
@@ -127,6 +134,9 @@ export function buildMaterials() {
       opacity: 0.4,
     }),
     porcelain: solid('Porcelain', 0xeceae4, 0.32), // 변기·세면볼 — 도기 흰색
+    // 거울 — 어두운 강판으로 뒀더니 **검은 널판**이었다 (2026-08-06 지적).
+    // 진짜 반사는 없지만 매끈하고 밝은 금속면 + 환경맵이면 거울로 읽힌다.
+    mirror: solid('Mirror', 0xaebfcb, 0.05, { metalness: 0.72, envMapIntensity: 2.0 }),
     carton: solid('Carton', 0xa8906a, 0.9), // 골판지
     cartonDark: solid('CartonDark', 0x826d4e, 0.92), // 골판지 접힌 자리
     crate: solid('Crate', 0x2f5d54, 0.68), // 플라스틱 상자
