@@ -80,6 +80,21 @@ export function buildMaterials() {
       if (!signCache.has(key)) signCache.set(key, tex(TEX.vendSideTextures(kind), 1, 1));
       return signCache.get(key);
     },
+    // 병 라벨 — 흰 띠에 색 띠만 감으면 무슨 병인지 모른다. 그림기호와 글자를
+    // 한 장에 굽는다. 감기는 면이라 반복은 1x1 (u 가 딱 한 바퀴).
+    // 둘레·높이를 **미터로** 넘긴다 — 글자와 그림이 안 찌그러지려면
+    // 텍스처가 붙는 실제 크기를 알아야 한다 (bottleLabelTextures 주석).
+    // **캐시 키는 텍스처를 결정하는 모든 값을 담아야 한다.** kind 만 키로
+    // 썼더니, 같은 종류를 다른 크기로 부르면 먼저 구운 글자 비율을 조용히
+    // 물려받는 상태였다 (2026-08-07 코드리뷰). signOf/vendSideOf 는 인자가
+    // 하나뿐이라 안 걸렸던 함정이다 — 인자가 늘면 키도 같이 늘린다.
+    bottleLabelOf: (kind, circ, hgt) => {
+      const key = `label:${kind}:${circ.toFixed(3)}:${hgt.toFixed(3)}`;
+      if (!signCache.has(key)) {
+        signCache.set(key, tex(TEX.bottleLabelTextures(kind, circ, hgt), 1, 1));
+      }
+      return signCache.get(key);
+    },
 
     wall: tex(TEX.blockWallTextures(), 1, 1),
     wallLow: tex(TEX.blockWallTextures(4311, [122, 132, 130]), 1, 1), // 굽도리 띠
@@ -134,9 +149,16 @@ export function buildMaterials() {
       opacity: 0.4,
     }),
     porcelain: solid('Porcelain', 0xeceae4, 0.32), // 변기·세면볼 — 도기 흰색
+    // 변기 시트 — **도기와 같은 흰색으로 두면 시트가 안 보인다.** 실제로도
+    // 사발은 도기, 시트는 플라스틱이라 색·광택이 다르다 (2026-08-07 지적).
+    seatPad: solid('SeatPad', 0xb2b0a6, 0.5),
     // 거울 — 어두운 강판으로 뒀더니 **검은 널판**이었다 (2026-08-06 지적).
     // 진짜 반사는 없지만 매끈하고 밝은 금속면 + 환경맵이면 거울로 읽힌다.
     mirror: solid('Mirror', 0xaebfcb, 0.05, { metalness: 0.72, envMapIntensity: 2.0 }),
+    // 수건 — 테리 고리 결 + 짜 넣은 줄무늬가 **텍스처 안에** 있다.
+    // 두 색을 번갈아 쌓아야 갠 층이 보인다
+    towel: tex(TEX.towelTextures(), 1, 1, { normalScale: 0.8 }),
+    towelWarm: tex(TEX.towelTextures([234, 228, 214], [172, 96, 58], 5011), 1, 1, { normalScale: 0.8 }),
     carton: solid('Carton', 0xa8906a, 0.9), // 골판지
     cartonDark: solid('CartonDark', 0x826d4e, 0.92), // 골판지 접힌 자리
     crate: solid('Crate', 0x2f5d54, 0.68), // 플라스틱 상자

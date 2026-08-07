@@ -135,6 +135,7 @@ class OfficeSector extends Scene {
       vent: '덕트 점검구',
       locker: '사물함',
       fridge: '냉장고',
+      stall: '화장실 칸',
     };
     const labelOf = (name) => {
       const l = KIND_LABEL[name.split('_')[0]];

@@ -58,7 +58,7 @@ node tools/verify.mjs office-sector   # 기준선과 픽셀 비교
 |---|---|
 | vacant-lot (2뷰) · model-test (4뷰) | **픽셀 일치** — 그림자 포함 리트머스 |
 | night-city | 픽셀 재현이 안 되는 씬이다. **삼각형 수 4,203,303 정확 일치**로 잰다 |
-| office-sector (5뷰) | 활성 씬 — 의도한 변경이면 `__lock('base')` 로 기준을 다시 잡는다 |
+| office-sector (7뷰) | 활성 씬 — 의도한 변경이면 `__lock('base')` 로 기준을 다시 잡는다 |
 
 ## 2. 문서를 읽는 순서
 

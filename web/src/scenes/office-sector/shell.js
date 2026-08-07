@@ -27,6 +27,11 @@ import { ductPlan } from './duct.js';
 // 차이가 오로지 조명 차이가 된다. A/B 는 그러라고 남긴 것이다.
 const SPAN = { wall: 1.2, floor: 1.5, ceiling: 3.0 };
 
+// 마감 천장의 두께. **소핏(upstand)이 이 값만큼 위에서 시작한다** — 한 출처로
+// 둔다. 소핏 밑면을 천장 밑면(c.h)과 같은 높이에 두었더니 두 면이 같은 평면에
+// 겹쳐 플라자 둘레 전체가 z-파이팅이었다 (2026-08-07 지적, 삼각형 208개).
+export const CEIL_T = 0.06;
+
 // ── 바닥과 천장 ────────────────────────────────────────────────────────────
 
 export function buildFloors(scene, M) {
@@ -56,8 +61,8 @@ export function buildCeilings(scene, M) {
     const cx = (c.x0 + c.x1) / 2;
     const cz = (c.z0 + c.z1) / 2;
     b.mark('ceiling', `ceil:${c.id}`);
-    // 마감 천장. 위로 0.06 두께 — 그 위가 설비 공간이다 (H.slab).
-    b.box(w, 0.06, d, [cx, c.h + 0.03, cz], M.ceilOf(c.kind), 2.4);
+    // 마감 천장. 위로 CEIL_T 두께 — 그 위가 설비 공간이다 (H.slab).
+    b.box(w, CEIL_T, d, [cx, c.h + CEIL_T / 2, cz], M.ceilOf(c.kind), 2.4);
     b.endMark();
   }
   return b.build(scene);
@@ -105,7 +110,11 @@ export function buildWalls(scene, M) {
 
     if (run.rule === 'upstand') {
       // 소핏 — 낮은 천장 위에서 높은 천장까지만. 바닥 쪽은 트여 있다.
-      slab(b, run, run.a, run.b, run.low, run.h, M.wall, 1.0);
+      // **낮은 쪽 천장판의 윗면부터** 세운다. run.low(= 천장 밑면)에서
+      // 시작하면 소핏 밑면과 천장 밑면이 같은 평면이 되어 z-파이팅이 난다 —
+      // 두 면이 서로 마주보지 않고 **같은 쪽을 본다**(둘 다 -y)는 게 핵심이다.
+      // 천장판 윗면(+y)과 소핏 밑면(-y)은 등지므로 컬링이 하나를 지운다.
+      slab(b, run, run.a, run.b, run.low + CEIL_T, run.h, M.wall, 1.0);
       b.endMark();
       continue;
     }
@@ -201,7 +210,10 @@ export function buildWalls(scene, M) {
       const n = Math.max(1, Math.round((a1 - a0) / 1.2));
       for (let i = 1; i < n; i++) {
         const x = a0 + ((a1 - a0) * i) / n;
-        slab(b, run, x - 0.03, x + 0.03, sill, head, M.trim, 0, W.wall + 0.02);
+        // 위아래로 1.2cm 씩 물린다 — 유리와 **같은 높이**로 끝내면 멀리언의
+        // 위·아래 면이 유리의 그것과 같은 평면이 되어 z-파이팅이 난다.
+        // 실물 멀리언도 유리 모서리를 물고 있다 (2026-08-07)
+        slab(b, run, x - 0.03, x + 0.03, sill - 0.012, head + 0.012, M.trim, 0, W.wall + 0.02);
       }
     }
     b.endMark();

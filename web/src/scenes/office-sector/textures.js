@@ -258,8 +258,10 @@ export function signTextures(label, tint = [38, 44, 56]) {
   const text = label.toUpperCase();
   const cols = text.length * 6 - 1; // 마지막 자간은 빼고 센다
   const grime = tiledFbm(4701, 9, 3);
-  // 글자칸을 세로에 맞춘다 — 7행이 텍스처 높이의 0.52 를 차지하게
-  const px = 64 * 0.52 / 7; // 한 칸 픽셀
+  // 글자칸을 세로에 맞춘다 — 7행이 텍스처 높이의 0.52 를 차지하게.
+  // **다만 긴 이름은 가로가 먼저 넘친다** — 'STAFF ROOM'(59칸)은 280px 로
+  // 256 을 넘어 마지막 글자가 잘려 나갔다 (2026-08-07). 둘 중 작은 쪽을 쓴다.
+  const px = Math.min((64 * 0.52) / 7, (256 * 0.92) / cols); // 한 칸 픽셀
   const w = cols * px;
   return bake([256, 64], 1, 1, (u, v, o) => {
     const x = u * 256;
@@ -402,6 +404,148 @@ export function vendSideTextures(kind = 'drink', seed = 4801) {
     o.c[2] = clamp(c[2] + wear, 0, 255);
     o.r = clamp(rough + (g - 0.5) * 0.12, 0.05, 1);
     o.h = h;
+  });
+}
+
+// ── 병 라벨 ────────────────────────────────────────────────────────────────
+//
+// 흰 띠 + 색 띠만 감아 두면 **무엇이 든 병인지 알 수 없다** (2026-08-07 지시:
+// "각자가 무엇인지 알 수 있게"). 라벨은 인쇄물이니 인쇄물답게 한 장으로 굽고,
+// 글자(signTextures 의 5x7 글자판)와 그림기호를 같이 넣는다.
+//
+// **감기는 면이라 u 가 한 바퀴다.** 그리고 `CylinderGeometry` 의 u=0 은
+// 로컬 +z 다 — 병들은 벽에서 +z 로 서 있으므로 **u=0 이 정면**이다.
+// 처음에 그림을 u=0.5 에 놓았더니 정면에는 이음매만 보이고 그림은 등 뒤로
+// 갔다 (2026-08-07). 이음매는 반대편(u=0.5)으로 보낸다.
+// v 는 위가 0 이므로 y = 1 - v 로 뒤집어 생각한다 (자판기 옆면과 같은 규약).
+// **길이는 미터로 잰다.** uv 비율(0..1)로 그렸더니 글자가 납작하게 눌렸다 —
+// 라벨은 둘레 0.22m 에 높이 0.08m 라 텍스처 한 칸의 가로세로가 실물에서
+// 1.4배 차이 난다. 둘레(circ)와 높이(hgt)를 받아 **월드 미터**로 그리면
+// 글자도 그림도 안 찌그러지고, 병 치수를 바꿔도 따라온다.
+export function bottleLabelTextures(kind = 'shampoo', circ = 0.22, hgt = 0.078, seed = 4901) {
+  const grime = tiledFbm(seed, 8, 3);
+  const INK = kind === 'shampoo'
+    ? { key: [30, 78, 122], key2: [86, 170, 186], text: 'SHAMPOO', cap: 0.0115, sub: 'HAIR' }
+    : { key: [178, 84, 44], key2: [226, 172, 92], text: 'SOAP', cap: 0.019, sub: 'HAND' };
+
+  // 글자 한 칸을 **월드 미터**로 잡고 텍스처 픽셀로 환산한다 (가로·세로 따로)
+  const glyph = (text, capH) => {
+    const cell = capH / 7;
+    return {
+      text,
+      cols: text.length * 6 - 1,
+      cu: (cell / circ) * 256,
+      cv: (cell / hgt) * 128,
+    };
+  };
+  const GT = glyph(INK.text, INK.cap);
+  const GS = glyph(INK.sub, INK.cap * 0.55);
+
+  return bake([256, 128], 1, 1, (u, v, o) => {
+    const uu = u < 0.5 ? u : u - 1; // -0.5 .. 0.5, **0 이 정면**
+    const ux = (uu + 0.5) * 256; // 글자 배치용 픽셀 x (정면이 128)
+    const wx = uu * circ; // 정면에서의 거리 (m)
+    const g = grime(u, v);
+    let c = [242, 238, 228]; // 라벨 종이
+    let rough = 0.66;
+    let h = 0.5;
+    const put = (col, rr = 0.6, hh = 0.52) => { c = col.slice(); rough = rr; h = hh; };
+    // 글줄 하나 — 가로는 정면 중심, 세로는 vc 를 한가운데로
+    const lineAt = (G, vc) => {
+      const cx = Math.floor((ux - (256 - G.cols * G.cu) / 2) / G.cu);
+      const cy = Math.floor((v * 128 - (vc * 128 - 3.5 * G.cv)) / G.cv);
+      return inkAt(G.text, cx, cy);
+    };
+
+    // 위아래 색 띠 — 따로 감던 조각을 여기로 들여왔다
+    if (v > 0.06 && v < 0.2) put(INK.key, 0.6, 0.54);
+    if (v > 0.93 && v < 0.97) put(INK.key2, 0.6, 0.54);
+
+    // 그림기호 — 정면에 하나. 좌표가 미터라 원이 원으로 나온다
+    const sx = wx;
+    const sy = (0.44 - v) * hgt; // 그림 중심 v=0.44, 위가 +
+    if (kind === 'shampoo') {
+      // 물방울 — 아래는 원, 위는 뾰족하게 좁아진다
+      const t = (sy + 0.009) / 0.024; // 0(아래) .. 1(위)
+      if (t > 0 && t < 1) {
+        const rr = 0.0068 * Math.sqrt(Math.max(0, 1 - t * t)) + 0.004 * (1 - t);
+        if (Math.abs(sx) < rr) {
+          put(INK.key2, 0.5, 0.58);
+          if (sx < -rr * 0.3 && sx > -rr * 0.75) put([236, 248, 250], 0.45, 0.6); // 하이라이트
+        }
+      }
+      // 머리카락 세 가닥 — 물방울 양옆으로 흐르는 곡선
+      for (let k = 0; k < 3; k++) {
+        const off = 0.0105 + k * 0.0038;
+        const curve = off + Math.sin((sy + 0.012) * 105) * 0.0018;
+        if (Math.abs(Math.abs(sx) - curve) < 0.001 && sy > -0.009 && sy < 0.014) {
+          put(INK.key, 0.6, 0.55);
+        }
+      }
+    } else {
+      // 손 — 손바닥(타원) + 손가락 넷 + 엄지. 위로 방울 둘이 떨어진다
+      let hand = (sx / 0.0088) ** 2 + ((sy + 0.004) / 0.0068) ** 2 < 1;
+      for (let k = 0; k < 4; k++) {
+        const fx = -0.0063 + k * 0.0042;
+        const top = 0.0062 + (k === 1 || k === 2 ? 0.0018 : 0);
+        if (Math.abs(sx - fx) < 0.0016 && sy > -0.002 && sy < top) hand = true;
+      }
+      if (Math.abs(sx + 0.0098) < 0.0033 && Math.abs(sy + 0.0016) < 0.0023) hand = true; // 엄지
+      if (hand) put(INK.key, 0.6, 0.56);
+      // 손 위로 떨어지는 방울 둘
+      for (const [dx, dy, dr] of [[-0.002, 0.0118, 0.0023], [0.0042, 0.0168, 0.0017]]) {
+        if ((sx - dx) ** 2 + (sy - dy) ** 2 < dr * dr) put(INK.key2, 0.5, 0.58);
+      }
+    }
+
+    // 글자 — 색 띠 안의 작은 부제, 그림 아래의 큰 제품명
+    if (lineAt(GS, 0.13)) put([246, 244, 238], 0.62, 0.58);
+    if (lineAt(GT, 0.74)) put([36, 40, 48], 0.68, 0.62);
+
+    // 이음매 — 라벨의 끝이 맞물리는 자리. **정면 반대편(u=0.5)** 에 둔다
+    if (Math.abs(u - 0.5) < 0.007) put([214, 208, 196], 0.7, 0.46);
+
+    const wear = (g - 0.5) * 12;
+    o.c[0] = clamp(c[0] + wear, 0, 255);
+    o.c[1] = clamp(c[1] + wear, 0, 255);
+    o.c[2] = clamp(c[2] + wear, 0, 255);
+    o.r = clamp(rough + (g - 0.5) * 0.1, 0.05, 1);
+    o.h = h;
+  });
+}
+
+// ── 수건 ───────────────────────────────────────────────────────────────────
+//
+// 짜 넣은 줄무늬를 **얇은 상자**로 얹고 있었다 (2026-08-07 지시: "저 초록색
+// 띠는 텍스쳐로 해야지"). 인쇄·직조 무늬는 조각이 아니라 표면이다 —
+// 자판기 옆면·병 라벨에서 이미 정한 규칙이 여기도 그대로 간다 (3.13.6).
+//
+// 덤으로 **테리 고리 결**이 생긴다. 흰 상자에 흰 재질이면 아무리 굴려도
+// 플라스틱인데, 결이 있으면 그 자체로 천이다.
+export function towelTextures(tint = [240, 238, 232], stripe = [38, 96, 114], seed = 5001) {
+  const pile = tiledFbm(seed, 52, 2); // 고리 결 — 성글고 도톰하다
+  const weave = tiledFbm(seed + 1, 150, 1); // 바탕 실
+  return bake(256, 1, 1, (u, v, o) => {
+    const p = pile(u, v);
+    const w = weave(u, v);
+    let c = tint.slice();
+    let rough = 0.88;
+    // 짜 넣은 줄무늬 둘 — **u** 를 따라 자른다. 상자 윗면에서 u 는 길이
+    // 방향이므로 이러면 줄이 **폭을 가로지르는** 띠가 된다 (실물이 그렇다).
+    // v 로 잘랐더니 길이 방향으로 길게 흐르는 선이었다.
+    for (const s of [0.77, 0.845]) {
+      if (Math.abs(u - s) < 0.016) {
+        c = stripe.slice();
+        rough = 0.8;
+      }
+    }
+    const n = (p - 0.5) * 18 + (w - 0.5) * 12;
+    o.c[0] = clamp(c[0] + n, 0, 255);
+    o.c[1] = clamp(c[1] + n, 0, 255);
+    o.c[2] = clamp(c[2] + n, 0, 255);
+    o.r = clamp(rough + (p - 0.5) * 0.08, 0.3, 1);
+    // 고리 결은 높이로 낸다 — 노말이 이 결을 잡아 주면 천으로 보인다
+    o.h = clamp(0.5 + (p - 0.5) * 0.9 + (w - 0.5) * 0.3, 0, 1);
   });
 }
 
