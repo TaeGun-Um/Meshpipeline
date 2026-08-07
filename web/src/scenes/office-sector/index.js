@@ -22,7 +22,7 @@ import { buildMaterials } from './materials.js';
 import { buildFloors, buildCeilings, buildWalls, buildRock } from './shell.js';
 import { lightPlan, createFixtures, createRealLights, createAmbient } from './lights.js';
 import { createProps } from './props.js';
-import { checkPlan, checkReach, CELLS, H, FLOOR } from './layout.js';
+import { checkPlan, checkReach, CELLS, H, FLOOR, cellIdAt } from './layout.js';
 import { checkInterior, checkLighting } from './check.js';
 import { ductPlan, checkDuct } from './duct.js';
 import { BAKED, bakeVertexLight, meanAlbedo } from './bake.js';
@@ -144,6 +144,10 @@ class OfficeSector extends Scene {
     const openByName = new Map(props.open.children.map((o) => [o.name, o]));
     const interact = {
       radius: 2.4,
+      // **어느 칸에 있는지 같이 신고한다.** 거리만 보면 벽 너머가 잡힌다 —
+      // 화장실 세면대 앞에서 주방 냉장고(벽 하나 건너 0.6m)가 대상이 됐다
+      // (2026-08-06). 하네스는 카메라가 선 칸과 같은 것만 후보로 삼는다.
+      cellAt: cellIdAt,
       pairs: props.interactables.children
         .filter((o) => openByName.has(`${o.name}_open`))
         .map((o) => ({

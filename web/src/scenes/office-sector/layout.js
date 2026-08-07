@@ -261,6 +261,10 @@ const EPS = 1e-4;
 const cellAt = (x, z) =>
   CELLS.find((c) => x > c.x0 + EPS && x < c.x1 - EPS && z > c.z0 + EPS && z < c.z1 - EPS) || null;
 
+// 어느 칸인가 — 상호작용 프리뷰가 **벽 너머 물건**을 잡지 않게 쓴다
+// (화장실에서 주방 냉장고가 잡혔다 — 2026-08-06). 경계에 앉은 점은 null 이다.
+export const cellIdAt = (x, z) => cellAt(x, z)?.id ?? null;
+
 // 한 변을 이웃이 바뀌는 지점마다 자른다.
 //   side  'n'(+z) 's'(-z) 'e'(+x) 'w'(-x)
 // 돌려주는 것: [{ a, b, other, rule }]  — a..b 는 그 변의 축 위 구간

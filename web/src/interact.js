@@ -40,9 +40,12 @@ export function mountInteract({ camera, input, interact }) {
       min = [Math.min(min[0], bb.min.x), Math.min(min[1], bb.min.y), Math.min(min[2], bb.min.z)];
       max = [Math.max(max[0], bb.max.x), Math.max(max[1], bb.max.y), Math.max(max[2], bb.max.z)];
     });
+    const at = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
     return {
       ...p,
-      at: [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2],
+      at,
+      // 이 물건이 선 칸. 씬이 cellAt 을 주면 **벽 너머는 후보에서 뺀다**
+      cell: interact.cellAt ? interact.cellAt(at[0], at[2]) : null,
       opened: false,
       openParent: p.open.parent, // 돌려보낼 제자리 (씬 밖 열림 그룹)
     };
@@ -81,9 +84,13 @@ export function mountInteract({ camera, input, interact }) {
   function update() {
     if (target) input.keys.delete('KeyE'); // 대상이 잡힌 동안 E 는 상호작용 전용
     const c = camera.position;
+    // 카메라가 선 칸. **거리만 보면 벽 너머가 잡힌다** — 화장실 세면대 앞에서
+    // 벽 하나 건너 0.6m 인 주방 냉장고가 대상이 됐다 (2026-08-06).
+    const here = interact.cellAt ? interact.cellAt(c.x, c.z) : null;
     let best = null;
     let bd = r2;
     for (const p of pairs) {
+      if (here && p.cell && p.cell !== here) continue;
       const dx = p.at[0] - c.x;
       const dy = p.at[1] - c.y;
       const dz = p.at[2] - c.z;
