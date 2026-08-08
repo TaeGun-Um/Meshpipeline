@@ -69,9 +69,9 @@ export class Scene {
     // 모든 씬에 공통으로 거는 마지막 패스. texture.repeat 를 UV 에 구워
     // glTF 에 KHR_texture_transform 이 붙을 여지를 없앤다. 이미 UV 를 구운
     // 씬(도시)에서는 아무 일도 하지 않는다. 자세한 사정은 meshkit 쪽 주석.
-    for (const obj of Object.values(world.built)) {
-      if (obj && obj.traverse) bakeTextureRepeat(obj);
-    }
+    // **루트 전부를 한 호출로** 넘긴다 — 루트별로 따로 돌리면 두 루트가
+    // 공유한 재질이 첫 호출에서 repeat 1 로 되돌아가 둘째 루트가 안 굽힌다.
+    bakeTextureRepeat(Object.values(world.built).filter((o) => o && o.traverse));
 
     return {
       built: world.built,
@@ -84,6 +84,9 @@ export class Scene {
       tick: world.tick || null,
       // 근접 상호작용 쌍 (src/interact.js). 신고하는 씬에만 하네스가 E 토글을 단다.
       interact: world.interact || null,
+      // 진단 집계 — 하네스가 `__<이름>` 콘솔 명령으로 노출한다 (harness.js).
+      // 여기서 통과시키는 것을 잊으면 씬 신고가 조용히 사라진다 (2026-08-08).
+      debug: world.debug || null,
     };
   }
 

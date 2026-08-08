@@ -228,7 +228,11 @@ export function bakeInstances(inst, limit = Infinity) {
   const srcIdx = src.index;
 
   const vCount = srcPos.count;
-  const iCount = srcIdx ? srcIdx.count : 0;
+  // 인덱스 없는 원본이면 iCount=0 이 되어 **형상이 조용히 사라진** GLB 가
+  // 나간다 (2026-08-08 코드리뷰 — 현 호출 경로는 전부 인덱스 지오메트리라
+  // 잠복이었다). 조용한 소실보다 즉사가 낫다.
+  if (!srcIdx) throw new Error(`bakeInstances: '${inst.name}' 원본에 인덱스가 없다 — 비인덱스 지오메트리는 못 굽는다`);
+  const iCount = srcIdx.count;
   const n = Math.min(inst.count, limit);
 
   const pos = new Float32Array(vCount * n * 3);
@@ -350,11 +354,15 @@ export function bakeInstancedDescendants(root) {
 //   4. 공유 지오메트리가 한 배율만    — 아니면 지오메트리를 복제해야 한다
 const REPEAT_MAPS = ['map', 'roughnessMap', 'normalMap', 'emissiveMap', 'alphaMap', 'aoMap'];
 
-export function bakeTextureRepeat(root) {
+// roots: 루트 하나 또는 **여러 루트의 배열**. 반드시 씬의 루트 전부를 한
+// 호출로 넘긴다 — 루트별로 따로 부르면, repeat≠1 텍스처의 재질이 두 루트에
+// 공유될 때 첫 호출이 repeat 을 1 로 되돌린 뒤라 둘째 루트는 배율 1 을 읽어
+// UV 를 안 굽는다. 예외 없이 조용히 텍스처가 한 장으로 늘어난다 (2026-08-08).
+export function bakeTextureRepeat(roots) {
   const need = new Map(); // geometry.uuid -> { geo, sx, sy }
   const textures = new Set();
 
-  root.traverse((o) => {
+  for (const root of Array.isArray(roots) ? roots : [roots]) root.traverse((o) => {
     if (!o.isMesh) return;
     for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
       if (!m) continue;
@@ -378,12 +386,18 @@ export function bakeTextureRepeat(root) {
         sy = t.repeat.y;
         textures.add(t);
       }
-      if (sx === null || (sx === 1 && sy === 1)) continue;
+      if (sx === null) continue;
 
+      // **배율 1 도 요구다.** 예전에는 여기서 `sx===1` 을 그냥 건너뛰었다.
+      // 그래서 병합 메시 하나에 repeat=1 재질과 repeat=3 재질이 섞여 있으면
+      // 충돌 검사에 안 걸리고, 3 을 **지오메트리 전체 UV** 에 곱해 repeat=1
+      // 쪽(TV 화면·신문)까지 3x3 으로 갈라 놓았다 (2026-08-08). 조용히 깨지느니
+      // 던진다 — 병합 메시에 쓸 반복은 UV 에 미리 구워야 한다 (scaleUV).
       const prev = need.get(o.geometry.uuid);
       if (prev && (prev.sx !== sx || prev.sy !== sy)) {
         throw new Error(
           `bakeTextureRepeat: 지오메트리 하나가 배율 ${prev.sx},${prev.sy} 와 ${sx},${sy} 를 동시에 요구한다`
+            + ` (${m.name || '이름없음'}) — 병합 메시라면 UV 에 구워서 repeat 을 1 로 둔다`
         );
       }
       need.set(o.geometry.uuid, { geo: o.geometry, sx, sy });
@@ -391,7 +405,10 @@ export function bakeTextureRepeat(root) {
   });
 
   // 지오메트리 단위로 한 번씩만 곱한다 (318개 메시가 32개 지오메트리를 공유한다)
-  for (const { geo, sx, sy } of need.values()) scaleUV(geo, sx, sy);
+  for (const { geo, sx, sy } of need.values()) {
+    if (sx === 1 && sy === 1) continue;
+    scaleUV(geo, sx, sy);
+  }
 
   // UV 에 실렸으니 텍스처 쪽 반복은 되돌린다. 순서가 중요하다 — 먼저 되돌리면
   // 위 루프가 배율 1을 읽어 아무것도 안 곱한다.

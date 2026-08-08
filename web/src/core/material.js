@@ -127,21 +127,6 @@ export class MasterMaterial {
     return m;
   }
 
-  // 이 마스터가 만든 머티리얼 전부 (검증·정리용)
-  get instances() {
-    return [...this.cache.values()];
-  }
-
-  // 상속 사슬 — 문서·디버깅용
-  get lineage() {
-    const out = [this.name];
-    let p = this.parent;
-    while (p) {
-      out.push(p.name);
-      p = p.parent;
-    }
-    return out.reverse();
-  }
 }
 
 // ── 공통 도우미 ────────────────────────────────────────────────────────────

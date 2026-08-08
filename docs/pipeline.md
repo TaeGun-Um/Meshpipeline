@@ -99,7 +99,7 @@ pipeline/contract.json
 
 ### 3. inspect — GLB가 규약을 지키는지
 
-`scenes.<id>.assets` 의 애셋(vacant-lot 8개 · 오피스 6개)에 대해 GLB 바이너리를 직접 파싱한다.
+`scenes.<id>.assets` 의 애셋(vacant-lot 8개 · 오피스 9개)에 대해 GLB 바이너리를 직접 파싱한다.
 
 | 검사 | 왜 |
 |---|---|

@@ -6,13 +6,14 @@
 // 것인지 알 수 없게 된다.
 import * as THREE from 'three';
 import { clamp } from './noise.js';
+import { onSceneReset } from './scenestate.js';
 
 let ANISO = 4;
 export function setAnisotropy(n) {
   ANISO = n;
 }
 
-export const textureStats = { count: 0, pixels: 0 };
+export const textureStats = { count: 0 }; // main.js 하네스가 읽는다 (pixels 는 아무도 안 읽어 걷어냈다)
 
 // 정수 해시 — 벽돌 한 장, 창문 한 칸처럼 이산 단위의 색 편차용
 export function hash2(a, b) {
@@ -30,6 +31,34 @@ function toTexture(canvas, srgb, rx, ry) {
   t.anisotropy = ANISO;
   t.needsUpdate = true;
   return t;
+}
+
+// ── 같은 그림은 한 번만 굽는다 ─────────────────────────────────────────────
+//
+// 실측(2026-08-08)에서 픽셀이 완전히 같은 텍스처가 4장(4.2MB) 나왔다 —
+// 비닐 바닥 세 장의 노말맵(높이가 씨드와 무관한 격자 이음매뿐이라 같다),
+// 블록벽 두 장의 거칠기맵, 발광 화면의 map/emissiveMap. 레시피마다 고치는
+// 대신 여기서 구조적으로 막는다: **내용 해시가 같으면 같은 THREE.Texture 를
+// 돌려준다.** 키에 크기·색공간·repeat 이 들어가므로 뜻이 다른 텍스처가
+// 섞일 일은 없다. glTF 익스포터도 같은 객체면 이미지를 한 장만 쓴다.
+const contentCache = new Map();
+onSceneReset('텍스처 내용 캐시', () => contentCache.clear());
+
+// 32비트 둘을 병렬로 굴린다 — 하나(FNV-1a)면 수백 장 규모에서 생일 충돌이
+// 이론상 남고, 충돌은 "조용히 엉뚱한 그림" 이라 던질 기회도 없다.
+// **4바이트 워드로 돈다** — 바이트 루프는 씬 전체 픽셀(수십 MB)에 1초를
+// 썼다 (2026-08-08 __steps 실측 — 재질 단계의 대부분). ImageData 버퍼는
+// 픽셀당 4바이트라 워드로 나눠떨어지고, 같은 바이트열이면 해시도 같다.
+function hashPixels(d) {
+  const w = new Uint32Array(d.buffer, d.byteOffset, d.byteLength >> 2);
+  let a = 0x811c9dc5;
+  let b = 0x9e3779b9;
+  for (let i = 0; i < w.length; i++) {
+    const v = w[i];
+    a = Math.imul(a ^ v, 0x01000193);
+    b = (b + (v & 0xffff) + Math.imul(v >>> 16, 31) + (b << 6) + (b >>> 2)) | 0;
+  }
+  return (a >>> 0).toString(36) + '.' + (b >>> 0).toString(36);
 }
 
 // 기울기 증폭. 높이차를 노말로 바꿀 때 얼마나 과장할지.
@@ -140,16 +169,24 @@ export function bake(size, rx, ry, fn, opts = {}) {
   g3.putImageData(i3, 0, 0);
   if (emissive) g4.putImageData(i4, 0, 0);
 
-  const n = emissive ? 4 : 3;
-  textureStats.count += n;
-  textureStats.pixels += sw * sh * n;
-
-  const set = {
-    map: toTexture(cc, true, rx, ry),
-    roughnessMap: toTexture(cr, false, rx, ry),
-    normalMap: toTexture(cn, false, rx, ry),
+  // 내용이 같으면 캐시의 텍스처를 그대로 쓴다 (파일 머리의 contentCache 참고).
+  // 새로 만든 것만 센다 — 공유된 장은 GPU 에 한 번만 오른다.
+  const share = (cv, d, srgb) => {
+    const key = `${sw}x${sh}:${rx},${ry}:${srgb ? 's' : 'l'}:${hashPixels(d)}`;
+    let t = contentCache.get(key);
+    if (!t) {
+      t = toTexture(cv, srgb, rx, ry);
+      contentCache.set(key, t);
+      textureStats.count += 1;
+    }
+    return t;
   };
-  if (emissive) set.emissiveMap = toTexture(ce, true, rx, ry);
+  const set = {
+    map: share(cc, d1, true),
+    roughnessMap: share(cr, d2, false),
+    normalMap: share(cn, d3, false),
+  };
+  if (emissive) set.emissiveMap = share(ce, d4, true);
   return set;
 }
 
@@ -188,7 +225,6 @@ export function radialTexture(size = 256, power = 2.4) {
   t.anisotropy = ANISO;
   t.needsUpdate = true;
   textureStats.count += 1;
-  textureStats.pixels += size * size;
   return t;
 }
 
@@ -210,6 +246,5 @@ export function gradientTexture(stops, height = 256) {
   t.wrapS = THREE.ClampToEdgeWrapping;
   t.wrapT = THREE.ClampToEdgeWrapping;
   textureStats.count += 1;
-  textureStats.pixels += w * height;
   return t;
 }

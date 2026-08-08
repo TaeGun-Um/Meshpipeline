@@ -84,11 +84,15 @@ export function beginItem(kind, label, meta = null) {
     x1: -Infinity, y1: -Infinity, z1: -Infinity,
     // 지면 근처(LOW_Y 아래) 조각만의 평면 범위
     lx0: Infinity, lz0: Infinity, lx1: -Infinity, lz1: -Infinity,
+    // 삼각형 집계 — "어디에 돈이 들었나" 를 기록 단위로 잰다. 병합 뒤에는
+    // 조각의 출처가 사라지므로 여기가 유일하게 셀 수 있는 자리다 (2026-08-08)
+    tris: 0,
   };
 }
 
 export function growItem(geometry) {
   if (!open) return;
+  open.tris += (geometry.index ? geometry.index.count : geometry.attributes.position?.count ?? 0) / 3;
   geometry.computeBoundingBox();
   const bb = geometry.boundingBox;
   if (!bb || Number.isNaN(bb.min.x)) return;
@@ -131,6 +135,23 @@ export function endItem() {
   // 남기면 "0,0 에 점 하나" 가 기록돼 검사가 엉뚱한 것을 잡는다.
   if (open && open.x1 > open.x0) items.push(open);
   open = null;
+}
+
+// 삼각형이 어디에 들었나 — 기록 라벨을 묶어 내림차순으로 센다.
+// 라벨은 `종류:칸` 꼴이므로 콜론 앞이 물건의 종류다. 최적화는 감이 아니라
+// 이 표에서 시작한다 ("최적화 전에 먼저 센다" — audit.js 머리말).
+export function triTally() {
+  const by = new Map();
+  for (const it of items) {
+    const key = `${it.kind}/${(it.label || '?').split(':')[0]}`;
+    const e = by.get(key) || { tris: 0, n: 0 };
+    e.tris += it.tris;
+    e.n++;
+    by.set(key, e);
+  }
+  return [...by.entries()]
+    .map(([label, e]) => ({ label, tris: Math.round(e.tris), n: e.n, each: Math.round(e.tris / e.n) }))
+    .sort((a, b) => b.tris - a.tris);
 }
 
 // ── 인스턴스 메시 훑기 ─────────────────────────────────────────────────────
@@ -229,7 +250,6 @@ export function overlapY(a, b) {
 const CONTACT = 0.02; // 실제로 만나기는 하나 — 부동소수 여유
 export function overlappingPairs(list, { min = 0.3, cell = 90, needY = true, plate = false } = {}) {
   const grid = new Map();
-  const keyOf = (x, z) => `${Math.floor(x / cell)},${Math.floor(z / cell)}`;
   for (const it of list) {
     // 큰 것은 여러 칸에 걸친다. 중심 칸만 담으면 옆 칸의 이웃을 놓친다.
     for (let gx = Math.floor(it.x0 / cell); gx <= Math.floor(it.x1 / cell); gx++) {

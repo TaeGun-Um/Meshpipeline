@@ -6,11 +6,10 @@
 // 계획(siteplan.claims), 격자 캐시(layout.ROADS_CACHE), 시장 집계(market.TALLY)
 // 처럼 **한 번의 빌드 동안만 유효한** 것들이다.
 //
-// 이걸 비우는 일이 지금까지 손으로 이뤄졌다.
-//
-//   night-city/index.js   resetPlan() · resetLedger()
-//   night-city/towers.js  resetMarketTally()
-//   나머지 열두 개        아무도 안 비운다 (게으른 캐시라 우연히 굴러갔다)
+// 이걸 비우는 일이 예전에는 손으로 이뤄졌다 — night-city 의 index.js 가
+// resetPlan()·resetLedger() 를, towers.js 가 resetMarketTally() 를 직접 불렀고
+// 나머지 열두 개는 아무도 안 비웠다 (게으른 캐시라 우연히 굴러갔다).
+// 지금은 그 수동 호출이 전부 사라지고 이 파일의 등록으로 대체됐다.
 //
 // 씬이 둘일 때는 굴러갔다. **셋이 되는 순간 깨진다** — 새 씬이 `resetPlan()`
 // 을 안 부르면 이전 씬의 자리 예약이 남고, 그것도 예외가 아니라 **조용히**

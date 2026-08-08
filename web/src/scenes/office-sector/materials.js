@@ -19,7 +19,7 @@ export function buildMaterials() {
     SolidSurface.instance({ color, roughness, ...VC, ...extra }, name);
   const glow = (name, p) => Glow.instance({ ...p, ...VC }, name);
 
-  // 바닥 — 비닐 타일 두 색과 콘크리트
+  // 바닥 — 비닐 타일 세 장(복도·카페·서버실)과 콘크리트
   const vinylWarm = tex(TEX.vinylTextures(4101, [198, 192, 176]), 1, 1); // 복도·사무실
   const vinylCool = tex(TEX.vinylTextures(4111, [178, 186, 186]), 1, 1); // 카페테리아
   // 플라자 바닥 — 밝은 쪽 폴리싱 콘크리트. 여기가 이 층의 중심이라
@@ -111,6 +111,12 @@ export function buildMaterials() {
     // 페인트라 거의 확산면이다. 맨 금속이 아니다.
     trim: solid('Trim', 0x6f7479, 0.55, { metalness: 0.12 }),
     steel: tex(TEX.steelTextures(), 1, 1, { metalness: 0.15 }),
+    // 가전 도장판 — 세탁기 몸통. 강판 색(짙은 청회색 + 녹)으로 두었더니
+    // 세탁기가 아니라 고물통이었다 (2026-08-08). 밝은 상아색에 녹은 0.2
+    enamel: tex(TEX.steelTextures(4521, [198, 197, 190], 0.2), 1, 1, { metalness: 0.06, roughness: 0.45 }),
+    // 같은 색의 **민 재질** — 링·원판처럼 uv 가 늘어나는 조각에 쓴다.
+    // 텍스처를 그대로 씌우면 얼룩이 고리를 감고 돌아 표범 무늬가 된다
+    enamelPlain: solid('EnamelPlain', 0xc3c2bb, 0.5, { metalness: 0.06 }),
     steelDark: tex(TEX.steelTextures(4511, [92, 98, 104]), 1, 1, { metalness: 0.18 }),
 
     // 유리는 환경맵 반사가 없으면 검은 구멍이다 (씬이 PMREM 을 주입한다)
@@ -122,9 +128,15 @@ export function buildMaterials() {
     }),
 
     // ── 가구 ───────────────────────────────────────────────────────────────
-    laminate: solid('Laminate', 0xb8ab90, 0.6), // 책상·식탁 상판
-    plastic: solid('Plastic', 0x3f6d7a, 0.62), // 의자
-    plasticWarm: solid('PlasticWarm', 0xa8623f, 0.62),
+    //
+    // **채도를 한 단 내렸다** (2026-08-08 지시 "텍스쳐가 너무 쨍한 느낌").
+    // 이 씬의 팔레트 근거는 "90년대 기관 건물 — 채도가 낮고 때가 타 있다"
+    // 인데, 가구 색이 그 규칙을 혼자 벗어나 새 플라스틱처럼 보였다.
+    // 방법은 **휘도 쪽으로 30~40% 당기고 한 톤 낮추기**다 (색상은 그대로).
+    // 인쇄물(자판기 옆면·경고 딱지)은 예외다 — 잉크는 원래 채도가 높다.
+    laminate: solid('Laminate', 0xa89d86, 0.66), // 책상·식탁 상판
+    plastic: solid('Plastic', 0x4a6b73, 0.66), // 의자
+    plasticWarm: solid('PlasticWarm', 0x8c6350, 0.68),
     rack: solid('Rack', 0x3a4048, 0.52, { metalness: 0.15 }),
     vend: solid('Vend', 0x8c2b30, 0.5, { metalness: 0.2 }),
     vendBlue: solid('VendBlue', 0x24486e, 0.5, { metalness: 0.2 }),
@@ -135,7 +147,7 @@ export function buildMaterials() {
     //
     // 상자에 색만 칠하면 그 물건이 안 된다. 배전반은 **경고 딱지**가 있어야
     // 배전반이고, 서버랙은 **망문**이 있어야 서버랙이다. 그 조각들에 쓸 색.
-    warn: solid('Warn', 0xc9a227, 0.72), // 경고 딱지
+    warn: solid('Warn', 0xb89b3f, 0.76), // 경고 딱지 — 잉크지만 바랬다
     // 서버 유닛 앞판. **랙 몸통보다 뚜렷이 밝아야 한다** — 처음에 0x40454d
     // 로 뒀더니 알베도가 0.056 이라 구운 빛(0.25)을 곱하면 사실상 검정이고,
     // 애써 나눈 U 칸이 하나도 안 보였다.
@@ -148,23 +160,46 @@ export function buildMaterials() {
       transparent: true,
       opacity: 0.4,
     }),
-    porcelain: solid('Porcelain', 0xeceae4, 0.32), // 변기·세면볼 — 도기 흰색
+    // 도기 — **순백은 새것이다.** 쓰던 변기·세면볼은 약간 회색이고 덜 반짝인다
+    porcelain: solid('Porcelain', 0xdedbd3, 0.4),
     // 변기 시트 — **도기와 같은 흰색으로 두면 시트가 안 보인다.** 실제로도
     // 사발은 도기, 시트는 플라스틱이라 색·광택이 다르다 (2026-08-07 지적).
     seatPad: solid('SeatPad', 0xb2b0a6, 0.5),
     // 거울 — 어두운 강판으로 뒀더니 **검은 널판**이었다 (2026-08-06 지적).
     // 진짜 반사는 없지만 매끈하고 밝은 금속면 + 환경맵이면 거울로 읽힌다.
     mirror: solid('Mirror', 0xaebfcb, 0.05, { metalness: 0.72, envMapIntensity: 2.0 }),
-    // 수건 — 테리 고리 결 + 짜 넣은 줄무늬가 **텍스처 안에** 있다.
+    // 수건 — 테리 고리 결 + 짜 넣은 띠. 띠는 **텍스처에** 있다 (조각으로
+    // 얹으면 삼각형을 쓰는 짓이다). props.foldedTowel 이 uv 를 정점 좌표에서
+    // 직접 짜므로 띠가 접힌 자리를 돌아 앞뒤로 이어진다.
     // 두 색을 번갈아 쌓아야 갠 층이 보인다
-    towel: tex(TEX.towelTextures(), 1, 1, { normalScale: 0.8 }),
-    towelWarm: tex(TEX.towelTextures([234, 228, 214], [172, 96, 58], 5011), 1, 1, { normalScale: 0.8 }),
-    carton: solid('Carton', 0xa8906a, 0.9), // 골판지
-    cartonDark: solid('CartonDark', 0x826d4e, 0.92), // 골판지 접힌 자리
-    crate: solid('Crate', 0x2f5d54, 0.68), // 플라스틱 상자
+    towel: tex(TEX.towelTextures([240, 238, 232], [74, 118, 134], 5001), 1, 1, { normalScale: 0.8 }),
+    towelWarm: tex(TEX.towelTextures([232, 224, 206], [184, 118, 88], 5011), 1, 1, { normalScale: 0.8 }),
+    // 담요·베갯잇 — 반복은 **UV 에 구워** 온다 (props.CLOTH_UV). repeat 을 쓰면
+    // 안 된다: bakeTextureRepeat 이 그 배율을 **병합 메시 전체의 UV** 에 곱해서,
+    // 같은 메시에 있던 TV 화면·신문까지 3x3 으로 갈라졌다 (2026-08-08).
+    blanket: tex(TEX.blanketTextures(), 1, 1, { normalScale: 1.0 }),
+    // 베갯잇 — 가까이 보는 작은 것에만 쓴다. 넓은 면에 깔면 반복 타일이 격자로 뜬다
+    sheet: tex(TEX.blanketTextures([224, 226, 224], 5411, 0.015, 0.12, 0.18), 1, 1, { normalScale: 0.22 }),
+    // 빨랫감 — 벗어 던진 천이라 **잔주름이 세다**(foldK 0.9). 색도 갈라 둔다:
+    // 흰 것만 쌓아 두면 개수가 안 보인다
+    clothGrey: tex(TEX.blanketTextures([150, 152, 148], 5421, 0.05, 0.9, 0.7), 1, 1, { normalScale: 0.95 }),
+    clothWarm: tex(TEX.blanketTextures([196, 188, 170], 5431, 0.06, 0.9, 0.7), 1, 1, { normalScale: 0.95 }),
+    // 신문 지면 — 제호·괘선·단·사진이 **텍스처 안에** 있다. 조각으로 쌓으면
+    // 글줄 하나가 삼각형 열둘이고 비스듬히 보면 두께가 다 드러난다
+    newsprint: tex(TEX.newsprintTextures(), 1, 1),
+    // 가루세제 갑 — 인쇄물이라 한 장으로 구웠다
+    detergentBox: tex(TEX.detergentBoxTextures(), 1, 1),
+    carton: solid('Carton', 0x9c8b72, 0.92), // 골판지
+    cartonDark: solid('CartonDark', 0x7c6c55, 0.94), // 골판지 접힌 자리
+    crate: solid('Crate', 0x3b5a54, 0.72), // 플라스틱 상자
     keycap: solid('Keycap', 0xcfc9b8, 0.8), // 자판
     crt: solid('Crt', 0xc9c2ad, 0.72), // 브라운관 몸통 (누런 베이지)
     crtDark: solid('CrtDark', 0x2b2e33, 0.5), // 베젤·화면 테두리
+    crtVent: solid('CrtVent', 0x14161a, 0.85), // 천판 슬롯 속
+    // 비디오 데크 표시창 — 아무도 안 맞춘 12:00
+    vcrDisplay: tex(TEX.vcrDisplayTextures(), 1, 1, { roughness: 0.22, emissiveIntensity: 0.7 }),
+    // 화면에 나오는 것 — 단색 발광판이 아니라 **방송 한 컷**이다
+    tvScreen: tex(TEX.crtScreenTextures(), 1, 1, { roughness: 0.16, emissiveIntensity: 0.62 }),
 
     // ── 빛 ─────────────────────────────────────────────────────────────────
     //
@@ -176,6 +211,7 @@ export function buildMaterials() {
     exit: glow('ExitSign', { color: 0x35ff7a, intensity: 0.85, tint: 0.2 }),
     led: glow('RackLed', { color: 0x64ffa0, intensity: 0.8, tint: 0.1 }),
     ledAmber: glow('RackLedAmber', { color: 0xffb443, intensity: 0.75, tint: 0.1 }),
+    ledRed: glow('LedRed', { color: 0xff4436, intensity: 0.7, tint: 0.12 }),
     screen: glow('Screen', { color: 0x7fd4ff, intensity: 0.55, tint: 0.15 }),
   };
 }

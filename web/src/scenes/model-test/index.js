@@ -157,6 +157,12 @@ class ModelTest extends Scene {
         `캐릭터 삼각형 ${Math.round(tri).toLocaleString('ko-KR')}`,
         `머리카락 스프링 ${springs.length}줄`,
       ],
+      // 연동 시험 — 리깅된 외부 GLB 위에 코드 생성물을 얹을 수 있나
+      // (rigtest.js). 씬을 안 바꾸므로 콘솔에서 `__rig()` 로 불러야만 돈다.
+      // 하네스가 이름을 옮겨 단다 (harness.js — main 은 이 파일을 모른다).
+      debug: {
+        rig: async (opt) => (await import('./rigtest.js')).rigTest(scene, opt),
+      },
       counts: { crate: 1 },
       // dt=0 (스크린샷 하네스) 에서는 스프링이 안 움직인다 — 기준선이
       // 흔들린 상태로 찍히면 회귀 검증이 매번 다르게 나온다.

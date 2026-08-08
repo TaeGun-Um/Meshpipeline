@@ -76,17 +76,20 @@ export function lightPlan() {
     // 달면 허공에 뜨므로 **동쪽 벽의 스콘스 둘**로 간다. 등과 광원이 같은
     // 좌표에서 나오는 규칙은 그대로다.
     if (c.use === 'stair') {
+      // 스콘스 제원 — LIT 표처럼 한 곳에 (power 가 byCell 에도 들어가므로
+      // 흩어 적으면 이중 기입이다). y 는 벽등 높이, pitch 는 z 간격.
+      const SCONCE = { power: 10, range: 7, y: 2.3, pitch: 2.6 };
       const col = new THREE.Color(s.warm);
       let n = 0;
-      for (const z of seats(c.z0 + 0.8, c.z1 - 0.8, 2.6)) {
-        fixtures.push({ x: c.x1 - 0.14, y: 2.3, z, lamp: 'sconce', cell: c.id });
+      for (const z of seats(c.z0 + 0.8, c.z1 - 0.8, SCONCE.pitch)) {
+        fixtures.push({ x: c.x1 - 0.14, y: SCONCE.y, z, lamp: 'sconce', cell: c.id });
         emitters.push({
-          x: c.x1 - 0.3, y: 2.3, z, cell: c.id,
-          power: 10, range: 7, hex: s.warm, r: col.r, g: col.g, b: col.b,
+          x: c.x1 - 0.3, y: SCONCE.y, z, cell: c.id,
+          power: SCONCE.power, range: SCONCE.range, hex: s.warm, r: col.r, g: col.g, b: col.b,
         });
         n++;
       }
-      byCell[c.id] = { fixtures: n, lights: n, power: 10, area: (c.x1 - c.x0) * (c.z1 - c.z0) };
+      byCell[c.id] = { fixtures: n, lights: n, power: SCONCE.power, area: (c.x1 - c.x0) * (c.z1 - c.z0) };
       continue;
     }
 

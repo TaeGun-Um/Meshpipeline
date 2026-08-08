@@ -100,9 +100,7 @@ export function buildWalls(scene, M) {
   const runs = wallRuns();
   const tally = { solid: 0, door: 0, wide: 0, glass: 0, upstand: 0, narrow: [] };
   // 덕트 포트 — 북쪽 외벽에 뚫리는 기어드는 개구 (duct.js 가 자리를 정한다)
-  const ports = ductPlan().ports;
-  const { sill: portSill, portW } = ductPlan();
-  const portHead = ductPlan().headY;
+  const { ports, sill: portSill, portW, headY: portHead } = ductPlan();
 
   for (const run of runs) {
     tally[run.rule]++;

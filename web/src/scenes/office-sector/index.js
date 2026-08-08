@@ -38,6 +38,27 @@ class OfficeSector extends Scene {
       camera: { pos: [3.2, 1.7, 4.5], target: [-14, 1.6, 1.0] },
       lens: { fov: 62, near: 0.05, far: 400 },
       render: { exposure: 1.05, shadows: false },
+      // ── 감사 하한 (core/audit.js 가 형식만 검사한다) ─────────────────────
+      // 숫자의 내력은 core/audit.js 에 있던 것을 그대로 옮겼다 (2026-08-08
+      // 계층 정리). 하한은 "사라졌다" 를 잡는다 — 넉넉히 잡는다.
+      audit: {
+        expect: {
+          // 상호작용 소품(개별 노드). 실측 220 (2026-08-05 층 축소 후 —
+          // 플라자 절반·방 재편으로 353 에서 내려왔다). 분리 로직이 조용히
+          // 죽어 전부 병합으로 돌아가면 여기서 잡힌다.
+          interactables: { min: 160 },
+          // 약탈 열림 포즈 (씬 밖 그룹, 익스포트 전용). 실측 137 (층 축소
+          // 후). spawnPair 가 조용히 spawn 으로 퇴화하면 여기서 잡힌다.
+          lootPoses: { min: 100 },
+          // 탈출 덕트 그릴 (스토리의 오프닝 동선). 시작 방 입구와 화장실
+          // 출구, 최소 둘. 없어지면 탈출 루트가 통째로 사라진 것이다.
+          vent: { min: 2 },
+          // 잔소품 합계 (컵·트레이·접시더미·통조림·비누·시계·쓰레기통).
+          // 종류마다 하한을 달면 경보가 여섯 줄이 되므로 **한 계통으로
+          // 신고**한다 (props.createProps). 클러터 패스가 죽으면 잡힌다.
+          clutter: { min: 40 },
+        },
+      },
     });
   }
 
@@ -168,6 +189,8 @@ class OfficeSector extends Scene {
           ? `등 ${fixtures} · 구운 광원 ${lp.emitters.length} · 밝기폭 ${lum.span.toFixed(1)}배`
           : `등 ${fixtures} · 실시간 광원 ${lights}`,
         `소품 ${Object.values(props.tally).reduce((s, v) => s + v, 0)} (개별 노드 ${props.interactCount} · 열림 포즈 ${props.openCount})`,
+        // 격자 이탈은 결함이 아니라 경고다 (check.js) — 안 실으면 죽은 채널이다
+        ...(interior.offGrid.length ? [`천장 격자 이탈(경고): ${interior.offGrid.join(' ')}`] : []),
       ],
       counts: {
         cells: plan.cells,

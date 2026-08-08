@@ -8,9 +8,9 @@
 | # | 씬 | 무엇 | 삼각형 | 텍스처 |
 |---|---|---|---|---|
 | 1 | `vacant-lot` 주택가 공터 | 동결 · 파이프라인 기준 씬. 좌표계·조명 규약을 여기서 확정했다 | 182,428 | 63MB |
-| 2 | `night-city` 나이트시티 | 동결 · 사이버펑크 야간 도시 · 구역·매싱·1층 점포 | 4,203,303 | 218MB |
+| 2 | `night-city` 나이트시티 | 동결 · 사이버펑크 야간 도시 · 구역·매싱·1층 점포 | 4,203,303 | 194MB |
 | 3 | `model-test` 모델 테스트 | 동결 · 서브컬처 아바타 — 코드로 사람이 어디까지 되나의 결론 | 61,380 | 9MB |
-| 4 | `office-sector` 오피스 섹터 | **활성 — 유일한 작업 대상.** 챕터 0 튜토리얼 무대 · 회사 사옥 **지하 1층** (게임 오프닝 무대) · 방 14종 권역 배치 · **정점에 구운 조명** · 탈출 덕트 | 260,524 | 48MB |
+| 4 | `office-sector` 오피스 섹터 | **활성 — 유일한 작업 대상.** 챕터 0 튜토리얼 무대 · 회사 사옥 **지하 1층** (게임 오프닝 무대) · 방 14종 권역 배치 · **정점에 구운 조명** · 탈출 덕트 | 286,004 | 51MB |
 
 삼각형은 씬이 들고 있는 지오메트리 총량이다 (`__audit()`). 한 프레임에 실제로
 그리는 수는 그림자 패스 때문에 이보다 많다.
@@ -104,6 +104,8 @@ node tools/pipeline.mjs --accept         # 새 스펙을 승인 (아래 참고)
 ## 문서
 
 문서는 **공통**과 **씬별**로 갈라져 있다. 씬을 늘려도 공통 문서는 그대로다.
+여기는 입구다 — 씬별 지식 문서(story·city·districts 등)까지 담은 상세 지도는
+[docs/status.md](docs/status.md) 5장이고, 새 문서는 그쪽에 먼저 실린다.
 
 ### 공통 — 씬을 가리지 않는다
 
@@ -137,7 +139,8 @@ node tools/pipeline.mjs --accept         # 새 스펙을 승인 (아래 참고)
 pipeline/contract.json      규약의 단일 출처 — 모든 단계가 이걸 읽는다
 tools/                      파이프라인 도구 (Node + 블렌더 파이썬)
 web/
-  src/main.js               렌더러·카메라·입력·검증 하네스. 장소는 모른다
+  src/main.js               렌더러·카메라·입력·모드 전환. 장소는 모른다
+  src/harness.js            검증 하네스 (__shot·__lock·__audit·__export)
   src/scenemenu.js          씬 전환 햄버거 (우측 상단)
   src/core/                 엔진. 씬을 하나도 모른다
     scene.js                씬 부모 클래스 — build() 가 상태 리셋까지 맡는다
@@ -158,16 +161,7 @@ docs/scenes/<씬>/           씬별 문서 (내력·구역·생성·상태)
 
 ### 씬을 새로 추가하는 방법
 
-1. `web/src/scenes/<id>/index.js` 에서 `core/scene.js` 의 `Scene` 을 상속하고
-   `surfaceHeight()` 와 `createWorld()` 를 구현한다
-2. 그 모듈을 `export default new MyScene()` 으로 내보낸다
-3. `web/src/scenes/index.js` 의 `SAVED` 배열에 추가한다 (기존 항목은 건드리지 않는다).
-   우측 상단 햄버거 목록이 여기서 나온다
-4. **모듈 수준 캐시나 장부를 만들면 `onSceneReset()` 에 등록한다**
-   (`core/scenestate.js`). 안 하면 예외가 아니라 이전 씬 잔재가 조용히 섞인다
-5. 재질은 `new THREE.Material` 로 직접 만들지 말고 마스터에서 `instance()` 로 뽑는다
-   (값이 같으면 공유되고, 파라미터 이름 오타가 즉시 잡힌다)
-6. 문서는 `docs/scenes/<id>/` 아래에 둔다
-7. `web/shots/views.json` 에 뷰를 등록하고 브라우저에서 `await __lock('base')` 로
-   기준을 잡는다. 이후 `node tools/verify.mjs <id>` 가 회귀를 잡아준다
-   ([docs/verification.md](docs/verification.md))
+절차는 [docs/status.md 1절](docs/status.md)에 있다 — 같은 목록을 여기 또 두면
+한쪽만 고쳐 어긋난다 (실제로 `_tag` 경고가 저쪽에만 있었다, 2026-08-08).
+요지만: `Scene` 상속 → `SAVED` 등록 → 뷰 등록과 `_tag` → 문서 →
+**모듈 상태는 `onSceneReset()` 등록** → 재질은 마스터 `instance()`.

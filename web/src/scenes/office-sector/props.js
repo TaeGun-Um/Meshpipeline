@@ -248,8 +248,14 @@ function wallClock(b, w, u, M) {
   }
 }
 
-// 접힌 신문 — 접은 자리로 갈린 두 면 + 헤드라인 띠 + 아래 단(段).
-// 그냥 흰 판이면 종이 한 장이다. **접힌 자국과 검은 글줄**이 신문을 만든다.
+// 접힌 신문 — 접은 자리로 갈린 두 면 + **지면은 텍스처 한 장**.
+//
+// 제호·괘선·글줄·사진을 얇은 상자 열여덟 개로 쌓고 있었다 (2026-08-08 지적:
+// "이것도 텍스처로"). 인쇄물은 표면이지 부피가 아니다 — 글줄 하나가 삼각형
+// 열둘이었고, 비스듬히 보면 그 두께가 다 보였다 (lessons 3.13.6).
+//
+// 남기는 조각은 **종이가 종이인 이유**뿐이다: 두 장이 어긋나 겹친 것과
+// 접힌 등마루. 그 위의 것은 전부 지면(M.newsprint)이 맡는다.
 function newspaper(b, x, y, z, yaw, M) {
   const put = (g, m) => {
     g.rotateY(yaw);
@@ -257,37 +263,16 @@ function newspaper(b, x, y, z, yaw, M) {
     b.add(g, m);
   };
   const sheet = (w, d, ly, m) => {
-    const g = new THREE.BoxGeometry(w, 0.006, d);
+    const g = new THREE.BoxGeometry(w, 0.005, d);
     g.translate(0, ly, 0);
     put(g, m);
   };
-  sheet(0.3, 0.22, 0.003, M.paper); // 아래장
-  sheet(0.29, 0.21, 0.009, M.paper); // 위장 — 살짝 어긋난다
+  sheet(0.3, 0.22, 0.0025, M.paper); // 아래장 — 옆에서 보이는 종이 두께
+  sheet(0.29, 0.21, 0.0085, M.newsprint); // 위장 — 살짝 어긋난 지면
   // 접힌 등마루 — 한쪽 모서리가 도톰하다
-  const spine = new THREE.BoxGeometry(0.3, 0.016, 0.022);
-  spine.translate(0, 0.008, -0.1);
+  const spine = new THREE.BoxGeometry(0.3, 0.014, 0.02);
+  spine.translate(0, 0.007, -0.1);
   put(spine, M.paper);
-  // ── 지면 (2026-08-06 "이것들 뭐임?") ─────────────────────────────────
-  //
-  // 굵은 막대 넷은 신문이 아니라 **바코드**로 보였다. 신문의 지면은
-  // **제호(맨 위 굵은 띠) · 그 아래 가는 괘선 · 단(段)으로 갈린 글줄 ·
-  // 사진 자리(회색 네모)** 다 — 이 배치가 신문을 신문으로 만든다.
-  const ink = (w, d, lx, lz, m = M.rubber, h = 0.002) => {
-    const g = new THREE.BoxGeometry(w, h, d);
-    g.translate(lx, 0.013, lz);
-    put(g, m);
-  };
-  ink(0.22, 0.02, -0.02, 0.078); // 제호
-  ink(0.26, 0.003, 0, 0.062); // 제호 밑 괘선
-  ink(0.26, 0.002, 0, 0.056);
-  // 왼쪽 단 — 사진 자리 + 짧은 글줄
-  ink(0.11, 0.05, -0.085, 0.024, M.trim, 0.003);
-  for (let i = 0; i < 5; i++) ink(0.1, 0.005, -0.085, -0.012 - i * 0.011);
-  // 가운데 세로 괘선
-  ink(0.002, 0.13, -0.022, 0.0);
-  // 오른쪽 단 — 소제목 + 글줄
-  ink(0.09, 0.008, 0.05, 0.042);
-  for (let i = 0; i < 8; i++) ink(0.115, 0.004, 0.052, 0.026 - i * 0.011);
 }
 
 // 숟가락·포크 — 손잡이 관 + 머리. 스푼은 납작한 타원, 포크는 갈퀴 셋.
@@ -372,7 +357,7 @@ function pencilCup(b, x, y, z, M) {
     rb.translate(x + Math.sin(a) * (R + 0.003), y + 0.05, z + Math.cos(a) * (R + 0.003));
     b.add(rb, M.trim);
   }
-  const PAL = [M.warn, M.vendBlue, M.vend, M.crate];
+  const PAL = [M.warn, M.vendBlue, M.vend]; // 연필 셋(i<3)만 쓴다
   for (let i = 0; i < 5; i++) {
     const r = hash2(Math.round(x * 31) + i, Math.round(z * 17));
     const a = (i / 5) * Math.PI * 2 + r;
@@ -420,6 +405,281 @@ function roundedSlab(b, cx, cz, W2, L2, r, y, h, mat, seg = 6) {
       b.add(g, mat);
     }
   }
+}
+
+// 천 텍스처 한 장이 덮는 실물 크기의 역수 (1/3 m 마다 한 장).
+//
+// **`texture.repeat` 으로 하면 안 된다.** 이 씬은 소품을 하나의 병합 메시로
+// 굽는데, `bakeTextureRepeat` 은 재질의 repeat 을 **그 지오메트리 전체의 UV**
+// 에 곱한다 (glTF 확장을 피하려는 처방이다). 같은 메시 안의 repeat=1 재질은
+// 그냥 건너뛰므로 예외도 안 나고, 그 결과 담요에 준 3배가 TV 화면·신문의
+// UV 까지 3배로 만들어 화면이 3x3 으로 갈라졌다 (2026-08-08).
+// **반복은 UV 를 짤 때 직접 곱해 넣는다.**
+const CLOTH_UV = 3;
+
+// 같은 자리에 있는 정점들의 법선을 **평균낸다.**
+//
+// `BoxGeometry` 는 면마다 정점을 따로 갖는다 — 여섯 면이 모서리에서 좌표는
+// 같고 정점은 다르다. 그래서 `computeVertexNormals()` 를 아무리 불러도
+// 모서리는 각진 채로 남고, 부풀려 둥글게 만든 쿠션 한가운데에 **칼금**이
+// 지나간다 (2026-08-08 "가운데 솟아오른곳"). 좌표로 묶어 평균내면 사라진다.
+// 진짜로 각져야 하는 물건(상자·판)에는 쓰지 않는다.
+function smoothSeams(g) {
+  const pos = g.attributes.position;
+  const nor = g.attributes.normal;
+  const key = (i) =>
+    `${Math.round(pos.getX(i) * 1e4)},${Math.round(pos.getY(i) * 1e4)},${Math.round(pos.getZ(i) * 1e4)}`;
+  const acc = new Map();
+  for (let i = 0; i < pos.count; i++) {
+    const k = key(i);
+    const e = acc.get(k) || [0, 0, 0];
+    e[0] += nor.getX(i);
+    e[1] += nor.getY(i);
+    e[2] += nor.getZ(i);
+    acc.set(k, e);
+  }
+  for (let i = 0; i < pos.count; i++) {
+    const e = acc.get(key(i));
+    const L = Math.hypot(e[0], e[1], e[2]) || 1;
+    nor.setXYZ(i, e[0] / L, e[1] / L, e[2] / L);
+  }
+  nor.needsUpdate = true;
+  return g;
+}
+
+// 구긴다 — 정점을 자리에 따라 제멋대로 밀어 **각을 무너뜨린다.**
+//
+// 개킨 조각을 아무리 여러 각도로 얹어도 각이 살아 있으면 "정갈하게 놓인 것"
+// 이다 (2026-08-08 "빨랫감인데 너무 정갈하게 놓여있는데?"). 빨래통에 든 것은
+// 개킨 것이 아니라 벗어 던진 것이라 모서리가 무너져 있다.
+// 좌표만 보고 밀므로 같은 자리의 두 정점이 같은 값을 받는다 (틈이 안 생긴다).
+function crumple(g, amp, seed = 0) {
+  const pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    // 굵은 골 둘 + **잔주름 한 겹**. 굵은 것만 주면 실루엣만 흔들리고
+    // 표면은 여전히 매끈하다 — 주름은 면 위에서 빛을 갈라야 주름이다
+    const d1 = Math.sin(x * 37 + z * 23 + seed) * 0.5
+      + Math.sin(z * 29 - x * 17 + seed * 1.7) * 0.35
+      + Math.sin(x * 88 + z * 57 + seed * 2.9) * 0.17;
+    const d2 = Math.sin(y * 43 + x * 21 + seed * 2.3) * 0.45
+      + Math.sin(x * 53 - y * 31 + seed * 0.9) * 0.28
+      + Math.sin(y * 97 - z * 63 + seed * 1.9) * 0.15;
+    const d3 = Math.sin(z * 47 + y * 19 + seed * 3.1) * 0.42
+      + Math.sin(y * 27 + z * 35 + seed * 1.3) * 0.3
+      + Math.sin(z * 91 + x * 71 + seed * 2.1) * 0.16;
+    pos.setXYZ(i, x + d1 * amp, y + d2 * amp, z + d3 * amp);
+  }
+  g.computeVertexNormals();
+  return smoothSeams(g);
+}
+
+// 부풀린 상자 — 방석·등쿠션처럼 **속이 찬 천**의 형태.
+//
+// 축정렬 상자는 아무리 색을 입혀도 판때기다 (2026-08-08 "소파가 더 푹신해
+// 보였으면"). 푹신함은 재질이 아니라 **윤곽선**이다: 모서리가 둥글고 면이
+// 부풀고 앉은 자리가 꺼진다. 셋 다 정점 세공으로 낸다 (3.13.8).
+//
+//   round  0..1  모서리를 구(球) 쪽으로 당기는 정도. 0.35 면 쿠션, 0.6 이면 베개
+//   crown  윗·아랫면이 가운데에서 부푸는 높이 (미터)
+//   sag    윗면 가운데가 꺼지는 깊이 — 앉았다 일어난 자국
+//   pinch  0..1  **네 귀를 오므린다.** 실물 베개는 귀가 납작하게 눌리면서
+//          살짝 뻗어 나온다. 이게 없으면 모서리가 통통한 캡슐이다
+//   fold   굵고 성긴 골의 깊이 (미터). 사진의 베개에는 **잔결이 아니라 긴 골
+//          두셋**이 있고 가운데는 팽팽하다 (2026-08-08 레퍼런스). 고주파로
+//          자잘하게 흔들었더니 천이 아니라 **바위**가 됐다
+//   seg    한 변의 분할 수
+function pillow(w, h, d, o = {}) {
+  const round = o.round ?? 0.35;
+  const crown = o.crown ?? 0.02;
+  const sag = o.sag ?? 0;
+  const pinch = o.pinch ?? 0;
+  const fold = o.fold ?? 0;
+  const seg = o.seg ?? 8;
+  const g = new THREE.BoxGeometry(w, h, d, seg, Math.max(3, Math.round(seg * 0.6)), seg);
+  const pos = g.attributes.position;
+  const uv = new Float32Array(pos.count * 2);
+  const hx = w / 2, hy = h / 2, hz = d / 2;
+  for (let i = 0; i < pos.count; i++) {
+    const nx = pos.getX(i) / hx, ny = pos.getY(i) / hy, nz = pos.getZ(i) / hz;
+    // 구 위로 투영한 자리와 원래 자리 사이 — 면 한가운데는 제자리, 모서리만 준다
+    const len = Math.hypot(nx, ny, nz) || 1;
+    let X = nx + (nx / len - nx) * round;
+    let Y = ny + (ny / len - ny) * round;
+    let Z = nz + (nz / len - nz) * round;
+    // 부풂과 꺼짐은 **가운데가 가장 크다** — 가장자리는 시침질로 물려 있다
+    const mid = (1 - nx * nx) * (1 - nz * nz);
+    Y += (Math.sign(ny) * crown * mid * Math.abs(ny)) / hy;
+    if (ny > 0 && sag) Y -= (sag * mid * ny) / hy;
+    if (pinch) {
+      // 귀 — 두 축 모두 끝에 가까울수록 납작해지고 밖으로 조금 뻗는다
+      const q = Math.pow(Math.abs(nx) * Math.abs(nz), 0.75);
+      Y *= 1 - pinch * q;
+      X += Math.sign(nx) * pinch * 0.16 * q;
+      Z += Math.sign(nz) * pinch * 0.16 * q;
+    }
+    let px = X * hx, py = Y * hy, pz = Z * hz;
+    if (fold > 0) {
+      // 골은 **길고 성기다** — 정규화 좌표에서 한 주기가 채 안 돌 만큼 낮은
+      // 주파수다. 상자의 면끼리는 정점을 안 나눠 가지므로, 같은 자리의 두
+      // 정점이 같은 값을 받도록 정규화 좌표만 쓴다 (이음매가 안 갈라진다)
+      const a = Math.sin(nx * 2.4 + nz * 1.3 + 0.4) * 0.6
+        + Math.sin(nz * 2.0 - nx * 1.1 + 2.1) * 0.5
+        + Math.sin((nx + nz) * 2.6 + 1.3) * 0.18;
+      // 가운데는 팽팽하고, 귀로 갈수록 천이 모여 골이 진다.
+      // **가운데를 완전히 죽이면 골이 끝나는 자리에 능선이 생긴다** — 0.6 을
+      // 그대로 빼면 그 경계가 칼금으로 보였다 (2026-08-08). 부드럽게 죽인다
+      const k = 1 - 0.6 * mid * mid;
+      const t = (fold * k * a) / len;
+      px += nx * t; py += ny * t; pz += nz * t;
+    }
+    pos.setXYZ(i, px, py, pz);
+    // uv 는 **미터** — 어느 면인지에 따라 두 축을 고른다. 무늬가 천이라
+    // 면 경계의 이음매는 안 보인다 (글자였다면 이러면 안 된다)
+    const ax = Math.abs(nx), ay = Math.abs(ny), az = Math.abs(nz);
+    if (ay >= ax && ay >= az) { uv[i * 2] = px * CLOTH_UV; uv[i * 2 + 1] = pz * CLOTH_UV; }
+    else if (ax >= az) { uv[i * 2] = pz * CLOTH_UV; uv[i * 2 + 1] = py * CLOTH_UV; }
+    else { uv[i * 2] = px * CLOTH_UV; uv[i * 2 + 1] = py * CLOTH_UV; }
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  return smoothSeams(g); // 상자 여섯 면의 이음매를 지운다 — 천에는 각이 없다
+}
+
+// 덮은 천 한 장 — 이불·시트처럼 **위를 덮고 양옆으로 늘어지는** 것.
+//
+// 판 하나에 얇은 옆판 둘을 따로 붙여 뒀더니 자락이 몸통에서 떨어져 나온
+// 지느러미였다 (2026-08-08 "이불도 그냥 수건처럼 쭉 만들고 접어").
+// 수건과 같은 처방이다: **단면을 한 폴리곤으로 그리고 길이만큼 밀어낸다.**
+// 어깨가 폴리곤 안에서 돌아가므로 이을 자리가 없다 (lessons 3.13.21).
+//
+// 로컬: x 가 폭(가운데 0) · y 는 덮는 면이 0 이고 자락이 -y · z 가 길이.
+//
+// wrinkle 은 **주름의 깊이**(미터). 매끈하게 밀어내기만 하면 아이스크림
+// 덩어리다 (2026-08-08 "너무 아이스크림같이 생겼는데, 주름 표현 안되나?").
+// 천은 팽팽한 곳과 처지는 곳이 있다 — 단면을 잘게 나눠 밀어낸 뒤 **중간면의
+// 법선 방향으로** 정점을 밀면 두께는 그대로 두고 표면만 물결친다.
+function drapedSheet(halfW, drop, thick, len, r = 0.04, wrinkle = 0) {
+  const T = thick;
+  const ex = halfW - r; // 어깨가 굽기 시작하는 x
+  const sp = new THREE.Shape();
+  // 곧은 구간도 **잘게 나눠 둔다** — 정점이 없으면 주름을 줄 자리가 없다
+  const line = (x0, y0, x1, y1, n) => {
+    for (let i = 1; i <= n; i++) sp.lineTo(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n);
+  };
+  const NW = 30, ND = 8; // 주름 한 골이 정점 서넛은 물어야 접힌 것으로 보인다
+  // 바깥면 — 왼쪽 자락 아래끝에서 올라가 어깨를 돌고 오른쪽으로 내려간다
+  sp.moveTo(-halfW, -drop);
+  line(-halfW, -drop, -halfW, -r, ND);
+  sp.absarc(-ex, -r, r, Math.PI, Math.PI / 2, true);
+  line(-ex, 0, ex, 0, NW);
+  sp.absarc(ex, -r, r, Math.PI / 2, 0, true);
+  line(halfW, -r, halfW, -drop, ND);
+  // 안쪽면 — 두께만큼 안으로 물러나 되돌아온다
+  sp.lineTo(halfW - T, -drop);
+  line(halfW - T, -drop, halfW - T, -r, ND);
+  sp.absarc(ex, -r, r - T, 0, Math.PI / 2, false);
+  line(ex, -T, -ex, -T, NW);
+  sp.absarc(-ex, -r, r - T, Math.PI / 2, Math.PI, false);
+  line(-halfW + T, -r, -halfW + T, -drop, ND);
+  const g = new THREE.ExtrudeGeometry(sp, {
+    depth: len,
+    bevelEnabled: false,
+    curveSegments: 6,
+    steps: Math.max(1, Math.round(len / 0.042)),
+  });
+  g.translate(0, 0, -len / 2);
+  {
+    const pos = g.attributes.position;
+    const uv = new Float32Array(pos.count * 2);
+    const half = len / 2;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      // 중간면의 법선과 **호 길이 u** — 안쪽면과 바깥면이 같은 값을 받아야
+      // 두께가 안 변한다. 그래서 좌표만 보고 판정한다
+      let nx, ny, u;
+      if (y > -r && Math.abs(x) <= ex) {
+        nx = 0; ny = 1; u = x; // 덮는 면
+      } else if (y <= -r) {
+        const s = Math.sign(x) || 1;
+        nx = s; ny = 0; u = s * (ex + (r * Math.PI) / 2 + (-r - y)); // 늘어진 자락
+      } else {
+        const s = Math.sign(x) || 1; // 어깨
+        const dx = x - s * ex, dy = y + r;
+        const L = Math.hypot(dx, dy) || 1;
+        nx = dx / L; ny = dy / L;
+        u = s * (ex + r * (Math.PI / 2 - Math.atan2(dy, Math.abs(dx))));
+      }
+      // uv 는 **미터 그대로** — u 는 천을 따라 잰 길이, v 는 침대 길이.
+      // 그래야 무늬가 어깨를 돌아 자락까지 끊기지 않고 이어진다 (수건과 같다)
+      uv[i * 2] = u * CLOTH_UV;
+      uv[i * 2 + 1] = z * CLOTH_UV;
+      if (wrinkle <= 0) continue;
+      // 팽팽한 곳(가운데·머리쪽)은 얕고, 가장자리와 발치로 갈수록 깊다.
+      // z 를 절댓값으로 재면 **머리쪽도 깊어져** 시트 깃을 뚫고 나온다.
+      // **밑단은 주름을 죽인다** — 시침질한 단은 곧다. 자락 끝까지 물결치게
+      // 뒀더니 침대 옆에서 너덜너덜한 톱니로 삐져나왔다 (2026-08-08)
+      const hem = Math.min(1, Math.max(0, (y + drop) / 0.06));
+      const k = (0.4 + 0.6 * Math.min(1, Math.abs(u) / (ex * 0.85)))
+        * (0.4 + 0.6 * (z / half + 1) / 2) * hem;
+      // **골 사이가 10~25cm** 이어야 빛이 걸린다. 반 미터짜리 파도는 아무리
+      // 깊어도 기울기가 5% 라 구운 빛이 못 알아본다 (경사 = 진폭/반파장)
+      const a = Math.sin(u * 29 + z * 6.1) * 0.42
+        + Math.sin(u * 61 - z * 13 + 1.7) * 0.24
+        + Math.sin(z * 23 + u * 8.5) * 0.34
+        + Math.sin(z * 48 - u * 15 + 0.6) * 0.17;
+      const d = wrinkle * k * a;
+      pos.setXYZ(i, x + nx * d, y + ny * d, z);
+    }
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.computeVertexNormals();
+  }
+  return g;
+}
+
+// 개킨 수건 한 장 — **펼친 단면을 그려 접는다.**
+//
+// 상자와 반원기둥을 이어 붙이면 상자의 끝면과 원기둥의 뚜껑 원판이 속에서
+// 보인다 (2026-08-08 지적, 세 판을 그렇게 돌았다). 접힌 옆모습을 폴리곤
+// 하나로 그리고 폭만큼 밀어내면 이을 자리가 없다 (lessons 3.13.21).
+//
+// 돌려주는 지오메트리는 **로컬**이다 — x 가 길이(접힌 끝이 -x), y 가 두께,
+// z 가 폭. uv 도 그 좌표에서 직접 짜므로 무늬가 접힌 자리를 돌아 이어진다.
+function foldedTowel(w2, d2, h2, open, lift = 0.055) {
+  const t = h2 / 2; // 겹 하나 두께 — 접으면 2t = h2
+  const x0 = -w2 / 2 + t; // 접힌 끝의 중심 (반지름 t 의 반원)
+  const Bx = w2 / 2 - t / 2; // 아래 겹 끝동그라미의 중심
+  const xs = x0 + (Bx - x0) * 0.58; // 여기부터 두 겹이 갈린다
+  const Lup = w2 / 2 - open - t / 2 - xs; // 위 겹이 조금 짧다
+  const ux = Math.cos(lift);
+  const uy = Math.sin(lift);
+  const Bix = xs + ux * Lup;
+  const Biy = uy * Lup;
+  const sp = new THREE.Shape();
+  sp.moveTo(x0, -t);
+  sp.lineTo(Bx, -t); // 아래 겹 바깥면
+  sp.absarc(Bx, -t / 2, t / 2, -Math.PI / 2, Math.PI / 2, false); // 아래 겹 끝
+  sp.lineTo(xs, 0); // 아래 겹 안쪽면 — 벌어진 틈의 아랫벽
+  sp.lineTo(Bix, Biy); // 위 겹 안쪽면 — 틈의 윗벽 (들려 있다)
+  sp.absarc(Bix - uy * (t / 2), Biy + ux * (t / 2), t / 2,
+    lift - Math.PI / 2, lift + Math.PI / 2, false); // 위 겹 끝
+  sp.lineTo(xs, t);
+  sp.lineTo(x0, t); // 위 겹 바깥면
+  sp.absarc(x0, 0, t, Math.PI / 2, Math.PI * 1.5, false); // 접힌 끝
+  const geo = new THREE.ExtrudeGeometry(sp, { depth: d2, bevelEnabled: false, curveSegments: 10 });
+  geo.translate(0, 0, -d2 / 2);
+  // **uv 를 직접 짠다.** ExtrudeGeometry 의 uv 는 면마다 뜻이 달라 무늬가
+  // 엉뚱한 데로 간다 — 그래서 줄을 각재로 얹었는데, 그건 삼각형을 쓰는
+  // 짓이다 (2026-08-08 지적). 정점 좌표에서 뽑으면 짜 넣은 띠가 접힌 자리를
+  // 돌아 앞뒤로 이어진다. 조각으로는 낼 수 없는 것이다.
+  const pos = geo.attributes.position;
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    uv[i * 2] = (pos.getX(i) + w2 / 2) / w2;
+    uv[i * 2 + 1] = (pos.getZ(i) + d2 / 2) / d2;
+  }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  return geo;
 }
 
 // 노트북 — 자판 몸통과 **뒤로 젖혀진 화면**. 두 판의 각도가 노트북을 만든다
@@ -730,7 +990,7 @@ function leafGeometry({ len, wMax, lean0, bend, yaw, at, seg = 12 }) {
 // 바닥 케이블 트레이 — 옆 레일 둘 + **가로 발판(사다리)** + 그 속의 케이블
 // 다발. 발판이 없으면 바닥에 놓인 각목이고, 다발이 없으면 빈 홈통이다.
 // axis 'x' 면 x 를 따라 달리고 at 은 z 다 (벽 좌표계와 같은 규약).
-function cableTray(b, axis, at, a0, a1, M, seed) {
+function cableTray(b, axis, at, a0, a1, M) {
   const W2 = 0.34;
   const HT = 0.09;
   const along = (t, off, y, w2, h, d2, m) =>
@@ -887,83 +1147,69 @@ function binderRow(b, w, u0, len, y, M, seed) {
 
 // ── 벽걸이 에어컨 실내기 ───────────────────────────────────────────────────
 //
-// 천장 밑에 붙는 가로로 긴 함체. **앞면이 둥글어야 에어컨이다** — 각진 상자는
-// 배전함이다 (lessons 3.13.2). 조각: 둥근 몸통(상자 + 눕힌 반원기둥) ·
-// 윗면 흡입 그릴 · 아래 토출구와 **풍향 날개**(기울인 판) · 표시창과 램프 ·
-// 벽을 타고 내려가는 배관 커버.
+// 천장 밑에 붙는 가로로 긴 함체. 몸통은 **옆모습을 그려 폭만큼 밀어낸다**
+// (프로파일 압출 — 2026-08-08 레퍼런스 재작업). 조각: 압출 몸통 ·
+// 윗면 흡입 슬롯 · 밑면의 비스듬한 토출구와 **풍향 날개** · 앞면 가로 띠의
+// 표시등 줄과 표시창 · 패널 이음선. 몸통 밑으로 나오는 것은 없다.
 function airCon(b, w, u, M, h) {
   const WID = 0.94;
-  const HT = 0.28;
-  const DEP = 0.19; // 상자 몸통 깊이 — 이 앞으로 반원이 더 나온다
-  const R = HT / 2;
+  const HT = 0.29;
+  const DEP = 0.205; // 앞면까지
   const cy = h - 0.46; // 천장에서 한 뼘 내린다
-  const yT = cy + R;
-  const yB = cy - R;
+  const yT = cy + HT / 2;
+  const yB = cy - HT / 2;
   const put = (g, m) => wallPut(b, w, u, g, m);
-  wallBox(b, w, u, DEP / 2, cy, WID, HT, DEP, M.paper); // 몸통 상자
+  // ── 몸통 — **단면을 그려 밀어낸다** (2026-08-08 레퍼런스) ────────────────
+  // 상자 + 눕힌 반원기둥이라 앞이 14cm 나 부풀어, 에어컨이 아니라 **눕힌
+  // 보일러 탱크**로 보였다. 실물 벽걸이는 **모서리만 둥근 납작한 함체**다:
+  // 천판은 곧고, 앞 위 모서리가 크게 말리고, 앞면은 거의 평평하며,
+  // 밑은 토출구 쪽으로 비스듬히 올라간다. 수건·이불과 같은 처방(3.13.21).
   {
-    // 앞면 — 벽을 따라 누운 반원기둥. 축을 로컬 x 로 돌리고(rotateZ) 둥근
-    // 쪽이 방 안(+z)을 보게 한 번 더 돌린다(rotateX). 반원은 v = DEP 에서
-    // DEP+R 까지만 차지하므로 **상자의 윗면·밑면은 가리지 않는다** —
-    // 조각을 그 두 면에 놓아야 보인다 (처음에 토출구·표시창을 v<DEP 에
-    // 두었다가 통째로 반원 속에 묻혔다, 2026-08-06).
-    const g = new THREE.CylinderGeometry(R, R, WID, 14, 1, false, 0, Math.PI);
-    g.rotateZ(-Math.PI / 2);
-    g.rotateX(-Math.PI / 2);
-    g.translate(0, cy, DEP);
+    const sp = new THREE.Shape(); // x = 벽에서 나온 깊이, y = 높이
+    sp.moveTo(0, HT / 2);
+    sp.lineTo(0.13, HT / 2);
+    sp.quadraticCurveTo(DEP, HT / 2, DEP, HT / 2 - 0.085); // 앞 위 모서리
+    sp.lineTo(DEP - 0.004, -0.03);
+    sp.lineTo(DEP - 0.024, -0.088); // 앞면 아래가 살짝 안으로
+    sp.quadraticCurveTo(DEP - 0.05, -HT / 2, DEP - 0.105, -HT / 2);
+    sp.lineTo(0, -HT / 2);
+    const g = new THREE.ExtrudeGeometry(sp, { depth: WID, bevelEnabled: false, curveSegments: 7 });
+    g.translate(0, 0, -WID / 2);
+    g.rotateY(-Math.PI / 2); // (깊이, 높이, 폭) -> (폭, 높이, 깊이)
+    g.translate(0, cy, 0);
     put(g, M.paper);
   }
   // 흡입 그릴 — **윗면**의 가로 슬롯 (사람 눈보다 위라 살짝만 보인다)
-  for (let i = 0; i < 5; i++) {
-    wallBox(b, w, u, 0.045 + i * 0.03, yT + 0.002, WID - 0.1, 0.008, 0.016, M.rubber);
+  for (let i = 0; i < 4; i++) {
+    wallBox(b, w, u, 0.035 + i * 0.028, yT + 0.002, WID - 0.1, 0.008, 0.014, M.rubber);
   }
-  // 토출구 — **밑면**의 어두운 홈. 아래에서 올려다보는 각이 이 물건의 정면이다
-  wallBox(b, w, u, DEP / 2 + 0.01, yB - 0.014, WID - 0.14, 0.028, DEP - 0.04, M.rubber);
+  // 토출구 — **밑면의 비스듬한 홈**. 아래에서 올려다보는 각이 이 물건의 정면이다
   {
-    // 풍향 날개 — 홈 안에서 비스듬히 선 판. 바람을 아래-앞으로 보낸다
-    const van = new THREE.BoxGeometry(WID - 0.17, 0.055, 0.014);
-    van.rotateX(-0.9);
-    van.translate(0, yB - 0.012, DEP - 0.02);
-    put(van, M.trim);
+    const mouth = new THREE.BoxGeometry(WID - 0.09, 0.05, 0.115);
+    mouth.rotateX(0.42);
+    mouth.translate(0, yB + 0.012, DEP - 0.095);
+    put(mouth, M.crtVent);
+    // 풍향 날개 — 홈 안에서 비스듬히 누운 판. 바람을 아래-앞으로 보낸다
+    const van = new THREE.BoxGeometry(WID - 0.13, 0.012, 0.075);
+    van.rotateX(0.62);
+    van.translate(0, yB + 0.016, DEP - 0.088);
+    put(van, M.paper);
   }
-  // 표시창과 운전 램프 — **둥근 앞면 위**에 얹는다 (곡면에 붙은 작은 패널).
-  // 반원 표면은 y 가 cy-0.1 일 때 v = DEP + sqrt(R^2 - 0.1^2) 이다
-  const vs = DEP + Math.sqrt(Math.max(R * R - 0.01, 0.0001));
-  wallBox(b, w, u + WID / 2 - 0.17, vs, cy - 0.1, 0.15, 0.05, 0.014, M.crtDark);
-  wallBox(b, w, u + WID / 2 - 0.21, vs + 0.008, cy - 0.1, 0.022, 0.022, 0.01, M.exit);
-  wallBox(b, w, u + WID / 2 - 0.135, vs + 0.008, cy - 0.1, 0.05, 0.024, 0.01, M.screen); // 온도 표시
-  // ── 디테일 (2026-08-06 지적: 흰 통 하나로 보인다) ──────────────────────
-  //
-  // **배관 커버(벽을 타는 사각 봉)는 뺐다** — 지시. 실외기가 벽 너머라
-  // 이야기는 성립했지만, 화면에서는 에어컨 옆에 세운 각목이었다.
-  //
-  // 대신 실내기 자체를 채운다: 앞판 이음선 · 필터를 여는 손잡이 홈 ·
-  // 옆면 마감 캡 · 상표 · 벽 브래킷 · 드레인 호스.
-  wallBox(b, w, u, vs - 0.01, cy + 0.055, WID - 0.06, 0.01, 0.012, M.trim); // 앞판 이음선
-  wallBox(b, w, u - WID / 2 + 0.2, vs - 0.02, cy + 0.02, 0.16, 0.03, 0.012, M.trim); // 손잡이 홈
-  wallBox(b, w, u - WID / 2 + 0.16, DEP + 0.03, cy - 0.09, 0.1, 0.024, 0.008, M.trim); // 상표
-  // 옆면 마감 — **반원 끝을 덮는 원판**이다. 사각 판을 세웠더니 에어컨
-  // 양옆에 정체불명의 네모가 붙어 있었다 (2026-08-06 "양쪽에 사각형은 뭐고").
-  // 몸통과 같은 단면(반원)으로 덮어야 마감으로 읽힌다.
-  for (const s of [-1, 1]) {
-    const cap = new THREE.CylinderGeometry(R, R, 0.014, 14, 1, false, 0, Math.PI);
-    cap.rotateZ(-Math.PI / 2);
-    cap.rotateX(-Math.PI / 2);
-    const [cx6, , cz6] = wallAt(w, u + s * (WID / 2 + 0.006), DEP, 0);
-    cap.translate(cx6, cy, cz6);
-    b.add(cap, M.paper);
-    wallBox(b, w, u + s * (WID / 2 + 0.006), DEP / 2, cy, 0.012, HT, DEP, M.paper); // 상자부 옆판
+  // 앞면의 **가로 띠** — 실물의 표식이다. 띠 안 오른쪽에 표시등이 줄로 선다
+  const vs = DEP + 0.002;
+  wallBox(b, w, u, vs, cy - 0.035, WID - 0.05, 0.048, 0.008, M.bezel);
+  for (let k = 0; k < 4; k++) {
+    wallBox(b, w, u + WID / 2 - 0.19 + k * 0.026, vs + 0.006, cy - 0.035,
+      0.012, 0.012, 0.006, k === 0 ? M.exit : M.trim);
   }
-  for (const s of [-1, 1]) {
-    wallBox(b, w, u + s * 0.3, 0.03, cy - HT / 2 - 0.03, 0.14, 0.05, 0.06, M.steelDark); // 벽 브래킷
-  }
-  // **드레인 호스는 뺐다** (2026-08-06 "저 회색 봉은 뭐임?") — 벽을 타고
-  // 1m 내려가는 관이 에어컨과 상관없는 막대로 보였다. 배관은 벽 너머로
-  // 나가는 것이 실제이므로, 몸통 밑의 짧은 접속구만 남긴다.
-  {
-    const [hx2, , hz2] = wallAt(w, u + WID / 2 - 0.1, 0.05, 0);
-    tube(b, 0.016, 0.1, [hx2, cy - HT / 2 - 0.04, hz2], M.trim, 'y', 6);
-  }
+  wallBox(b, w, u + WID / 2 - 0.075, vs + 0.006, cy - 0.035, 0.045, 0.02, 0.006, M.screen);
+  // 앞판 이음선과 필터 손잡이 홈 — 흰 판 하나로 보이지 않게
+  wallBox(b, w, u, vs - 0.004, cy + 0.075, WID - 0.05, 0.008, 0.008, M.trim);
+  wallBox(b, w, u - WID / 2 + 0.2, vs - 0.006, cy + 0.03, 0.16, 0.02, 0.008, M.trim);
+  // **벽 브래킷과 배관 접속구도 뺐다** (2026-08-08) — 실물 벽걸이는 몸통
+  // 아래로 아무것도 안 나온다 (브래킷은 등판 뒤에 숨는다). 밖으로 나온 검은
+  // 조각들이 매달린 짐처럼 보여, 정작 토출구가 무엇인지 흐렸다.
+  // 드레인 호스는 이미 같은 이유로 뺀 바 있다 (2026-08-06 "저 회색 봉은 뭐임?")
 }
 
 // ── 브라운관 텔레비전 ──────────────────────────────────────────────────────
@@ -976,46 +1222,187 @@ function airCon(b, w, u, M, h) {
 // 벽에 붙는 물건은 벽 좌표로 짓는다 (샤워 기둥에서 얻은 규칙과 같다).
 // y0 은 TV 가 앉는 면(서랍장 천판)의 높이.
 function crtTv(b, w, u, y0, M) {
-  const W2 = 0.78;
-  const H2 = 0.62;
+  // 화면 옆의 스피커 망을 걷어냈다 (2026-08-08 지시) — 앞판의 폭을 다 화면에
+  // 준다. 그 김에 함도 키웠다: 4:3 이라 화면은 **높이가 먼저 막힌다**
+  const W2 = 0.82;
+  const H2 = 0.68;
   const put = (g, m) => wallPut(b, w, u, g, m);
   const bx = (w2, h2, d2, lx, ly, lz, m) => {
     const g = new THREE.BoxGeometry(w2, h2, d2);
     g.translate(lx, ly, lz);
     put(g, m);
   };
-  const cy = y0 + H2 / 2;
-  // 몸통 — 뒤로 좁아진다 (브라운관의 목). 두 토막으로 테이퍼를 낸다
-  bx(W2, H2, 0.44, 0, cy, 0.24, M.crt);
-  bx(W2 - 0.24, H2 - 0.2, 0.2, 0, cy, 0.05, M.crt);
-  // 베젤과 화면 — 화면은 베젤보다 **앞으로** 나온다 (겹평면 금지, #65)
-  const fz = 0.47;
-  bx(W2 - 0.02, H2 - 0.03, 0.03, 0, cy, fz, M.crtDark);
-  bx(0.6, 0.45, 0.014, -0.05, cy + 0.03, fz + 0.016, M.screen);
-  // 스피커 망 — 화면 옆 세로 띠. 이것이 모니터와 TV 를 가른다
-  bx(0.11, 0.4, 0.012, 0.31, cy + 0.03, fz + 0.014, M.rubber);
-  for (let i = 0; i < 7; i++) {
-    bx(0.09, 0.012, 0.014, 0.31, y0 + 0.22 + i * 0.055, fz + 0.018, M.crtDark);
-  }
-  // 채널·음량 손잡이 둘과 버튼 줄 — 화면 아래
-  for (const [du, r] of [[0.24, 0.035], [0.33, 0.028]]) {
-    const g = new THREE.CylinderGeometry(r, r, 0.022, 10);
+  // 앞을 보는 원기둥 — 손잡이·단추가 전부 이 꼴이다
+  const disc = (r, len, lx, ly, lz, m, seg = 14) => {
+    const g = new THREE.CylinderGeometry(r, r, len, seg);
     g.rotateX(Math.PI / 2);
-    g.translate(du, y0 + 0.1, fz + 0.018);
-    put(g, M.crtDark);
-  }
-  for (const du of [-0.3, -0.24, -0.18]) bx(0.04, 0.014, 0.01, du, y0 + 0.1, fz + 0.016, M.trim);
-  // 실내 안테나 — V 자로 벌어진 관 둘. 90년대 TV 의 표식이다
+    g.translate(lx, ly, lz);
+    put(g, m);
+  };
+  const cy = y0 + H2 / 2;
+  const Z0 = 0.02;
+  const Z1 = 0.46; // 몸통 앞끝
+  const DECK = 0.02; // 천판 두께
+  // 몸통 — 뒤로 좁아진다 (브라운관의 목). 두 토막으로 테이퍼를 낸다
+  // 천판 밑 8mm 는 비워 둔다 — 슬롯 속판이 들어갈 칸이다 (겹평면 금지)
+  const CAV = 0.008;
+  bx(W2, H2 - DECK - CAV, 0.44, 0, y0 + (H2 - DECK - CAV) / 2, 0.24, M.crt);
+  bx(W2 - 0.24, H2 - 0.22, 0.2, 0, cy - 0.01, 0.05, M.crt);
+  // 천판 — 뒤쪽 절반에 **통풍 슬롯을 뚫는다.** 어두운 각재를 얹으면 슬롯이
+  // 아니라 돌기다 (사물함 문에서 얻은 규칙, lessons 3.13.20). 판을 z 방향으로
+  // 토막내 구멍을 남기고 그 아래에 어두운 속판을 깐다.
   {
-    const base = new THREE.CylinderGeometry(0.045, 0.055, 0.03, 10);
-    base.translate(-0.2, y0 + H2 + 0.015, 0.16);
+    const ty = y0 + H2 - DECK / 2;
+    const SIDE = 0.11; // 좌우 테두리 — 슬롯은 가운데만
+    const SLOT = 0.016;
+    let cur = Z0;
+    for (let i = 0; i < 5; i++) {
+      const s = 0.235 + i * 0.045;
+      const lo = s - SLOT / 2;
+      bx(W2, DECK, lo - cur, 0, ty, (cur + lo) / 2, M.crt);
+      for (const sgn of [-1, 1]) {
+        bx(SIDE, DECK, SLOT, sgn * (W2 - SIDE) / 2, ty, s, M.crt);
+      }
+      cur = s + SLOT / 2;
+    }
+    bx(W2, DECK, Z1 - cur, 0, ty, (cur + Z1) / 2, M.crt);
+    // 슬롯 속 — 빈 칸 안에 띄운다. 몸통 윗면에 붙이면 겹평면이라 홈 안이
+    // 지지직거린다 (2026-08-08 "홈 안에 z파이팅")
+    bx(W2 - 0.06, 0.014, 0.28, 0, y0 + H2 - DECK - CAV / 2, 0.315, M.crtVent);
+  }
+
+  // ── 앞면 ─────────────────────────────────────────────────────────────────
+  // 화면 아래에 **조작판**이 따로 있다. 베젤 높이를 거기서 뺀다
+  const fz = 0.47;
+  const PY = y0 + 0.105; // 조작판 중심 높이
+  const BZ0 = y0 + 0.17; // 베젤 아래끝 — 조작판 위
+  const BZ1 = y0 + H2 - DECK; // 베젤 위끝 — 천판 밑
+  const bzc = (BZ0 + BZ1) / 2;
+  const bzh = BZ1 - BZ0;
+  // 앞판은 **몸통과 같은 베이지다.** 통째로 어둡게 뒀더니 90년대 브라운관이
+  // 아니라 요즘 검은 액자로 보였다 — 어두운 것은 화면 테와 조작판뿐이다
+  bx(W2 - 0.02, bzh, 0.03, 0, bzc, fz, M.crt);
+
+  // ── 화면 — **치수를 베젤에서 뽑는다** ────────────────────────────────────
+  // 화면을 0.58x0.435 로 손수 적었더니 앞판(0.42)보다 커서 위아래로 삐져나와
+  // 검은 판이 몸통을 덮었다. 테를 두를 자리를 남기고 **베젤 안쪽에서 계산해**
+  // 앉힌다. 4:3 이라 높이가 먼저 막히고 폭은 거기서 나온다.
+  const LIP = 0.024; // 화면 테 두께
+  const SH = bzh - 0.03 - LIP * 2; // 테 바깥이 앞판 안에 들어와야 한다
+  const SW = Math.min(SH * (4 / 3), W2 - 0.02 - LIP * 2); // 폭 상한에 스피커 예약분은 없다
+  const scx = 0; // 스피커 망이 없으니 **가운데**다
+  const scy = bzc;
+  {
+    // **평면이 아니라 부푼 관유리다.** 정점을 앞으로 밀어 돔을 만든다.
+    // 납작한 판이면 아무리 그림을 그려도 액자다 (lessons 3.13.8).
+    const BULGE = 0.02;
+    const g = new THREE.PlaneGeometry(SW, SH, 14, 11);
+    const pos = g.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const px = pos.getX(i) / (SW / 2);
+      const py = pos.getY(i) / (SH / 2);
+      pos.setZ(i, BULGE * (1 - px * px) * (1 - py * py));
+    }
+    g.computeVertexNormals();
+    // uv 를 **직접 못박는다** — 화면은 그림 한 장이 딱 한 번 들어가야 한다
+    const uv = g.attributes.uv;
+    for (let i = 0; i < pos.count; i++) {
+      uv.setXY(i, pos.getX(i) / SW + 0.5, pos.getY(i) / SH + 0.5);
+    }
+    uv.needsUpdate = true;
+    g.translate(scx, scy, fz + 0.016);
+    put(g, M.tvScreen);
+  }
+  // 화면 테 — 유리를 물고 도는 립. 이 그늘이 관을 깊어 보이게 한다
+  {
+    const LW = SW + LIP * 2 - 0.012;
+    const LH = SH + LIP * 2 - 0.012;
+    bx(LW, LIP, 0.012, scx, scy + (LH - LIP) / 2, fz + 0.021, M.crtDark);
+    bx(LW, LIP, 0.012, scx, scy - (LH - LIP) / 2, fz + 0.021, M.crtDark);
+    bx(LIP, LH - LIP * 2, 0.012, scx - (LW - LIP) / 2, scy, fz + 0.021, M.crtDark);
+    bx(LIP, LH - LIP * 2, 0.012, scx + (LW - LIP) / 2, scy, fz + 0.021, M.crtDark);
+  }
+
+  // ── 조작판 — 단추가 보여야 TV 다 ─────────────────────────────────────────
+  // 앞판에 **파인 자리**를 만들고 그 안에 넣는다. 평평한 앞판에 얹으면
+  // 아무것도 아닌 작은 사각형들이다.
+  //
+  // **한 줄에 세운다** (2026-08-08 지시 "밑에 버튼 정렬") — 단추는 PY+0.012,
+  // 손잡이는 PY+0.005, 미세조정은 PY-0.032 로 세 층이라 흩어져 보였다.
+  // 조작부는 전부 **PY 하나**를 중심선으로 쓰고, 자리도 사슬로 잰다.
+  // 자리는 **왼쪽 끝에서 커서로** 잰다 (3.13.5). 손으로 적으면 오늘처럼
+  // 셋씩 어긋난다.
+  const N = 5, PITCH = 0.05, KR = [0.036, 0.044];
+  const BAYW = 0.042 * 2 + (N - 1) * PITCH + 0.058 + 0.046; // 단추 다섯 + 전원 + 램프
+  const RUN = BAYW + 0.05 + KR[0] * 2 + 0.016 + 0.03 + KR[1] * 2 + 0.016;
+  const left = -RUN / 2; // 앞판 가운데에 통째로 놓는다
+  const KX = [left + BAYW + 0.05 + KR[0] + 0.008, 0];
+  KX[1] = KX[0] + KR[0] + KR[1] + 0.046;
+  {
+    bx(BAYW, 0.096, 0.016, left + BAYW / 2, PY, fz + 0.007, M.crtDark); // 파인 바닥
+    // 누름단추 다섯 + 전원 + 표시등 — **같은 줄에 같은 간격으로**
+    const x0 = left + 0.042;
+    for (let i = 0; i < N; i++) {
+      const du = x0 + i * PITCH;
+      disc(0.019, 0.006, du, PY, fz + 0.016, M.crtDark, 10); // 테
+      disc(0.0145, 0.014, du, PY, fz + 0.021, M.keycap, 10); // 머리
+    }
+    // 전원 — 마지막 단추에서 한 칸 더. 붉은 표시등이 그 옆에 붙는다
+    const pw = x0 + (N - 1) * PITCH + 0.058;
+    disc(0.023, 0.016, pw, PY, fz + 0.021, M.trim, 12);
+    disc(0.0075, 0.01, pw, PY, fz + 0.03, M.crtDark, 8); // 눌린 자리
+    disc(0.008, 0.008, pw + 0.046, PY, fz + 0.018, M.ledRed, 8);
+  }
+  // 회전 손잡이 둘 — 채널·음량. **테를 두르고 지시침을 낸다.**
+  // 매끈한 원판은 손잡이로 안 읽힌다: 돌리는 물건에는 잡을 곳과 가리킬 곳이 있다
+  for (const [du, r, ang] of [[KX[0], KR[0], 0.9], [KX[1], KR[1], -1.9]]) {
+    disc(r + 0.008, 0.008, du, PY, fz + 0.012, M.crtDark, 16); // 눈금 테
+    disc(r, 0.026, du, PY, fz + 0.024, M.trim, 16); // 몸통
+    disc(r * 0.62, 0.008, du, PY, fz + 0.04, M.crtDark, 14); // 파인 앞면
+    // 지시침 — 가장자리로 뻗는 얇은 막대. 원점에 끝을 맞추고 돌린 뒤 옮긴다.
+    // **파인 앞면 위로 확실히 올라타야 한다** — 앞면(…0.044)과 침의 앞면이
+    // 같은 자리라 그 위에서 지지직거렸다 (2026-08-08 "다이얼 z파이팅").
+    // 침은 새겨 넣은 자국이 아니라 **도드라진 표시**다
+    const nd = new THREE.BoxGeometry(r * 0.8, 0.008, 0.009);
+    nd.translate(r * 0.4, 0, 0);
+    nd.rotateZ(ang);
+    nd.translate(du, PY, fz + 0.0465); // 앞면 위로 3mm
+    put(nd, M.keycap);
+  }
+
+  // ── 실내 안테나 — 90년대 TV 의 표식 ──────────────────────────────────────
+  // 곧은 관 둘이 **거꾸로 모여** Λ 였다 (rotateZ 의 부호가 반대였다).
+  // 토끼 귀는 위로 벌어지고, **뽑아 쓰는 관 셋**이 굵기를 줄이며 이어진다.
+  {
+    const ax = -0.2, ay = y0 + H2, az = 0.15;
+    const base = new THREE.CylinderGeometry(0.05, 0.062, 0.022, 14);
+    base.translate(ax, ay + 0.011, az);
     put(base, M.crtDark);
+    const ball = new THREE.SphereGeometry(0.026, 12, 8);
+    ball.translate(ax, ay + 0.032, az);
+    put(ball, M.trim);
+    const LEAN = -0.2; // 앞으로 살짝 눕는다 (뒤로는 벽이다)
     for (const s of [-1, 1]) {
-      const g = new THREE.CylinderGeometry(0.006, 0.009, 0.52, 6);
-      g.rotateZ(s * 0.55);
-      g.rotateX(-0.2);
-      g.translate(-0.2 + s * 0.13, y0 + H2 + 0.27, 0.13);
-      put(g, M.trim);
+      const tilt = -s * 0.62; // rotateZ 는 +y 를 -x 로 돌린다 — 부호가 여기서 뒤집힌다
+      // 마디를 이어 붙이려면 **회전을 먹인 뒤의 방향**이 필요하다.
+      // (0,1,0) 에 rotateZ(tilt) → rotateX(LEAN) 을 그대로 먹여 구한다
+      const dir = new THREE.Vector3(0, 1, 0)
+        .applyAxisAngle(new THREE.Vector3(0, 0, 1), tilt)
+        .applyAxisAngle(new THREE.Vector3(1, 0, 0), LEAN);
+      let at = new THREE.Vector3(ax, ay + 0.04, az);
+      // 뽑아 쓰는 관 — 마디마다 가늘고 짧아진다. 이음매는 1cm 씩 겹친다
+      for (const [r, len] of [[0.0105, 0.2], [0.008, 0.19], [0.0058, 0.17]]) {
+        const g = new THREE.CylinderGeometry(r, r, len, 8);
+        g.translate(0, len / 2, 0); // 아랫끝을 원점에 두고 돌린다
+        g.rotateZ(tilt);
+        g.rotateX(LEAN);
+        g.translate(at.x, at.y, at.z);
+        put(g, M.trim);
+        at = at.clone().addScaledVector(dir, len - 0.012);
+      }
+      const tip = new THREE.SphereGeometry(0.011, 8, 6);
+      tip.translate(at.x, at.y, at.z);
+      put(tip, M.crtDark);
     }
   }
 }
@@ -1635,7 +2022,7 @@ function exitSigns(b, M, tally) {
           g.translate(p[0], p[1], p[2]);
           b.add(g, M.rubber);
         };
-        // 달리는 사람 — 오른쪽(문 쪽)으로 달린다. 어깨 0.018 / 엉덩이 -0.012
+        // 달리는 사람 — 오른쪽(문 쪽)으로 달린다. 관절 y: 어깨 0.026 / 엉덩이 -0.012
         ink(-0.074, 0.036, 0.021, 0.021); // 머리
         limb(-0.078, 0.026, 0.040, 0.019, 0.1); // 몸통 (어깨 -> 엉덩이)
         limb(-0.076, -0.012, 0.044, 0.013, 0.85); // 앞다리 — 발이 앞으로
@@ -2007,8 +2394,6 @@ function dining(b, c, M, tally, I) {
 // 주방 — 배식 카운터(식당 경계) · 조리 라인(레인지·후드) · 싱크 · 냉장고 ·
 // 냄비 선반. 버너·냄비·싱크볼은 **원기둥**이다 (lessons.md 3.13.2).
 function kitchen(b, c, M, tally, I) {
-  const cx = (c.x0 + c.x1) / 2;
-
   // ── 배식 카운터 — 남쪽 경계(식당과 트인 곳)에 선다. 트레이 레일은 관 ──
   b.mark('furniture', `serving:${c.id}`);
   const zS = c.z0 + 0.55;
@@ -2182,8 +2567,6 @@ function kitchen(b, c, M, tally, I) {
   const wn = interiorWalls(c.id).find((q) => q.rule === 'solid' && q.b - q.a > 5);
   if (wn) {
     b.mark('furniture', `range:${c.id}`);
-    const cm = (wn.a + wn.b) / 2;
-    const L = Math.min(wn.b - wn.a - 0.8, 6.5);
 
     // ── 기기를 뗀다 (2026-08-06 사용자 지시) ────────────────────────────
     // 왼쪽부터: **가스레인지 · 오븐 · 작업대 · 싱크대**. 각 유닛은 제 몸통과
@@ -2400,7 +2783,11 @@ function kitchen(b, c, M, tally, I) {
     // 배식 라인 끝의 **음료 코너**다. 둘 다 카운터 위에 얹힌다 — 바닥에
     // 세우면 자판기가 되고, 여기는 셀프 서비스 대(臺)다.
     b.mark('furniture', `beverage:${c.id}`);
-    const bevU = cm - 2.9 < wn.a + 0.5 ? wn.a + 0.9 : cm - 2.9;
+    // 자리는 조리 라인 커서를 이어받는다 — 벽 중심 기준 상수(cm - 2.9)로 놓던
+    // 시절 레인지·오븐과 1.2m 겹쳐 커피머신이 쿡탑 위에 서 있었다 (2026-08-08).
+    // 라인 끝에서 0.3 띄운다 — 필러 없는 틈이므로, 기기 사이 벌어진 틈이 아니라
+    // 코너가 따로임이 읽히는 폭이어야 한다.
+    const bevU = cur - GAP + 0.3 + 0.75;
     // 받침 카운터 — 기기 둘이 앉을 낮은 대
     wallBox(b, wn, bevU, 0.32, 0.44, 1.5, 0.88, 0.6, M.laminate);
     wallBox(b, wn, bevU, 0.32, 0.905, 1.54, 0.05, 0.64, M.steelDark);
@@ -2709,10 +3096,12 @@ function cafe(b, c, M, tally, I) {
   b.mark('furniture', `cafetable:${c.id}`);
   for (const x of fit(c.x0 + 1.2, c.x1, 2.6, 1.2)) {
     for (const z of fit(c.z0, c.z1, 2.8, 1.5)) {
+      // 조각은 스폰한 노드로 넣는다 — b 로 넣으면 빈 table_NN 노드가 남고
+      // 원탁만 (식탁·회의 탁자와 달리) 상호작용이 안 된다 (2026-08-08).
       const tb = I.spawn('table');
-      tube(b, 0.5, 0.045, [x, 0.735, z], M.laminate, 'y', 12, true);
-      tube(b, 0.05, 0.68, [x, 0.38, z], M.trim, 'y', 8);
-      tube(b, 0.26, 0.035, [x, 0.02, z], M.steelDark, 'y', 10, true);
+      tube(tb, 0.5, 0.045, [x, 0.735, z], M.laminate, 'y', 12, true);
+      tube(tb, 0.05, 0.68, [x, 0.38, z], M.trim, 'y', 8);
+      tube(tb, 0.26, 0.035, [x, 0.02, z], M.steelDark, 'y', 10, true);
       // 마시다 둔 것 — 캔과 컵. 자판기 옆 원탁이 비어 있으면 아무도 안 쓴
       // 카페다 (챕터 0 디테일 패스)
       {
@@ -2750,53 +3139,184 @@ function locker(pr, w, u, M) {
     }
     wallBox(bb, w, u, 0.27, H0 + 0.045, WID, 0.03, DEP - 0.04, M.steelDark); // 천판
     wallBox(bb, w, u, 0.27, 0.075, WID, 0.03, DEP - 0.04, M.steelDark); // 바닥판
+    // 굽 — **몸통이 0.06 에서 시작하는데 그 밑이 비어 있었다** (2026-08-08
+    // "캐비넷들 공중에 떠있음"). H0/2+0.06 이라고 적어 두고 굽을 안 만들었다.
+    // 실물 사물함은 발끝이 들어가게 앞을 5cm 물린 대(臺) 위에 선다.
+    wallBox(bb, w, u, 0.25, 0.03, WID - 0.02, 0.06, DEP - 0.14, M.trim);
     // ── 속 — 두 포즈 공통 (닫혀 있어도 실제로 있다) ────────────────────
     //
     // 선반 둘과 봉만 있으면 **빈 캐비닛**이다 (status.md 5.0 B). 사물함을
     // 사물함으로 만드는 것은 그 안의 남은 것들이다: 걸이 고리 · 걸린 옷 ·
     // 위 칸의 상자 · 바닥의 신발 한 켤레 · 문 안쪽에 붙은 쪽지.
-    wallBox(bb, w, u, 0.27, 1.35, WID - 0.07, 0.02, DEP - 0.1, M.steel);
+    // 위 선반은 **봉보다 위**에 있어야 한다 (모자 선반). 1.35 에 두었더니
+    // 봉(1.6)에 건 옷이 선반을 뚫고 내려가 어깨가 선반 밑에 묻혔다 —
+    // 그래서 옷이 "어디서 걸린 건지" 안 보였다 (2026-08-07 지적).
+    wallBox(bb, w, u, 0.27, 1.66, WID - 0.07, 0.02, DEP - 0.1, M.steel);
     wallBox(bb, w, u, 0.27, 0.45, WID - 0.07, 0.02, DEP - 0.1, M.steel);
-    const [rx, , rz] = wallAt(w, u, 0.27, 0);
-    tube(bb, 0.011, WID - 0.1, [rx, 1.6, rz], M.trim, w.axis, 6);
+    // **가로 봉 + 90도 돌린 셔츠 두 벌이 나란히, 사이가 뜬다**
+    // (2026-08-08 스케치 — 왼쪽 X: 겹침, 오른쪽 O: 얇은 판 둘이 따로).
+    // 봉은 폭 방향 그대로, 셔츠를 통째로 90도 돌려 **문에는 얇은 옆면**이
+    // 보이고, 두 벌을 봉을 따라 좌우로 벌린다.
+    {
+      const rod = new THREE.CylinderGeometry(0.011, 0.011, WID - 0.12, 6);
+      rod.rotateZ(Math.PI / 2); // 축을 폭(u) 방향으로
+      rod.translate(0, 1.6, 0.27);
+      wallPut(bb, w, u, rod, M.trim);
+    }
     const rs = hash2(Math.round(u * 13), Math.round(w.at * 7));
-    // 옷걸이 둘 — 봉에 걸린 고리(반토러스) + 어깨대. 그 아래 옷이 늘어진다
-    for (const [du, cm2] of [[-0.09, M.plastic], [0.05, M.plasticWarm]]) {
-      const hook = new THREE.TorusGeometry(0.022, 0.004, 4, 8, Math.PI);
-      hook.rotateY(Math.PI / 2);
-      hook.translate(0, 1.582, 0.27);
-      wallPut(bb, w, u + du, hook, M.trim);
-      const bar = new THREE.CylinderGeometry(0.005, 0.005, 0.17, 5);
-      bar.rotateZ(Math.PI / 2);
-      bar.rotateX(0.12);
-      bar.translate(0, 1.5, 0.27);
-      wallPut(bb, w, u + du, bar, M.trim); // 어깨대
-      // 옷 — 위가 좁고 아래가 넓은 판 (각진 상자면 널빤지다)
-      const cl = new THREE.CylinderGeometry(0.085, 0.115, 0.6, 4, 1, false, 0, Math.PI * 2);
-      cl.rotateY(Math.PI / 4);
-      cl.scale(1, 1, 0.42);
-      cl.translate(0, 1.2, 0.27);
-      wallPut(bb, w, u + du, cl, cm2);
+    const GK = 0.7; // 옷 폭 배율 — 눌린 셔츠
+    for (const [du, warm] of [
+      [-0.105, rs > 0.5],
+      [0.105, rs <= 0.5],
+    ]) {
+      const cm2 = warm ? M.plasticWarm : M.plastic;
+      const cd = M.crtDark;
+      const put2 = (g, m) => {
+        g.translate(0, 0, -0.27); // 조립 중심을 원점으로
+        g.scale(GK, 1, 1);
+        g.rotateY(Math.PI / 2); // **통째로 90도** — 셔츠가 옆을 본다
+        g.translate(0, 0, 0.27);
+        wallPut(bb, w, u + du, g, m);
+      };
+      // ── 옷걸이 갈고리 — put2 를 안 탄다: 갈고리는 **봉(u축)을 감아야**
+      // 하므로 z-y 평면 그대로 둔다. 셔츠와 같이 돌리면 봉을 못 감는다
+      {
+        const hook = new THREE.TorusGeometry(0.019, 0.0028, 5, 10, Math.PI * 1.15);
+        hook.rotateZ(Math.PI); // 열린 쪽을 아래로
+        hook.rotateY(Math.PI / 2); // x-y -> z-y 평면
+        hook.translate(0, 1.6, 0.27);
+        wallPut(bb, w, u + du, hook, M.trim);
+      }
+      const neck = new THREE.CylinderGeometry(0.0028, 0.0028, 0.035, 5);
+      neck.translate(0, 1.563, 0.27);
+      put2(neck, M.trim);
+      for (const s of [-1, 1]) {
+        const arm = new THREE.CylinderGeometry(0.0028, 0.0028, 0.15, 5);
+        arm.rotateZ(s * 1.25); // 어깨대 — 폭 방향으로 벌어진다
+        arm.translate(s * 0.07, 1.525, 0.27);
+        put2(arm, M.trim);
+      }
+      const rail = new THREE.CylinderGeometry(0.0026, 0.0026, 0.27, 5);
+      rail.rotateZ(Math.PI / 2);
+      rail.translate(0, 1.483, 0.27);
+      put2(rail, M.trim); // 아래 가로대
+      // ── 셔츠 — 어깨가 옷걸이를 덮고 몸통이 늘어진다. 문을 마주본다 ────
+      const flat = (g) => { g.scale(1, 1, 0.3); return g; }; // 앞뒤로 납작
+      const sh2 = new THREE.CylinderGeometry(0.1, 0.15, 0.085, 4, 1, false, Math.PI / 4, Math.PI * 2);
+      flat(sh2).translate(0, 1.5, 0.27);
+      put2(sh2, cm2); // 어깨
+      const bd = new THREE.CylinderGeometry(0.15, 0.135, 0.46, 4, 1, false, Math.PI / 4, Math.PI * 2);
+      flat(bd).translate(0, 1.23, 0.27);
+      put2(bd, cm2); // 몸통 — 아래가 살짝 좁다 (셔츠 자락)
+      const hem = new THREE.CylinderGeometry(0.137, 0.137, 0.014, 4, 1, false, Math.PI / 4, Math.PI * 2);
+      flat(hem).translate(0, 0.993, 0.27);
+      put2(hem, cd); // 밑단
+      // 소매 둘 — 몸통 옆에서 늘어진다
+      for (const s of [-1, 1]) {
+        const sl = new THREE.CylinderGeometry(0.03, 0.036, 0.4, 5);
+        sl.scale(1, 1, 0.55);
+        sl.rotateZ(s * 0.1);
+        sl.translate(s * 0.155, 1.29, 0.27);
+        put2(sl, cm2);
+        const cuff = new THREE.CylinderGeometry(0.033, 0.033, 0.022, 5);
+        cuff.scale(1, 1, 0.55);
+        cuff.translate(s * 0.175, 1.08, 0.27);
+        put2(cuff, cd); // 소맷부리
+      }
+      // 앞섶·단추·주머니는 **옆을 보는 셔츠에서는 뺀다** — 90도 돌리니
+      // 측면을 향해, 문에서는 옆으로 삐져나온 검은 판으로만 보였다
+      // (전에 같은 병을 앓았다). 윤곽을 만드는 옷깃·소매·밑단만 남긴다.
+      // 옷깃 — 목에서 V 자로 벌어지는 띠 둘
+      for (const s of [-1, 1]) {
+        const co = new THREE.BoxGeometry(0.026, 0.052, 0.014);
+        co.rotateZ(s * 0.45);
+        co.translate(s * 0.022, 1.532, 0.292);
+        put2(co, cd);
+      }
     }
-    // 위 칸의 상자 — 서류나 잡동사니
-    if (rs > 0.3) wallBox(bb, w, u, 0.27, 1.46, WID - 0.14, 0.19, DEP - 0.2, rs > 0.65 ? M.carton : M.crate);
-    // 바닥의 신발 한 켤레 — 앞이 둥근 덩이 둘
-    for (const s of [-1, 1]) {
-      const sh = new THREE.CylinderGeometry(0.045, 0.05, 0.24, 6, 1, false, 0, Math.PI);
-      sh.rotateZ(-Math.PI / 2);
-      sh.rotateX(-Math.PI / 2);
-      sh.rotateY(Math.PI / 2);
-      sh.scale(1, 0.62, 1);
-      sh.translate(s * 0.075, 0.12, 0.26);
-      wallPut(bb, w, u, sh, M.rubber);
+    // 모자 선반 — 상자와 **보온병**. 실루엣이 다른 것 둘이라야 "잡동사니" 다.
+    // 골판지(M.carton)는 이 어두운 함 속에서 **쨍하게** 떴다 (2026-08-08 지적)
+    // — 접힌 자국이 있는 어두운 쪽(cartonDark)을 몸통으로 쓰고 뚜껑선과
+    // 테이프로 상자임을 말한다.
+    if (rs > 0.3) {
+      const bu = u - 0.075;
+      wallBox(bb, w, bu, 0.27, 1.75, 0.2, 0.16, DEP - 0.22, M.cartonDark);
+      wallBox(bb, w, bu, 0.27, 1.824, 0.204, 0.012, DEP - 0.216, M.carton); // 뚜껑 테
+      wallBox(bb, w, bu, 0.27, 1.831, 0.05, 0.004, DEP - 0.214, M.paper); // 붙인 테이프
+      wallBox(bb, w, bu + 0.055, 0.38, 1.735, 0.07, 0.05, 0.004, M.paper); // 라벨
     }
+    {
+      // 보온병 — 몸통 · 어깨 · **컵 뚜껑** · 허리 띠. 흰 원기둥에 검은 마개만
+      // 얹으면 무엇인지 모른다
+      const [tx, , tz] = wallAt(w, u + 0.125, 0.27, 0);
+      tube(bb, 0.034, 0.135, [tx, 1.738, tz], M.steel, 'y', 12);
+      const shl = new THREE.CylinderGeometry(0.026, 0.034, 0.022, 12);
+      shl.translate(tx, 1.816, tz);
+      bb.add(shl, M.steel);
+      tube(bb, 0.03, 0.042, [tx, 1.848, tz], M.crtDark, 'y', 12); // 컵 뚜껑
+      tube(bb, 0.0345, 0.012, [tx, 1.762, tz], M.crtDark, 'y', 12); // 허리 띠
+    }
+    // 아래 칸 — **개킨 수건** 두 장. 샤워실 벤치와 **같은 조각**을 쓴다
+    // (2026-08-08 지시: "수건이면 지금 만든 거 넣으면 되는 거 아닌가")
+    for (let k = 0; k < 2; k++) {
+      const g = foldedTowel(0.3 - k * 0.012, 0.24 - k * 0.006, 0.03, 0.012);
+      g.rotateY(Math.PI / 2 + (k ? Math.PI : 0) + (k - 0.5) * 0.1);
+      const [tx, , tz] = wallAt(w, u + (k ? 0.008 : -0.008), 0.27, 0);
+      g.translate(tx, 0.476 + k * 0.036, tz);
+      bb.add(g, k ? M.towelWarm : M.towel);
+    }
+    // 바닥 칸은 **비워 둔다** (2026-08-08 지시로 신발 제거). 상자·원기둥
+    // 조합으로 운동화를 다섯 판 다듬었지만 이 해상도에서는 덩어리를 못
+    // 벗었다 — 진짜로 가려면 발 길이를 따라 단면 여럿을 짜 잇는 전용
+    // 스윕이 필요하고, 소품 하나에 쓸 공사가 아니다. 남길 것은 판단이지
+    // 어중간한 조각이 아니다.
   }
-  // 닫힘 — 문이 몸통 앞면(0.5)보다 살짝 돌출 (겹평면 금지)
-  wallBox(pr.closed, w, u, 0.515, H0 / 2 + 0.06, 0.4, H0 - 0.1, 0.024, M.steel);
-  for (const y of [1.55, 0.5]) {
-    for (const dy of [0, 0.05, 0.1]) wallBox(pr.closed, w, u, 0.53, y + dy, 0.22, 0.014, 0.006, M.rubber);
+  // ── 닫힘 — 문이 몸통 앞면(0.5)보다 살짝 돌출 (겹평면 금지) ────────────
+  //
+  // **통풍 슬릿은 붙이지 말고 뚫는다** (2026-08-08 지시). 검은 각재를 문에
+  // 얹었더니 6mm 두께로 튀어나온 막대 여섯이었다 — 슬릿은 구멍이지 돌기가
+  // 아니다. 벽에 문을 낼 때와 같은 수법으로 **문을 가로 띠로 쪼개** 실제
+  // 구멍을 남기고, 그 뒤에 비스듬한 날개를 넣어 루버로 만든다.
+  //
+  // 문 높이도 늘렸다 — H0-0.1 이라 위가 2cm 뜨고 그 틈으로 모자 선반이
+  // 들여다보였다 (2026-08-08 "약간 위에 비어있음"). 바닥판 윗면(0.095)에서
+  // 천판 밑면(1.885)까지 채운다.
+  {
+    const DV = 0.515; // 문판 면
+    const DW2 = 0.4;
+    const DT = 0.024;
+    const dy0 = 0.095;
+    const dy1 = 1.885;
+    const SW3 = 0.22; // 슬릿 폭
+    const SH3 = 0.014; // 슬릿 높이
+    // 슬릿 자리 여섯 (두 무리 x 셋)
+    const slits = [];
+    for (const y of [1.55, 0.5]) for (const dy of [0, 0.05, 0.1]) slits.push(y + dy);
+    slits.sort((a, b2) => a - b2);
+    // 문판 — 슬릿 띠를 뺀 가로 구간들. 슬릿 좌우는 통짜로 남는다
+    let cur = dy0;
+    for (const sy of slits) {
+      const lo = sy - SH3 / 2;
+      if (lo > cur + 0.001) {
+        wallBox(pr.closed, w, u, DV, (cur + lo) / 2, DW2, lo - cur, DT, M.steel);
+      }
+      // 슬릿 높이의 띠는 **좌우 조각만** 남긴다 (가운데가 구멍)
+      const side = (DW2 - SW3) / 2;
+      for (const sgn of [-1, 1]) {
+        wallBox(pr.closed, w, u + sgn * (SW3 + side) / 2, DV, sy, side, SH3, DT, M.steel);
+      }
+      // 루버 날개 — 구멍 뒤에서 비스듬히. 안이 새카맣게 뚫려 보이지 않는다
+      const van = new THREE.BoxGeometry(SW3, SH3 + 0.006, 0.004);
+      van.rotateX(-0.7);
+      van.translate(0, sy, DV - 0.012);
+      wallPut(pr.closed, w, u, van, M.steelDark);
+      cur = sy + SH3 / 2;
+    }
+    if (dy1 > cur + 0.001) {
+      wallBox(pr.closed, w, u, DV, (cur + dy1) / 2, DW2, dy1 - cur, DT, M.steel);
+    }
+    wallBox(pr.closed, w, u + 0.13, DV + 0.02, 1.05, 0.03, 0.1, 0.02, M.trim); // 손잡이
   }
-  wallBox(pr.closed, w, u + 0.13, 0.535, 1.05, 0.03, 0.1, 0.02, M.trim); // 손잡이
   // 열림 — 문이 **경첩(왼쪽 변)을 원점에 두고 돌아간** 뒤 제자리로 간다.
   // 순서를 반대로(이동 후 회전) 했더니 문이 몸통에서 떨어져 허공을 돌았다.
   //
@@ -2804,8 +3324,8 @@ function locker(pr, w, u, M) {
   // 줄 지어 선 사물함이 한 손으로 연 것처럼 보인다 — 약탈은 제각각이다.
   {
     const swing = -1.35 - hash2(Math.round(u * 17), Math.round(w.at * 5)) * 0.85; // -1.35 ~ -2.2
-    const g = new THREE.BoxGeometry(0.4, H0 - 0.1, 0.024);
-    g.translate(0.2, H0 / 2 + 0.06, 0); // 경첩변을 로컬 원점에
+    const g = new THREE.BoxGeometry(0.4, 1.79, 0.024);
+    g.translate(0.2, 0.99, 0); // 경첩변을 로컬 원점에
     g.rotateY(swing);
     g.translate(0, 0, 0.5); // 몸통 앞면 평면으로
     wallPut(pr.open, w, u - 0.2, g, M.steel);
@@ -2843,34 +3363,85 @@ function lounge(b, c, M, tally, I) {
       g.translate(lx, ly, lz);
       put(g, m);
     };
+    // 부풀린 쿠션 하나. tilt 는 등쿠션이 뒤로 기우는 각
+    const cush = (w2, h, d, lx, ly, lz, m, o = {}, tilt = 0) => {
+      const g = pillow(w2, h, d, { round: 0.36, crown: 0.022, ...o });
+      if (tilt) g.rotateX(tilt);
+      g.translate(lx, ly, lz);
+      put(g, m);
+    };
     // **조각끼리 맞닿아야 한다** — 쿠션이 틀 위에, 등쿠션이 방석 위에,
     // 팔걸이가 받침 위에. 좌표를 따로 잡았다가 전부 공중부양했다 (#2 지적).
     box(1.9, 0.22, 0.66, 0, 0.11, 0, M.trim); // 틀 0 ~ 0.22
     box(1.9, 0.55, 0.12, 0, 0.395, -0.34, M.trim, -0.12); // 등판 — 틀에서 오른다
     for (const dx of [-0.47, 0.47]) {
-      box(0.88, 0.16, 0.56, dx, 0.3, 0.03, M.plasticWarm); // 방석 — 틀 위(0.22)
-      box(0.88, 0.36, 0.12, dx, 0.56, -0.3, M.plasticWarm, -0.12); // 등쿠션 — 방석 위, 등판에 기댐
+      // 방석 — 두툼하게(0.16 -> 0.2), 앞으로 도톰하고 **앉은 자국이 꺼진다**
+      // **부풀리는 것에도 정도가 있다** (2026-08-08 "소파 땡땡한것도 완화").
+      // round 0.36 · crown 0.028 은 방석이 아니라 풍선이었다 — 실물 방석은
+      // 옆구리가 거의 곧고 모서리만 물린다
+      cush(0.88, 0.2, 0.58, dx, 0.31, 0.03, M.plasticWarm,
+        { round: 0.19, crown: 0.014, sag: 0.018 });
+      // 등쿠션 — 방석보다 더 부푼다 (기대는 것이라 속이 무르다)
+      cush(0.88, 0.4, 0.17, dx, 0.57, -0.29, M.plasticWarm, { round: 0.24, crown: 0.016 }, -0.12);
+      // 시침선(welt)을 어두운 관으로 얹어 봤다가 **뺐다** — 방석 위를
+      // 가로지르는 쇠막대로 보였고, 길이도 팔걸이 속까지 파고들었다.
+      // 앞코의 둥근 맛은 pillow 의 round 가 이미 낸다. 얹는 것은 마지막이다
     }
     for (const dx of [-0.89, 0.89]) {
-      box(0.14, 0.25, 0.6, dx, 0.345, 0, M.trim); // 팔걸이 받침 — 틀에서 오른다
-      const g = new THREE.CylinderGeometry(0.09, 0.09, 0.6, 8);
+      // 팔걸이 받침·팔걸이는 **틀 앞뒤와 같은 자리에서 끝난다** (2026-08-08
+      // "팔걸이 튀어나오는 부분 마감"). 받침을 0.6 으로, 팔걸이는 마구리까지
+      // 0.75 로 두었더니 둥근 코가 받침 밖으로 7cm, 틀 밖으로 4cm 나와
+      // 그 자리에 초승달 모양 단이 생겼다. 셋의 끝을 하나로 맞춘다.
+      const AR = 0.085; // 팔걸이 반지름
+      const AZ = 0.33; // 틀 앞뒤 끝 (0.66 / 2)
+      box(0.14, 0.25, AZ * 2, dx, 0.345, 0, M.trim); // 팔걸이 받침 — 틀에서 오른다
+      // 팔걸이 — 눕힌 원기둥에 **둥근 마구리**를 씌운다. 뚜껑 원판이 그대로
+      // 보이면 잘린 통이고, 잘린 통은 푹신하지 않다
+      // 8.5cm 관은 10각이면 실루엣이 둥글다 — 16각·구 16x8 은 원탁(36각)보다
+      // 촘촘했다 (2026-08-08 __tris 실측). 관과 마구리는 면 수를 맞춘다 (3.13.9)
+      const g = new THREE.CylinderGeometry(AR, AR, (AZ - AR) * 2, 10, 1, true);
       g.rotateX(Math.PI / 2);
-      g.translate(dx, 0.5, 0);
-      put(g, M.plasticWarm); // 팔걸이 — 받침 위의 눕힌 원기둥
+      g.translate(dx, 0.49, 0);
+      put(g, M.plasticWarm);
+      for (const s of [-1, 1]) {
+        const cap = new THREE.SphereGeometry(AR, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+        cap.rotateX((s * Math.PI) / 2);
+        cap.translate(dx, 0.49, s * (AZ - AR));
+        put(cap, M.plasticWarm);
+      }
     }
     tally.sofa = (tally.sofa ?? 0) + 1;
   };
-  sofa(cx - 0.3, cz + 0.75, Math.PI); // 마주 본다
-  sofa(cx - 0.3, cz - 0.75, 0);
-  // 낮은 원탁 — 소파 사이
-  tube(b, 0.42, 0.04, [cx - 0.3, 0.42, cz], M.laminate, 'y', 12, true);
-  tube(b, 0.04, 0.4, [cx - 0.3, 0.21, cz], M.trim, 'y', 8);
-  tube(b, 0.2, 0.03, [cx - 0.3, 0.015, cz], M.steelDark, 'y', 10, true);
+  // 마주 본다. 간격 0.75 는 **원탁 반지름(0.42)에 소파 깊이 반(0.33)을 더한
+  // 것과 같아** 탁자가 소파에 닿아 있었다 (2026-08-08 지시) — 0.92 로 벌려
+  // 무릎이 들어갈 20cm 를 남긴다
+  sofa(cx - 0.3, cz + 0.92, Math.PI);
+  sofa(cx - 0.3, cz - 0.92, 0);
+  // 낮은 원탁 — 소파 사이. **12각형은 원이 아니다** (2026-08-08 "라운드
+  // 테이블이 좀 더 원형이였으면"). 36각으로 올리고 테두리에 **둥근 코**를
+  // 두른다 — 각진 판의 모서리가 실루엣을 결정하기 때문이다.
+  // 코는 판보다 안쪽(0.40)에 중심을 두어 판 속을 지난다. 반지름을 맞추면
+  // 접선이 되고, 접선은 겹평면이다 (샤워 선반에서 얻은 규칙).
+  {
+    const tx = cx - 0.3;
+    tube(b, 0.405, 0.042, [tx, 0.42, cz], M.laminate, 'y', 36, true);
+    const rim = new THREE.TorusGeometry(0.4, 0.021, 6, 36);
+    rim.rotateX(Math.PI / 2);
+    rim.translate(tx, 0.42, cz);
+    b.add(rim, M.laminate);
+    tube(b, 0.042, 0.4, [tx, 0.21, cz], M.trim, 'y', 16);
+    tube(b, 0.2, 0.026, [tx, 0.013, cz], M.steelDark, 'y', 28, true);
+    const foot = new THREE.TorusGeometry(0.188, 0.013, 5, 28); // 굽 테두리
+    foot.rotateX(Math.PI / 2);
+    foot.translate(tx, 0.013, cz);
+    b.add(foot, M.steelDark);
+  }
   // 탁자 위 — 머그 둘과 읽던 것. 휴게실은 **누가 앉아 있던 흔적**이 전부다
   mug(b, cx - 0.14, 0.44, cz + 0.1, M, M.porcelain);
   mug(b, cx - 0.5, 0.44, cz - 0.12, M, M.plasticWarm);
   paperPile(b, cx - 0.32, 0.44, cz + 0.18, M, 41);
-  newspaper(b, cx - 0.06, 0.441, cz - 0.22, 0.7, M);
+  // 신문은 판 안으로 당긴다 — 모서리가 20cm 넘게 허공에 걸쳐 있었다
+  newspaper(b, cx - 0.4, 0.441, cz - 0.17, 0.7, M);
   // 문가 쓰레기통
   bin(b, c.x0 + 0.5, c.z1 - 0.5, M);
   tally.bin = (tally.bin ?? 0) + 1;
@@ -2885,12 +3456,22 @@ function lounge(b, c, M, tally, I) {
   // 앞을 막았다 — 놓기 전에 그 자리에 무엇이 있는지 묻지 않은 것이다
   // (같은 판에서 드럼-AHU 로 한 번 겪었다). 서쪽 벽은 자판기, 북쪽 벽
   // 서편은 사물함, 동쪽 벽은 세탁기 — 남는 곳이 북동 구석이다.
-  // **세로로 둔다** (2026-08-06 지시) — 벽을 따라 가로로 누이면 방을 가로지르는
-  // 긴 단(段)이 되고, 실제 당직실 침대는 **머리를 벽에 대고** 방 안쪽으로
-  // 뻗는다. yaw = 90도로 돌리고 자리를 북쪽 벽에 머리 쪽부터 붙인다.
+  // **머리를 벽에 대고 방 안쪽으로 뻗는다** (2026-08-06 지시, 2026-08-08 재지시
+  // "침대 90도 돌려서 베갯머리를 벽쪽으로"). 앞선 판은 yaw 를 90도로 줘서
+  // 길이축이 **x** 로 누웠다 — 주석은 "길이축을 z 로" 라고 적어 놓고 실제로는
+  // 벽을 따라 가로로 눕힌 것이다. 그래서 방을 가로지르는 긴 단이 됐고,
+  // 덤으로 **두 침대가 0.55m 겹쳐** 매트리스 셋이 놓인 널판처럼 보였다
+  // (길이 1.9 짜리 둘을 1.35 간격으로 나란히 두면 겹친다).
+  //
+  // 로컬은 길이가 z (머리 -z · 발치 +z) 이므로 yaw = 180도면 머리가 +z,
+  // 곧 북쪽 벽을 본다. 자리는 **머리판 바깥면에서 거꾸로** 잰다.
   b.mark('furniture', `bed:${c.id}`);
-  for (const [bx, bz] of [[c.x1 - 1.0, c.z1 - 1.15], [c.x1 - 2.35, c.z1 - 1.15]]) {
-    const yaw = Math.PI / 2; // 길이축을 z 로
+  // **c.z1 은 벽의 중심선이지 방의 끝이 아니다.** 그대로 쓰면 벽 두께의
+  // 절반(0.1)만큼 파고들어 머리판과 매트리스 머리가 벽 속에 묻힌다
+  // (2026-08-08 — 머리판이 아예 안 보였다). 방의 끝은 **벽면**이다.
+  const bz = c.z1 - W.wall / 2 - 0.02 - 0.98; // 머리판 뒷면이 벽면에서 2cm
+  for (const bx of [c.x1 - 1.0, c.x1 - 2.35]) {
+    const yaw = Math.PI; // 머리(-z)가 북쪽 벽(+z)을 본다
     const put = (g, m) => {
       g.rotateY(yaw);
       g.translate(bx, 0, bz);
@@ -2915,23 +3496,75 @@ function lounge(b, c, M, tally, I) {
         put(foot, M.steelDark);
       }
     }
-    bbox(0.84, 0.17, 1.84, 0, 0.43, 0, M.paper); // 매트리스
-    bbox(0.86, 0.03, 0.9, 0, 0.525, 0.42, M.porcelain); // 덮은 시트 (발치)
-    bbox(0.86, 0.035, 0.12, 0, 0.535, -0.02, M.porcelain); // 접힌 자락
-    // 베개 — 가운데가 눌려 양 끝이 도톰하다 (평판이면 방석이다)
-    for (const s of [-1, 1]) bbox(0.4, 0.1, 0.3, 0, 0.565, -0.72 + s * 0.0, M.porcelain);
-    bbox(0.42, 0.07, 0.28, 0, 0.55, -0.72, M.paper);
-    bbox(0.8, 0.1, 0.5, 0, 0.57, 0.55, M.vendBlue); // 개어 둔 담요
-    bbox(0.86, 0.34, 0.06, 0, 0.5, -0.95, M.trim); // 머리판
-    // 침대 밑 신발 한 켤레 — 사람이 자던 자리의 표식
-    for (const s of [-1, 1]) {
-      const sh4 = new THREE.CylinderGeometry(0.045, 0.05, 0.24, 6, 1, false, 0, Math.PI);
-      sh4.rotateZ(-Math.PI / 2);
-      sh4.rotateX(-Math.PI / 2);
-      sh4.scale(1, 0.6, 1);
-      sh4.translate(s * 0.09, 0.05, 0.75);
-      put(sh4, M.rubber);
+    // 침구는 **전부 부풀린다** — 널판 넷을 겹쳐 두면 아무리 색을 갈라도
+    // 탁자 위의 종잇장이다 (2026-08-08 "침대 디테일 업"). pillow 로 짠다.
+    const soft = (w2, h2, d2, ly, lz, m, o = {}) => {
+      const g = pillow(w2, h2, d2, { round: 0.2, crown: 0.02, ...o });
+      g.translate(o.lx ?? 0, ly, lz);
+      put(g, m);
+    };
+    // 매트리스 — 모서리가 둥글고 위가 도톰하고 **누운 자국이 꺼진다**.
+    // 시트를 씌운 상태라 흰색이다 (시트를 따로 얹으면 뜬 판이 하나 더 는다)
+    // 매트리스는 **민 재질에 주름 없이** 둔다. 씌운 시트는 팽팽하기도 하고,
+    // 0.84x1.84 짜리 넓은 면을 스치듯 보면 반복 타일의 이음이 격자로 드러나
+    // 누비 조각보가 된다 (2026-08-08 세 판). 천 무늬는 **작고 가까이 보는
+    // 것**(베개·담요)에서만 값을 한다
+    // **매트리스는 풍선이 아니다** (2026-08-08 "매트리스 땡땡한것도 완화").
+    // 스프링이 든 슬래브라 옆구리가 거의 곧고 모서리만 물린다
+    soft(0.84, 0.2, 1.84, 0.445, 0, M.porcelain, { round: 0.09, crown: 0.01, sag: 0.014, seg: 8 });
+    // 담요 — 발치에서 가슴께까지. **한 폴리곤으로 그려 밀어낸다** (drapedSheet):
+    // 판 하나에 얇은 옆판 둘을 붙여 뒀더니 자락이 떨어져 나온 지느러미였다
+    {
+      // 자락은 **프레임 윗면(0.345)보다 아래로** 내려와야 한다 — 0.2 로는
+      // 매트리스 옆구리가 1cm 남아 흰 띠로 새어 나왔다.
+      // 높이는 **주름의 깊이만큼 띄운다** — 0.556 에 두었더니 골이 파인 자리가
+      // 매트리스(윗면 0.545~0.549)를 뚫고 들어가 흰 점이 났다 (2026-08-08).
+      // 밑단은 **프레임 옆살 한가운데(0.30)** 에서 끝난다 — 살 위나 아래로
+      // 어중간하게 걸치면 그 선이 그대로 드러난다
+      const g = drapedSheet(0.445, 0.272, 0.024, 1.08, 0.045, 0.019);
+      g.translate(0, 0.572, 0.38);
+      put(g, M.blanket);
     }
+    // 접어 넘긴 시트 깃 — 담요 머리쪽 끝을 덮는 흰 띠. 같은 수법으로 짜되
+    // 짧게 접어 넘긴 것이라 자락이 얕다. 정돈된 침상의 표식
+    {
+      const g = drapedSheet(0.45, 0.09, 0.02, 0.19, 0.04, 0.007);
+      g.translate(0, 0.604, -0.12); // 담요를 올린 만큼 깃도 같이 올린다
+      put(g, M.porcelain); // 매트리스와 같은 이유로 민 재질 (넓고 스치듯 본다)
+    }
+    // 베개 — 가운데가 눌리고 양 끝이 도톰하다 (평판이면 방석이다).
+    // 예전에는 같은 상자 둘을 **같은 자리에** 겹쳐 두고 있었다 (s*0.0)
+    // 실물 비례는 가로:세로 = 1.5:1 이고 두께는 얇다 (0.55 x 0.13 x 0.36).
+    // 가운데 솟은 자리는 **꺼뜨리지 말고 도톰하게** 두고 분할을 올려 능선을
+    // 없앤다 (2026-08-08 "가운데 솟아오른곳만 조금 더 디테일하게")
+    // seg 22 -> 16: 골(fold)은 정규화 좌표에서 주기 하나가 채 안 도는 저주파라
+    // 16 분할로도 능선 없이 잡힌다 (2026-08-08 __tris 실측 후 육안 대조)
+    soft(0.55, 0.13, 0.36, 0.615, -0.6, M.sheet,
+      { round: 0.42, crown: 0.036, sag: 0.006, pinch: 0.5, fold: 0.009, seg: 16 });
+    // ── 머리판·발판 — 관 프레임 침대는 **기둥과 살**이다 ──────────────
+    // 널판 한 장(0.86x0.34x0.06)이라 벽 앞의 검은 띠로만 보였다
+    for (const s of [-1, 1]) {
+      const post = new THREE.CylinderGeometry(0.022, 0.022, 0.6, 8);
+      post.translate(s * 0.4, 0.63, -0.94);
+      put(post, M.trim);
+      const knob = new THREE.SphereGeometry(0.028, 8, 6);
+      knob.translate(s * 0.4, 0.93, -0.94);
+      put(knob, M.trim);
+      const fpost = new THREE.CylinderGeometry(0.02, 0.02, 0.2, 8);
+      fpost.translate(s * 0.4, 0.44, 0.94);
+      put(fpost, M.trim);
+    }
+    bbox(0.84, 0.26, 0.035, 0, 0.72, -0.94, M.trim); // 머리판 널
+    for (const [ly, r] of [[0.9, 0.018], [0.54, 0.014]]) {
+      const rail = new THREE.CylinderGeometry(r, r, 0.8, 8); // 머리판 가로살
+      rail.rotateZ(Math.PI / 2);
+      rail.translate(0, ly, -0.94);
+      put(rail, M.trim);
+    }
+    const frail = new THREE.CylinderGeometry(0.018, 0.018, 0.8, 8); // 발판 가로살
+    frail.rotateZ(Math.PI / 2);
+    frail.translate(0, 0.53, 0.94);
+    put(frail, M.trim);
     tally.bed = (tally.bed ?? 0) + 1;
   }
   b.endMark();
@@ -2947,43 +3580,96 @@ function lounge(b, c, M, tally, I) {
     // 세탁 코너가 세탁 코너로 읽힌다.
     const WW = 0.86;
     const WH = 0.96;
-    const lu = wl2.a + Math.min(1.3, (wl2.b - wl2.a) / 3);
+    // **벽 끝에 붙인다** (2026-08-08 지시) — 1.3 은 벽 한가운데로 나앉는 값이라
+    // 왼쪽에 쓸모없는 빈 벽이 1m 넘게 남았다
+    const lu = wl2.a + WW / 2 + 0.12;
     for (const du of [0, WW + 0.06]) {
       const u = lu + du;
       // 몸통 — **판으로 쪼갠다.** 통짜 상자로 두면 그 앞판이 드럼을 통째로
       // 덮어, 문 유리 너머가 막힌 판이 된다 (세면대·냉장고와 같은 병).
       // 앞면은 문 구멍을 뺀 **띠 넷**으로 짓는다 (자판기 진열창 #64 의 수법).
-      wallBox(b, wl2, u, 0.04, WH / 2 + 0.06, WW, WH, 0.06, M.steel); // 등판
+      // 재질은 **가전 도장판**이다 — 강판 색으로 두었더니 고물통이었다
+      wallBox(b, wl2, u, 0.04, WH / 2 + 0.06, WW, WH, 0.06, M.enamel); // 등판
       for (const s of [-1, 1]) {
-        wallBox(b, wl2, u + s * (WW / 2 - 0.02), 0.36, WH / 2 + 0.06, 0.04, WH, 0.68, M.steel); // 옆판
+        wallBox(b, wl2, u + s * (WW / 2 - 0.02), 0.36, WH / 2 + 0.06, 0.04, WH, 0.68, M.enamel); // 옆판
       }
-      wallBox(b, wl2, u, 0.36, WH + 0.03, WW, 0.05, 0.68, M.steel); // 천판
-      wallBox(b, wl2, u, 0.36, 0.09, WW, 0.06, 0.68, M.steel); // 바닥판
+      wallBox(b, wl2, u, 0.36, WH + 0.075, WW, 0.03, 0.68, M.enamel); // 천판
+      wallBox(b, wl2, u, 0.36, 0.09, WW, 0.06, 0.68, M.enamel); // 바닥판
+      // 조작반 구멍 치수 — 위 띠(문 구멍 블록)와 조작반 절이 **같은 값**을
+      // 써야 구멍과 속이 맞는다. 값은 TOPY 가 정해지는 블록 안에서 잰다
+      let CPH, CPC, CPW;
       {
-        const DR = 0.29; // 문 구멍 반폭
-        wallBox(b, wl2, u, 0.69, 0.52 + DR + (WH - 0.52 - DR) / 2, WW, WH - 0.52 - DR, 0.04, M.steel); // 위 띠
-        wallBox(b, wl2, u, 0.69, (0.52 - DR) / 2, WW, 0.52 - DR, 0.04, M.steel); // 아래 띠
+        // 문 구멍 반폭 — **문 테보다 작게** 잡는다. 0.29 로 두었더니 구멍의
+        // 모서리를 덮는 링이 반지름 0.42 까지 나가, 문 둘레에 커다란 회색
+        // 원판이 생겼다 (2026-08-08 "테두리가 너무 큼"). 구멍을 문 테
+        // (바깥 0.284) 안으로 넣으면 곧은 변은 테가 가리고, 링은 **모서리만**
+        // 덮으면 되므로 띠 폭이 0.146 -> 0.066 으로 줄어든다
+        const DR = 0.235;
+        // **앞판 위끝은 몸통 위끝(0.06+WH)이다.** WH 로 적어 두어 0.96~1.02
+        // 6cm 가 통째로 뚫려 있었고, 조작반 위로 기계 속이 그대로 보였다
+        // (2026-08-08 "저기 위에는 아예 비었음"). 바닥 오프셋을 빼먹은 것이다
+        const TOPY = 0.06 + WH;
+        // 위 띠 — **조작반 자리를 뚫고** 두른다. 통짜로 얹었더니 파인 바닥
+        // (crtDark)이 띠 속에 완전히 묻혀, 단추와 표시창만 매끈한 앞판 위에
+        // 떠 있었다 (2026-08-08 코드리뷰). 파인 것은 구멍이 있어야 파인다
+        CPH = 0.13;
+        CPW = WW - 0.06;
+        CPC = TOPY - 0.015 - CPH / 2;
+        const yA = CPC - CPH / 2, yB = CPC + CPH / 2;
+        wallBox(b, wl2, u, 0.69, (0.52 + DR + yA) / 2, WW, yA - 0.52 - DR, 0.04, M.enamel); // 구멍 아래
+        wallBox(b, wl2, u, 0.69, (yB + TOPY) / 2, WW, TOPY - yB, 0.04, M.enamel); // 구멍 위
         for (const s of [-1, 1]) {
-          wallBox(b, wl2, u + s * (WW / 2 - (WW / 2 - DR) / 2), 0.69, 0.52, WW / 2 - DR, DR * 2, 0.04, M.steel);
+          wallBox(b, wl2, u + s * (WW / 2 - (WW - CPW) / 4), 0.69, CPC, (WW - CPW) / 2, CPH, 0.04, M.enamel); // 구멍 옆
         }
-        // 사각 구멍의 모서리를 링으로 덮는다 — 구멍은 사각, 문은 원이다
-        const cover = new THREE.RingGeometry(0.272, DR * 1.44, 20);
+        wallBox(b, wl2, u, 0.69, (0.52 - DR) / 2, WW, 0.52 - DR, 0.04, M.enamel); // 아래 띠
+        for (const s of [-1, 1]) {
+          wallBox(b, wl2, u + s * (WW / 2 - (WW / 2 - DR) / 2), 0.69, 0.52, WW / 2 - DR, DR * 2, 0.04, M.enamel);
+        }
+        // 사각 구멍의 모서리를 링으로 덮는다 — 구멍은 사각, 문은 원이다.
+        // **양면으로 둔다** — 한쪽만 있으면 비스듬히 볼 때 통째로 사라져
+        // 기계 속이 비친다 (컬링이 뒤집힌 것으로 보인다)
+        const cover = new THREE.RingGeometry(0.272, DR * 1.45, 20);
         cover.rotateY(Math.PI / 2);
         const [cx4, , cz4] = wallAt(wl2, u, 0.712, 0);
         cover.translate(cx4, 0.52, cz4);
-        b.add(cover, M.steel);
+        b.add(cover, M.enamelPlain);
+        const cover2 = cover.clone();
+        flipInside(cover2);
+        b.add(cover2, M.enamelPlain);
       }
-      wallBox(b, wl2, u, 0.36, WH + 0.09, WW + 0.04, 0.06, 0.72, M.steelDark); // 천판 마감
-      wallBox(b, wl2, u, 0.36, 0.05, WW - 0.08, 0.1, 0.6, M.rubber); // 굽
+      // 천판 마감 — **테두리 네 줄**이다. 통짜 판으로 얹었더니 위에서 볼 때
+      // 천판이 통째로 검게 보여 물건 전체가 고물이 됐다 (2026-08-08).
+      // 가운데는 도장판이 보여야 한다
+      {
+        const TY = WH + 0.094, TW = WW + 0.02, TD = 0.7, TE = 0.022;
+        for (const s of [-1, 1]) {
+          wallBox(b, wl2, u, 0.36 + (s * (TD - TE)) / 2, TY, TW, 0.008, TE, M.steelDark);
+          wallBox(b, wl2, u + (s * (TW - TE)) / 2, 0.36, TY, TE, 0.008, TD, M.steelDark);
+        }
+      }
+      wallBox(b, wl2, u, 0.36, 0.055, WW - 0.06, 0.09, 0.6, M.trim); // 굽
       for (const s of [-1, 1]) {
-        wallBox(b, wl2, u + s * (WW / 2 - 0.02), 0.36, WH / 2 + 0.06, 0.03, WH, 0.7, M.steelDark); // 옆 이음선
+        for (const t of [-1, 1]) {
+          const ft = new THREE.CylinderGeometry(0.026, 0.03, 0.05, 8);
+          const [fx, , fz] = wallAt(wl2, u + s * (WW / 2 - 0.09), 0.36 + t * 0.24, 0);
+          ft.translate(fx, 0.025, fz);
+          b.add(ft, M.steelDark); // 발
+        }
+      }
+      // 옆 이음선 — 깊이 0.7 이라 **앞면 띠(0.71)와 앞끝이 같은 평면**이었고,
+      // 그 자리가 몸통 양옆에서 세로 줄무늬로 지지직거렸다 (2026-08-08).
+      // 앞판보다 얕게 물리고, 대신 옆으로 살짝 도드라지게 한다
+      for (const s of [-1, 1]) {
+        wallBox(b, wl2, u + s * (WW / 2 - 0.02), 0.35, WH / 2 + 0.06, 0.05, WH, 0.64, M.trim);
       }
       // 둥근 문 — 테(토러스) + 유리 + 속 어둠 + **경첩과 손잡이 홈**
       const [px, , pz] = wallAt(wl2, u, 0.7, 0);
-      const ring = new THREE.TorusGeometry(0.25, 0.034, 6, 16);
+      // 문 테는 **몸통과 같은 계열**이다 — 짙은 슬레이트 고리를 두르면
+      // 타이어를 붙인 꼴이라 물건이 어두워진다 (2026-08-08)
+      const ring = new THREE.TorusGeometry(0.25, 0.034, 6, 20);
       ring.rotateY(Math.PI / 2);
       ring.translate(px, 0.52, pz);
-      b.add(ring, M.trim);
+      b.add(ring, M.bezel);
       const [gx, , gz] = wallAt(wl2, u, 0.68, 0);
       tube(b, 0.23, 0.02, [gx, 0.52, gz], M.glass, 'x', 16, true);
       // 드럼 — **속이 파여야 세탁기다.** 벽에서 방 안쪽(x)이 드럼 축이다.
@@ -2996,13 +3682,27 @@ function lounge(b, c, M, tally, I) {
         flipInside(drum);
         const [cx3, , cz3] = wallAt(wl2, u, 0.66 - DL / 2, 0);
         drum.translate(cx3, 0.52, cz3);
-        b.add(drum, M.rubber);
-        // 뒷벽과 축 — 드럼 끝이 뚫려 있으면 몸통 밖이 비친다
-        const back = new THREE.CylinderGeometry(0.215, 0.215, 0.02, 16);
-        back.rotateZ(Math.PI / 2);
+        b.add(drum, M.bezel); // 드럼은 **강판**이다 — 새카맣게 두면 그냥 구멍
+        // 외조(플라스틱 통) — **드럼 둘레가 비어 있으면 안 된다** (2026-08-08).
+        // 문 구멍(0.272)과 드럼(0.215) 사이로 기계 속 허공이 그대로 보였다.
+        // 실물도 드럼을 감싸는 플라스틱 통이 그 자리를 채운다
+        const tub = new THREE.CylinderGeometry(0.288, 0.288, DL, 20, 1, true);
+        tub.rotateZ(Math.PI / 2);
+        tub.translate(cx3, 0.52, cz3);
+        const tubIn = tub.clone();
+        flipInside(tubIn);
+        b.add(tub, M.trim);
+        b.add(tubIn, M.trim); // **양면** — 열린 관 한 겹은 각도에 따라 사라진다
+        // 뒷벽 — 외조까지 덮는 원판 하나로. 드럼만 막으면 그 바깥이 뚫린다
         const [bx4, , bz4] = wallAt(wl2, u, 0.66 - DL, 0);
-        back.translate(bx4, 0.52, bz4);
-        b.add(back, M.steelDark);
+        tube(b, 0.288, 0.016, [bx4, 0.52, bz4], M.trim, 'x', 20, true);
+        tube(b, 0.215, 0.02, [bx4 + 0.014 * wl2.inward, 0.52, bz4], M.steelDark, 'x', 16, true);
+        // 고무 부트 — 문 안쪽을 감고 도는 검은 테. 세탁기의 표식이다
+        const boot = new THREE.TorusGeometry(0.252, 0.032, 5, 20);
+        boot.rotateY(Math.PI / 2);
+        const [ox2, , oz2] = wallAt(wl2, u, 0.64, 0);
+        boot.translate(ox2, 0.52, oz2);
+        b.add(boot, M.rubber);
         // 드럼 리브 셋 — 민짜 통은 드럼이 아니다. 안쪽에서 보이게 배치
         for (let k = 0; k < 3; k++) {
           const a2 = (k / 3) * Math.PI * 2 + 0.4;
@@ -3012,73 +3712,200 @@ function lounge(b, c, M, tally, I) {
           rib.translate(rx2, 0.52 + Math.cos(a2) * 0.185, rz2 + Math.sin(a2) * 0.185);
           b.add(rib, M.steelDark);
         }
-        // 안에 든 빨래 — 드럼 바닥에 뭉쳐 있다
-        const [lx2, , lz2] = wallAt(wl2, u, 0.66 - DL + 0.14, 0);
-        tube(b, 0.13, 0.16, [lx2, 0.42, lz2], M.paper, 'x', 10, true);
+        // 안에 든 빨래는 **뺐다** (2026-08-08 지시) — 눕힌 원기둥이라
+        // 드럼 속에 치즈롤을 넣어 둔 꼴이었다. 빨래는 바구니에 있다
       }
-      for (const dy of [0.2, -0.2]) {
-        wallBox(b, wl2, u - 0.28, 0.71, 0.52 + dy, 0.05, 0.06, 0.04, M.steelDark); // 경첩
+      // 경첩·손잡이는 **문 테를 물어야** 한다 (2026-08-08 재지적). 앞판 위에
+      // 얹으면 문과 상관없는 검은 딱지다. 테는 반지름 0.25 · 관 0.034 이므로
+      // 그 자리에서 y 를 벌리면 테의 원이 안쪽으로 들어가 버린다 —
+      // **벌리는 폭도 테를 따라 잰다** (dy 가 클수록 u 가 작아진다).
+      const RC = 0.25; // 문 테 중심 반지름
+      const onRim = (dy) => Math.sqrt(Math.max(0.0004, RC * RC - dy * dy));
+      // 경첩은 **테 바깥으로 나와야** 보인다. 테의 관 반지름이 0.034 이므로
+      // 중심에서 0.284 까지가 테다 — 그 안에 두면 통째로 묻힌다 (2026-08-08).
+      // 각도로 자리를 잡고 반지름을 0.288 로 두어 테를 물고 밖으로 나온다
+      for (const th of [2.55, -2.55]) {
+        const hr = RC + 0.038;
+        const hg = new THREE.CylinderGeometry(0.021, 0.021, 0.08, 8); // 경첩 축 — 세로다
+        const [hx5, , hz5] = wallAt(wl2, u + Math.cos(th) * hr, 0.7, 0);
+        hg.translate(hx5, 0.52 + Math.sin(th) * hr, hz5);
+        b.add(hg, M.steelDark);
       }
-      wallBox(b, wl2, u + 0.27, 0.72, 0.52, 0.04, 0.12, 0.05, M.trim); // 손잡이 홈
-      // 조작반 — **다이얼과 버튼 줄과 표시창**. 띠 하나면 그냥 선이다
-      wallBox(b, wl2, u, 0.7, WH - 0.06, WW - 0.08, 0.16, 0.03, M.trim);
-      const [kx3, , kz3] = wallAt(wl2, u - 0.26, 0.73, 0);
-      tube(b, 0.048, 0.03, [kx3, WH - 0.06, kz3], M.steelDark, 'x', 10, true); // 다이얼
-      tube(b, 0.012, 0.05, [kx3, WH - 0.02, kz3], M.trim, 'x', 6); // 다이얼 지시침
-      wallBox(b, wl2, u + 0.06, 0.73, WH - 0.03, 0.14, 0.05, 0.012, M.screen); // 표시창
-      for (const k of [0, 1, 2]) {
-        wallBox(b, wl2, u + 0.16 + k * 0.07, 0.73, WH - 0.11, 0.05, 0.035, 0.014, k === 1 ? M.warn : M.keycap);
+      // 손잡이 — **잡을 수 있게 생긴 것**. 홈 하나는 스티커였다.
+      // 다리 둘이 테를 물고 그 위에 가로대가 뜬다. 다리 간격을 넓히면
+      // 테가 안으로 휘어 다리가 허공에 뜬다 — 짧게 문다
+      for (const dy of [0.05, -0.05]) {
+        wallBox(b, wl2, u + onRim(dy), 0.74, 0.52 + dy, 0.032, 0.032, 0.06, M.trim);
       }
-      // 세제 서랍 — 위 왼쪽에 살짝 빠져 있다
-      wallBox(b, wl2, u - 0.24, 0.74, WH - 0.19, 0.24, 0.07, 0.06, M.trim);
+      wallBox(b, wl2, u + RC + 0.004, 0.782, 0.52, 0.034, 0.16, 0.028, M.trim);
+      // 조작반 — **파인 자리에 앉는다.** 치수(CPH·CPC·CPW)는 위 띠의 구멍과
+      // 함께 문 구멍 블록에서 정해졌다. 파인 바닥의 앞면은 0.695 — 띠 앞면
+      // (0.71)보다 15mm 뒤라야 파여 보인다
+      wallBox(b, wl2, u, 0.685, CPC, CPW, CPH, 0.02, M.crtDark); // 파인 바닥
+      for (const s of [-1, 1]) {
+        wallBox(b, wl2, u, 0.70, CPC + s * CPH / 2, CPW, 0.01, 0.03, M.trim); // 위·아래 테 — 구멍의 립
+      }
+      // 다이얼은 **뺐다** (2026-08-08 지시). 벽 좌표에서 원기둥을 앞으로
+      // 눕히니 조작반 파인 자리보다 얕아 반쯤 묻힌 검은 덩이가 됐고,
+      // 지시침만 삐죽 나와 정체불명이었다 — 어중간한 조각은 빼는 것이 낫다
+      // 다이얼을 빼고 나니 표시창과 단추가 **오른쪽에 몰려** 왼쪽 절반이
+      // 비었다 (2026-08-08). 남은 것끼리 조작반 폭에 다시 나눠 앉힌다 —
+      // 조각을 빼면 자리도 다시 잡아야 한다
+      // 표시창·단추는 **파인 바닥(앞면 0.695) 위에** 앉는다 — 띠 앞면(0.71)
+      // 을 넘으면 파인 자리 밖으로 떠 버린다
+      wallBox(b, wl2, u - 0.15, 0.696, CPC, 0.19, 0.056, 0.012, M.trim); // 표시창 테
+      wallBox(b, wl2, u - 0.15, 0.702, CPC, 0.17, 0.04, 0.01, M.screen);
+      for (const k of [0, 1, 2, 3]) {
+        wallBox(b, wl2, u + 0.03 + k * 0.058, 0.702, CPC, 0.044, 0.03, 0.012,
+          k === 2 ? M.warn : M.keycap);
+      }
+      // 세제 서랍과 상표 띠는 **뺐다** (2026-08-08 지시). 둘 다 앞판에 얹은
+      // 납작한 막대라, 문 둘레에 아무 데나 붙은 딱지로만 보였다 —
+      // 앞판에 얹는 것은 마지막 선택이고, 여기서는 안 쓰는 편이 낫다
       tally.washer = (tally.washer ?? 0) + 1;
     }
-    // 세제통 둘 — 세탁기 천판(1.12) 위. 손잡이가 달린 통과 원통 병
-    const [sx3, , sz3] = wallAt(wl2, lu, 0.3, 0);
-    b.box(0.19, 0.26, 0.16, [sx3, 1.25, sz3], M.vendBlue, 0);
-    b.box(0.16, 0.05, 0.13, [sx3, 1.4, sz3], M.trim, 0); // 뚜껑
+    // 세제 — **가루세제 갑 하나** (2026-08-08 지시). 손잡이 달린 통과
+    // 원통 병 둘은 정체가 흐렸고 천판을 어지럽혔다. 세제 갑을 세제 갑으로
+    // 만드는 것은 형태가 아니라 **요란한 인쇄**라 텍스처 한 장으로 굽는다.
+    // 갑은 살짝 비스듬히 놓인다 — 자로 잰 듯 놓으면 진열이다
     {
-      const hd2 = new THREE.TorusGeometry(0.05, 0.012, 4, 8, Math.PI);
-      hd2.rotateY(Math.PI / 2);
-      hd2.translate(sx3, 1.33, sz3 + 0.1);
-      b.add(hd2, M.trim); // 손잡이
+      const BW = 0.19, BH = 0.27, BD = 0.075;
+      const box2 = new THREE.BoxGeometry(BW, BH, BD);
+      box2.rotateY(0.35);
+      const [sx3, , sz3] = wallAt(wl2, lu + 0.18, 0.3, 0);
+      box2.translate(sx3, WH + 0.09 + BH / 2, sz3);
+      b.add(box2, M.detergentBox);
     }
-    const [s2x, , s2z] = wallAt(wl2, lu + WW + 0.06, 0.3, 0);
-    tube(b, 0.06, 0.24, [s2x, 1.24, s2z], M.warn, 'y', 10);
-    tube(b, 0.028, 0.05, [s2x, 1.38, s2z], M.trim, 'y', 8);
-    tube(b, 0.042, 0.03, [s2x, 1.41, s2z], M.trim, 'y', 8); // 뚜껑
     tally.detergent = (tally.detergent ?? 0) + 1;
 
     // 빨래바구니 — 위가 넓은 **광주리**. 민짜 원뿔대는 양동이라, 세로 살과
     // 손잡이 구멍을 낸다. 안에 개킨 것이 봉긋하게 담긴다
-    for (const [du, mm] of [[WW * 2 + 0.55, M.crate], [WW * 2 + 1.05, M.plasticWarm]]) {
+    // 자리는 **바깥지름에서 낸다** — 0.5 간격에 지름 0.568 짜리 둘을 세워
+    // 6.8cm 씩 겹쳐 있었다 (2026-08-08 "빨래통들 겹쳐있는거"). 눈짐작 금지.
+    const BR = 0.25; // 위 반지름
+    const BRB = 0.205; // 아래 반지름
+    const BD = 0.4; // 깊이
+    const BYT = 0.42; // 테두리 높이
+    const BY0 = BYT - BD; // 바닥
+    const BOUT = BR + 0.016; // 바깥 반지름 (테두리까지)
+    const PITCH = BOUT * 2 + 0.05; // 바깥지름 + 틈
+    // **자리는 이웃에서 잰다.** 두 번째 세탁기 오른쪽 끝에서 시작하고,
+    // 침대 발치(z 13.05)를 넘지 않아야 한다 — 벽을 따라 남은 1.14m 에 딱 둘이다
+    const du0 = WW + 0.06 + WW / 2 + 0.03 + BOUT;
+    const rAt = (y) => BRB + (BR - BRB) * ((y - BY0) / BD); // 그 높이의 반지름
+    const tilt = Math.atan2(BR - BRB, BD); // 벽이 기운 각
+    for (const [du, mm] of [[du0, M.crate], [du0 + PITCH, M.plasticWarm]]) {
       const [bx3, , bz3] = wallAt(wl2, lu + du, 0.42, 0);
-      // **속이 파인 광주리.** 테두리를 닫힌 원판으로 얹어 두던 시절에는
-      // 그 원판이 뚜껑 노릇을 해 위에서 보면 막힌 통이었다 (2026-08-06 지적).
-      hollowBowl(b, [bx3, 0.42, bz3], 0.26, 0.215, 0.4, 0.016, mm, mm, 12);
-      const brim = new THREE.TorusGeometry(0.268, 0.016, 5, 12);
+      // ── 몸통 — 실물은 **성긴 격자**다 (2026-08-08 레퍼런스 사진) ────────
+      // 통짜 껍질에 살을 얹어 두면 아무리 얹어도 양동이에 무늬를 그린 것이다.
+      // 아래와 테두리만 통짜로 두고 가운데는 **살과 테로만 짠다** — 너머가
+      // 실제로 비쳐야 광주리다 (구멍은 뚫는다, 3.13.20).
+      const BAND = 0.1; // 아래 통짜 띠
+      const RIMB = 0.05; // 테두리 통짜 띠
+      const yGrid0 = BY0 + BAND;
+      const yGrid1 = BYT - RIMB;
+      hollowBowl(b, [bx3, yGrid0, bz3], rAt(yGrid0), BRB, BAND, 0.014, mm, mm, 16);
+      // 테두리 띠 — 바닥이 있으면 안 되므로 껍질 둘로 짠다 (안쪽 면을 뒤집는다)
+      for (const inn of [0, 1]) {
+        const off = inn ? 0.014 : 0;
+        const sh = new THREE.CylinderGeometry(BR - off, rAt(yGrid1) - off, RIMB, 16, 1, true);
+        if (inn) sh.scale(-1, 1, 1); // 반사 = 감김 방향이 뒤집힌다 → 안쪽 면
+        sh.computeVertexNormals();
+        sh.translate(bx3, BYT - RIMB / 2, bz3);
+        b.add(sh, mm);
+      }
+      const brim = new THREE.TorusGeometry(BR + 0.006, 0.014, 5, 16);
       brim.rotateX(Math.PI / 2);
-      brim.translate(bx3, 0.42, bz3);
+      brim.translate(bx3, BYT, bz3);
       b.add(brim, mm); // 테두리 — 눕힌다
-      tube(b, 0.22, 0.03, [bx3, 0.03, bz3], mm, 'y', 12, true); // 굽
-      for (let k = 0; k < 8; k++) {
-        const a = (k / 8) * Math.PI * 2;
-        const rb = new THREE.BoxGeometry(0.02, 0.36, 0.016);
+      tube(b, BRB + 0.004, 0.022, [bx3, BY0 - 0.006, bz3], mm, 'y', 16, true); // 굽
+      // 세로 살 — **벽을 따라 기운다.** 곧게 세웠더니 아래쪽이 통을 뚫고
+      // 나와 밑에 꼬챙이 넷이 박힌 꼴이었다 (기운 통에는 기운 살이다)
+      const gh = yGrid1 - yGrid0;
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2;
+        const rb = new THREE.BoxGeometry(0.016, gh + 0.02, 0.014);
+        rb.rotateZ(-tilt);
+        rb.translate(rAt(yGrid0 + gh / 2), yGrid0 + gh / 2, 0);
         rb.rotateY(a);
-        rb.translate(bx3 + Math.sin(a) * 0.255, 0.22, bz3 + Math.cos(a) * 0.255);
-        b.add(rb, mm); // 세로 살
+        rb.translate(bx3, 0, bz3);
+        b.add(rb, mm);
       }
-      for (const s of [-1, 1]) {
-        const hl = new THREE.BoxGeometry(0.12, 0.045, 0.02);
-        hl.rotateY(s > 0 ? 0 : Math.PI / 2);
-        hl.translate(bx3 + (s > 0 ? 0 : 0.255), 0.36, bz3 + (s > 0 ? 0.255 : 0));
-        b.add(hl, M.rubber); // 손잡이 구멍
+      // 가로 테 — 세로 살만 있으면 우리(cage)다. 실물 광주리는 **격자**다
+      for (let k = 0; k <= 3; k++) {
+        const y = yGrid0 + (gh * k) / 3;
+        const ring = new THREE.TorusGeometry(rAt(y), 0.0085, 4, 16);
+        ring.rotateX(Math.PI / 2);
+        ring.translate(bx3, y, bz3);
+        b.add(ring, mm);
       }
-      // 담긴 빨래 — 봉긋한 반구. 납작한 원판은 뚜껑이다
-      const lin = new THREE.SphereGeometry(0.21, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
-      lin.scale(1, 0.55, 1);
-      lin.translate(bx3, 0.31, bz3);
-      b.add(lin, M.paper);
+      // 손잡이 — 테두리 위로 솟은 **고리**. 판때기에 검은 딱지를 붙여 두던
+      // 것은 어디를 잡으라는 건지 알 수 없었다
+      for (const s of [0, 1]) {
+        const hl = new THREE.TorusGeometry(0.052, 0.011, 4, 12, Math.PI);
+        hl.rotateY(Math.PI / 2);
+        hl.rotateZ(-0.25);
+        hl.translate(BR - 0.012, BYT - 0.012, 0);
+        hl.rotateY((s * Math.PI) / 2);
+        hl.translate(bx3, 0, bz3);
+        b.add(hl, mm);
+      }
+      // ── 담긴 빨래 — **개킨 것이 아니라 쑤셔 넣어 넘치는 것** ────────────
+      // 층층이 개켜 쌓았더니 종이 묶음이었고, 그 전에는 치즈 덩어리였다.
+      // 레퍼런스는 셋 다 아니다: 뭉친 덩이 위로 옷가지가 제각각 삐져나오고,
+      // 한 장은 **테두리를 넘어 밖으로 늘어진다.** 넘치는 것이 빨래통이다.
+      {
+        // **큰 덩이 하나 + 위에 얹은 탑** 이 아니다 (2026-08-08 스케치).
+        // 통 속은 바닥부터 테두리 너머까지 **작은 뭉치들로 통째가 채워진다** —
+        // 큰 판 하나를 깔면 그 매끈한 면이 격자 너머로 그대로 보여 상자다.
+        // 층마다 서넛씩, 자리는 그 높이의 반지름 안에서 흩는다.
+        // **층마다 벽을 두르는 고리 + 가운데 하나.** 아무렇게나 흩기만 했더니
+        // 뭉치가 가운데로 몰려 **옆구리가 비었다** (2026-08-08 재지적) —
+        // 격자 너머로 빈 통이 보인다. 자리를 흩는 것과 채우는 것은 다르다.
+        // **단색 흰 덩이만 쌓으면 개수도 재질도 안 보인다** (2026-08-08
+        // "색감도 아직 단색이라 쨍하네") — 결이 있는 천 셋을 돌려 쓴다
+        const cloth = [M.clothGrey, M.sheet, M.clothWarm];
+        // **테두리를 넘기지 않는다** (2026-08-08 지시 — 격자 위에서 두 번째
+        // 칸 언저리까지). 넘치게 쌓으면 통이 아니라 언덕이고, 격자 무늬도
+        // 그 밑에 다 묻힌다. 위끝은 0.27(+뭉치 반) 로 테두리보다 11cm 아래다
+        const LAYERS = [[0.05, 4], [0.1, 4], [0.15, 4], [0.2, 4], [0.25, 3]];
+        let k = 0;
+        for (const [dy, m] of LAYERS) {
+          const y = BY0 + dy;
+          // 그 높이의 벽 안쪽에서 뭉치 반지름만큼 물러난 자리
+          const rmax = Math.max(0.02, rAt(y) - 0.098); // 위끝 0.27 < BYT 라 그대로 잰다
+          for (let i = 0; i < m; i++, k++) {
+            const s1 = hash2(k + 3, Math.round(du * 41));
+            const s2 = hash2(k + 11, Math.round(du * 17));
+            const s3 = hash2(k + 23, Math.round(du * 29));
+            // 하나는 가운데, 나머지는 **벽 쪽으로 붙인다**
+            const rr = i === 0 ? rmax * 0.22 * s2 : rmax * (0.72 + s2 * 0.28);
+            const aa = (i / m) * Math.PI * 2 + dy * 9 + s1 * 0.8;
+            const len2 = 0.12 + s3 * 0.06;
+            const folded = k === 13 || k === 17; // 접힌 채로 들어간 것 둘
+            const cl = folded
+              ? crumple(foldedTowel(len2, len2 * 0.72, 0.05, 0.03, 0.09), 0.006, k * 3.1)
+              : crumple(
+                  // seg 6 — 12~18cm 뭉치라 굵은 골 둘이면 충분하다. 9 로 두면
+                  // 층 전체에서 6천 삼각형을 더 쓰고도 차이가 안 보인다
+                  // (2026-08-08 __tris 실측 후 육안 대조)
+                  pillow(len2, 0.055 + s1 * 0.03, len2 * 0.82,
+                    { round: 0.55, crown: 0.012, fold: 0.012, seg: 6 }),
+                  0.013, k * 2.7 + du
+                );
+            // **각도도 제각각.** 나란히 누우면 아무리 구겨도 정돈돼 보인다
+            cl.rotateZ((s1 - 0.5) * 1.1);
+            cl.rotateX((s2 - 0.5) * 1.1);
+            cl.rotateY(k * 0.9 + s3 * 3);
+            cl.translate(
+              bx3 + Math.sin(aa) * rr,
+              y + (s3 - 0.5) * 0.02,
+              bz3 + Math.cos(aa) * rr
+            );
+            b.add(cl, folded ? (k === 13 ? M.towel : M.towelWarm) : cloth[k % 3]);
+          }
+        }
+      }
       tally.basket = (tally.basket ?? 0) + 1;
     }
   }
@@ -3098,7 +3925,6 @@ function lounge(b, c, M, tally, I) {
     const tu = (wv.a + wv.b) / 2;
     // 받침 서랍장 — 낮고 넓다. 서랍 둘 + 비디오가 들어가는 열린 칸
     const CW = 1.3;
-    const CH = 0.56;
     const CD = 0.5;
     // **몸통은 통짜 상자가 아니라 판이다** — 한쪽을 열린 칸으로 둘 것이므로
     // 통짜로 두면 그 칸이 몸통 속에 묻힌다 (사물함·냉장고와 같은 병).
@@ -3113,38 +3939,138 @@ function lounge(b, c, M, tally, I) {
     }
     wallBox(b, wv, tu, 0.025, (yb + yt) / 2, CW, yt - yb, 0.05, M.laminate); // 등판
     wallBox(b, wv, tu, CD / 2, (yb + yt) / 2, 0.03, yt - yb, CD, M.laminate); // 칸막이
+    // ── 칸의 치수는 **몸통에서 뽑는다** ────────────────────────────────────
+    // 서랍 앞판을 폭 0.58 · 중심 ∓0.33 으로 손수 적어 뒀는데, 실제 개구는
+    // 폭 0.605 · 중심 ∓0.3175 였다 (2026-08-08 "서랍장 서랍 상태") — 한쪽에만
+    // 2.5cm 틈이 벌어져 앞판이 비뚤게 박힌 것으로 보였다. 높이도 0.21 짜리
+    // 둘이 0.09~0.60 안에서 위아래 여백이 제각각이었다.
+    const BU0 = 0.015; // 칸막이 옆면
+    const BU1 = CW / 2 - 0.03; // 옆판 안쪽면
+    const bw = BU1 - BU0; // 칸 하나의 폭
+    const bc = (BU0 + BU1) / 2; // 칸 중심
+    const ff = CD + 0.024; // 서랍 앞판의 앞면
     for (const s of [-1, 1]) {
       // 한쪽은 서랍 둘, 다른 쪽은 **열린 칸** (문법을 갈라야 수납장으로 읽힌다)
-      const du = s * 0.33;
+      const du = s * bc;
       if (s < 0) {
-        for (const y of [0.21, 0.46]) {
-          wallBox(b, wv, tu + du, CD + 0.012, y, 0.58, 0.21, 0.024, M.trim);
-          wallBox(b, wv, tu + du, CD + 0.035, y, 0.24, 0.026, 0.022, M.steel); // 손잡이
+        const dh = (yt - yb) / 2; // 칸 높이를 반씩 나눈다
+        for (let i = 0; i < 2; i++) {
+          const y = yb + dh * (i + 0.5);
+          // 앞판 — 사방 4mm 씩 물러난다. 그 틈이 서랍의 그림자 선이다
+          wallBox(b, wv, tu + du, CD + 0.012, y, bw - 0.008, dh - 0.008, 0.024, M.trim);
+          // 손잡이 — **다리 둘에 걸친 가로대**다. 납작한 판때기는 손이 안 들어간다
+          const HW = 0.26;
+          for (const t of [-1, 1]) {
+            wallBox(b, wv, tu + du + t * (HW / 2 - 0.014), ff + 0.018, y + 0.008,
+              0.026, 0.032, 0.036, M.steelDark);
+          }
+          wallBox(b, wv, tu + du, ff + 0.042, y + 0.008, HW, 0.022, 0.022, M.steel);
+          // 열쇠 — 둥근 자물통 판에 세로 홈. 각재 하나로는 얼룩이다.
+          // **u 를 지오메트리에 넣지 않는다** — wallPut 은 축·inward 조합에
+          // 따라 로컬 +x 를 뒤집는데 wallBox 는 안 뒤집는다. 섞으면 이렇게
+          // 열쇠만 반대쪽 칸으로 날아간다 (2026-08-08). u 는 u0 로 넘긴다.
+          const ky = y - dh * 0.3;
+          const esc = new THREE.CylinderGeometry(0.017, 0.017, 0.008, 12);
+          esc.rotateX(Math.PI / 2);
+          esc.translate(0, ky, ff + 0.004);
+          wallPut(b, wv, tu + du + bw * 0.28, esc, M.steel);
+          wallBox(b, wv, tu + du + bw * 0.28, ff + 0.009, ky, 0.005, 0.016, 0.006, M.steelDark);
+          // 라벨 꽂이 — 열쇠 반대쪽. 테 안에 종이가 물린다
+          const lu = du - bw * 0.28;
+          wallBox(b, wv, tu + lu, ff + 0.004, ky, 0.115, 0.042, 0.008, M.steelDark);
+          wallBox(b, wv, tu + lu, ff + 0.009, ky, 0.1, 0.03, 0.004, M.paper);
         }
       } else {
-        // 비디오 데크 — 몸통 + 테이프 투입구 + 표시창. 90년대의 표식이다.
-        // 열린 칸 안에 앉으므로 앞면이 몸통 앞(CD)보다 살짝 들어가 있다
-        wallBox(b, wv, tu + du, CD / 2 - 0.02, 0.165, 0.54, 0.12, 0.38, M.crt);
-        wallBox(b, wv, tu + du - 0.06, CD - 0.08, 0.175, 0.3, 0.03, 0.02, M.crtDark); // 투입구
-        wallBox(b, wv, tu + du + 0.18, CD - 0.08, 0.16, 0.12, 0.035, 0.014, M.screen); // 표시창
-        // 비디오테이프 넷 — 데크 위에 세워 꽂혀 있다
-        for (let i = 0; i < 4; i++) {
-          wallBox(b, wv, tu + du - 0.19 + i * 0.062, CD / 2 - 0.02, 0.34, 0.055, 0.2, 0.31,
-            [M.vendBlue, M.crate, M.plasticWarm, M.vend][i]);
+        // ── 비디오 데크 — 90년대의 표식 ─────────────────────────────────
+        // 밋밋한 판에 검은 각재 하나와 하늘색 각재 하나였다 (2026-08-08
+        // "이거 디테일 업"). 실물 비례로 다시 짠다: 450x92x340.
+        // **밑판 윗면(yb)에 앉는다** — 높이를 손으로 적어 1.5cm 떠 있었다
+        const VW = 0.45, VH = 0.092, VD = 0.34;
+        const vf = CD / 2 - 0.02 + VD / 2; // 데크 앞면
+        const vy = yb + VH / 2;
+        const LID = 0.006; // 천판 두께 — 여기에 통풍 슬롯을 뚫는다
+        // **천판 밑에 빈 칸을 둔다.** 몸통을 천판 바로 밑까지 채워 두면
+        // 슬롯 속판의 윗면과 몸통 윗면이 같은 높이·같은 방향이라 겹평면이다
+        // (2026-08-08 "홈 안에 z파이팅"). 속판이 들어갈 8mm 를 비운다.
+        const CAV = 0.008;
+        wallBox(b, wv, tu + du, CD / 2 - 0.02, vy - (LID + CAV) / 2, VW, VH - LID - CAV, VD, M.crt);
+        // 앞판 — 몸통보다 한 겹 나온다. 아래쪽 3분의 1은 어두운 조작 띠다
+        wallBox(b, wv, tu + du, vf + 0.004, vy + 0.014, VW - 0.008, VH - 0.032, 0.008, M.crt);
+        wallBox(b, wv, tu + du, vf + 0.003, vy - 0.032, VW - 0.008, 0.026, 0.006, M.crtDark);
+        // 테이프 투입구 — **뚫고 문을 단다.** 검은 각재 하나는 스티커다
+        const mu = du - VW * 0.22;
+        wallBox(b, wv, tu + mu, vf - 0.004, vy + 0.016, 0.21, 0.05, 0.012, M.crtVent); // 속
+        wallBox(b, wv, tu + mu, vf + 0.008, vy + 0.012, 0.2, 0.042, 0.006, M.crtDark); // 문짝
+        wallBox(b, wv, tu + mu, vf + 0.009, vy + 0.035, 0.2, 0.005, 0.005, M.trim); // 문 윗 테
+        // 표시창 — 12:00 이 텍스처로 들어 있다 (조각으로는 시계가 안 된다)
+        wallBox(b, wv, tu + du + VW * 0.28, vf + 0.006, vy + 0.018, 0.12, 0.034, 0.006, M.vcrDisplay);
+        // 조작 단추 — 어두운 띠 위에 한 줄로. 재생·정지·되감기·빨리감기·꺼냄
+        for (let k = 0; k < 5; k++) {
+          wallBox(b, wv, tu + du - 0.09 + k * 0.032, vf + 0.008, vy - 0.032,
+            0.02, 0.012, 0.008, k === 0 ? M.trim : M.keycap);
+        }
+        wallBox(b, wv, tu + du + VW * 0.4, vf + 0.008, vy - 0.032, 0.03, 0.014, 0.009, M.trim); // 전원
+        for (const t of [-1, 1]) {
+          wallBox(b, wv, tu + du + t * (VW / 2 - 0.04), CD / 2 - 0.02, yb + 0.007, 0.05, 0.014, VD - 0.06, M.rubber);
+        }
+        // ── 천판과 그 위 — 자리는 왼쪽 끝에서 커서로 잰다 (3.13.5) ──────
+        // 슬롯을 어두운 각재로 얹었더니 천판 윗면과 겹평면이라 지느러미가
+        // 됐고, 눕힌 테이프와도 자리가 겹쳤다. **뚫고**, 자리는 이어서 잰다.
+        const TT = 0.026, TH2 = 0.188, TD = 0.104;
+        const zc = CD / 2 - 0.02;
+        const ly = yb + VH - LID / 2;
+        const tv = zc + VD / 2 - TD / 2 - 0.02; // 데크 앞선에 맞춘다
+        let cur = du - VW / 2 + 0.015;
+        // 세워 꽂은 테이프 다섯 — 실물은 188x104x25 다. 폭 0.055 · 깊이 0.31
+        // 짜리 널판 넷이라 책도 상자도 아니었다. 얇게 꽂고 **등에 라벨**을 붙인다
+        const tint = [M.vendBlue, M.crate, M.plasticWarm, M.vend, M.crtDark];
+        for (let i = 0; i < 5; i++) {
+          const at = cur + TT / 2;
+          wallBox(b, wv, tu + at, tv, yb + VH + TH2 / 2, TT, TH2, TD, tint[i]);
+          wallBox(b, wv, tu + at, tv + TD / 2 + 0.002, yb + VH + TH2 * 0.52,
+            TT - 0.006, TH2 * 0.62, 0.004, M.paper); // 등라벨
+          cur += TT + 0.005;
+        }
+        // 한 장은 눕혀 둔다 — 줄만 세우면 진열장이다
+        cur += 0.012;
+        wallBox(b, wv, tu + cur + TH2 / 2, tv, yb + VH + TT / 2, TH2, TT, TD, M.crate);
+        wallBox(b, wv, tu + cur + TH2 / 2, tv + TD / 2 + 0.002, yb + VH + TT / 2,
+          TH2 * 0.62, TT - 0.006, 0.004, M.paper);
+        cur += TH2 + 0.012;
+        // 천판 — 남은 자리에 통풍 슬롯을 **뚫는다** (판을 토막내 구멍을 남긴다)
+        {
+          const u1 = du + VW / 2;
+          const SW3 = 0.013, SD = VD - 0.13, SIDE = 0.065;
+          const slots = [];
+          for (let k = 0; cur + 0.012 + SW3 / 2 + k * 0.028 < u1 - 0.018; k++) {
+            slots.push(cur + 0.012 + SW3 / 2 + k * 0.028);
+          }
+          let lp = du - VW / 2;
+          for (const s of slots) {
+            const lo = s - SW3 / 2;
+            wallBox(b, wv, tu + (lp + lo) / 2, zc, ly, lo - lp, LID, VD, M.crt);
+            for (const t of [-1, 1]) {
+              wallBox(b, wv, tu + s, zc + t * (VD - SIDE) / 2, ly, SW3, LID, SIDE, M.crt);
+            }
+            lp = s + SW3 / 2;
+          }
+          wallBox(b, wv, tu + (lp + u1) / 2, zc, ly, u1 - lp, LID, VD, M.crt);
+          if (slots.length) {
+            const s0 = slots[0] - SW3, s1 = slots[slots.length - 1] + SW3;
+            // 빈 칸 한가운데에 띄운다 — 위는 천판 속으로, 아래는 몸통에서 뗀다
+            wallBox(b, wv, tu + (s0 + s1) / 2, zc, ly - LID + 0.001, s1 - s0, 0.01, SD, M.crtVent);
+          }
         }
       }
     }
     // ── TV장 마감 (2026-08-06 "전체적인 디테일 떨어짐") ──────────────────
     //
     // 판으로 짠 몸통과 서랍 둘만으로는 **책장**이다. 더한 것: 굽 받침 ·
-    // 문짝 손잡이 위의 열쇠 구멍 · 천판 앞 몰딩 · 뒤로 나가는 전선 · 리모컨 ·
-    // 잡지 두 권 · 그리고 TV 밑에 깔린 받침 매트.
+    // 천판 앞 몰딩 · 뒤로 나가는 전선 · 리모컨 · 잡지 두 권 ·
+    // 그리고 TV 밑에 깔린 받침 매트. (열쇠는 서랍 앞판 쪽으로 옮겼다)
     wallBox(b, wv, tu, CD / 2, yt + 0.042, CW + 0.06, 0.018, CD + 0.04, M.trim); // 천판 몰딩
     for (const s of [-1, 1]) {
       wallBox(b, wv, tu + s * (CW / 2 - 0.06), 0.05, 0.018, 0.12, 0.036, 0.12, M.rubber); // 굽 받침
-    }
-    for (const y of [0.21, 0.46]) {
-      wallBox(b, wv, tu - 0.33 + 0.2, CD + 0.03, y, 0.022, 0.022, 0.014, M.steelDark); // 열쇠 구멍
     }
     {
       // 전선 — 뒤에서 나와 벽 밑으로. 늘어진 고리 셋
@@ -3155,17 +4081,15 @@ function lounge(b, c, M, tally, I) {
         wallPut(b, wv, tu + 0.5, g, M.rubber);
       }
     }
-    wallBox(b, wv, tu, CD / 2, yt + 0.055, 0.9, 0.008, 0.42, M.rubber); // TV 받침 매트
-    // 리모컨과 잡지 — 천판 앞쪽
-    wallBox(b, wv, tu - 0.52, CD - 0.1, yt + 0.062, 0.06, 0.014, 0.17, M.crtDark);
-    for (let k = 0; k < 3; k++) {
-      wallBox(b, wv, tu - 0.52, CD - 0.1, yt + 0.07, 0.03, 0.006, 0.03 + k * 0.02, M.keycap);
-    }
-    for (const [dk, mm] of [[0, M.vend], [1, M.crate]]) {
-      wallBox(b, wv, tu + 0.5, CD - 0.14, yt + 0.062 + dk * 0.012, 0.22, 0.012, 0.28, mm); // 잡지
-    }
+    // TV 받침 매트 — **앞면을 TV 앞면과 같은 자리에 두면 안 된다.** 둘 다
+    // 0.46 이라 앞모서리에 8mm 짜리 겹평면 띠가 생겨 점선으로 지지직거렸다
+    // (2026-08-08 "tv 의 z파이팅"). 매트를 TV 발밑으로 물린다
+    wallBox(b, wv, tu, CD / 2 - 0.01, yt + 0.055, 0.86, 0.008, 0.4, M.rubber);
+    // 천판 위는 **TV 만** 둔다 (2026-08-08 지시) — 리모컨과 잡지 두 권이
+    // 양옆에 있었는데, 함이 0.82 로 커지면서 둘 다 천판 모서리로 밀려
+    // 반쯤 걸친 널판으로 보였다. 자리가 없으면 빼는 것이 낫다.
     // TV — 서랍장 천판 윗면 위. 화면은 방 안(소파 쪽)을 본다
-    crtTv(b, wv, tu, 0.648, M);
+    crtTv(b, wv, tu, yt + 0.055, M); // 매트 속으로 4mm 물려 앉힌다 — 매트와 같은 yt 에서 잰다
     tally.tv = (tally.tv ?? 0) + 1;
     b.endMark();
   }
@@ -3293,8 +4217,8 @@ function shower(b, c, M, tally, I) {
       // 세 겹으로 배를 부르게 쌓아 도톰한 비누로, 밑에 물 빠짐 홈이 난
       // 접시를 깐다 — 비누는 바닥에 그냥 놓이지 않는다.
       {
-        const SX = SCX - 0.09; // 구석에서 안쪽으로 — 선반이 움직이면 따라온다
-        const SZ = 0.055;
+        const SX = SCX - 0.105; // 구석에서 안쪽으로 — 선반이 움직이면 따라온다
+        const SZ = 0.05;
         const YAW = 0.38;
         const sPut = (g, m) => {
           g.scale(1, 1, 0.62); // 타원 — 비누는 길쭉하다
@@ -3328,8 +4252,11 @@ function shower(b, c, M, tally, I) {
       // ── 샴푸 — 몸통 · 어깨 · 목 · 뚜껑 · **감은 라벨** ─────────────────
       // 원기둥에 원뿔 하나를 얹은 것이라 통도 뚜껑도 아니었다.
       {
-        const BX = SCX - 0.03;
-        const BZ = 0.135;
+        // **선반 위의 물건은 칸막이 면(SCX)에서 제 반지름만큼 물러나야 한다.**
+        // SCX-0.03 에 두었더니 반지름 0.036 이라 6mm 가 칸막이 속에 박혀 있었다
+        // (2026-08-07 "몇몇 샴푸는 벽에 박혀있다"). 물러난 만큼 앞으로 낸다.
+        const BX = SCX - 0.065;
+        const BZ = 0.15;
         const bPut = (g, m) => { g.translate(BX, 0, BZ); put(g, m); };
         const cy3 = (r0, r1, h, y, m, seg = 12) => {
           const g = new THREE.CylinderGeometry(r0, r1, h, seg);
@@ -3470,42 +4397,25 @@ function shower(b, c, M, tally, I) {
       //   한쪽 끝은 **두 겹을 감싸고 도는 반원**(접힌 자리),
       //   반대쪽 끝은 **두 겹이 살짝 벌어진 열린 자리**,
       //   그 사이를 가로지르는 **한 줄의 틈**.
-      const towel = (cz, y, w2, d2, h2, yaw, mat) => {
-        const p = (g) => { g.rotateY(yaw); g.translate(0, y, cz); };
-        const GAP = 0.004; // 두 겹 사이의 틈 — 이 선이 "접혀 있다" 를 말한다
-        const t2 = (h2 - GAP) / 2; // 겹 하나 두께
-        const R2 = h2 / 2; // 접힌 끝의 반지름 — 두 겹을 한 번에 감싼다
-        const x0 = -w2 / 2 + R2; // 접힌 끝의 중심
-        for (const s of [-1, 1]) {
-          const yy = s * (GAP / 2 + t2 / 2);
-          const len = w2 - R2 - (s > 0 ? 0.016 : 0); // 위 겹이 조금 짧다
-          const ang = s > 0 ? 0.045 : 0; // 위 겹의 열린 끝이 살짝 들린다
-          const place = (g) => { g.rotateZ(ang); g.translate(x0, yy, 0); p(g); };
-          const body = new THREE.BoxGeometry(len, t2, d2);
-          body.translate(len / 2, 0, 0); // 접힌 끝을 원점으로 — 거기서 돈다
-          place(body); tput(body, mat);
-          // 열린 끝 — 둥근 마구리. 각지면 거기서 판자로 돌아간다
-          const tip = new THREE.CylinderGeometry(t2 / 2, t2 / 2, d2, 6, 1, false, 0, Math.PI);
-          tip.rotateX(Math.PI / 2); // 축을 앞뒤(z)로
-          tip.translate(len, 0, 0);
-          place(tip); tput(tip, mat);
-        }
-        // 접힌 끝 — 두 겹을 감싸고 도는 반원기둥 (-x 쪽 반)
-        const fold = new THREE.CylinderGeometry(R2, R2, d2, 10, 1, false, Math.PI, Math.PI);
-        fold.rotateX(Math.PI / 2);
-        fold.translate(x0, 0, 0); p(fold); tput(fold, mat);
-      };
+      //
+      // **둥근 조각은 평면에 접하면 안 된다.** 접힌 끝의 반지름을 두께의 정확히
+      // 절반으로, 열린 끝을 한 겹의 정확히 절반으로 두었더니 원기둥면이
+      // 상자의 윗·아랫면에 **접선으로** 붙어 그 선에서 z-파이팅이 났다
+      // (2026-08-07 지적). 접하는 것도 겹평면이다 — 5% 만 키워 확실히
+      // 뚫고 나오게 한다. 상자의 시작 면도 원기둥 **속으로** 밀어 넣는다.
+      // 개킨 수건 넷 — 조각은 모듈 수준 foldedTowel 이 낸다 (사물함과 같은 것을
+      // 쓴다). **장마다 접힌 쪽을 번갈아 돌린다** — 흰 수건 넷을 같은 방향으로
+      // 쌓으니 윤곽이 붙어 몇 장인지 안 보였다 (2026-08-08 지적).
       const TH2 = 0.038; // 한 장 두께 — 0.023 은 종이였다
+      const slatTop = 0.445 + 0.04 / 2; // 벤치 살 윗면 — 살 치수에서 잰다
       for (let k = 0; k < 4; k++) {
-        towel(
-          0.33 + (hash2(k, 5) - 0.5) * 0.012,
-          0.4665 + TH2 / 2 + k * (TH2 + 0.003),
-          0.34 - k * 0.006,
-          0.24 - k * 0.005,
-          TH2,
-          (hash2(k, 3) - 0.5) * 0.14,
-          k % 2 ? M.towelWarm : M.towel
-        );
+        const r2 = hash2(k, 5);
+        const w3 = 0.34 - k * 0.006;
+        const d3 = 0.24 - k * 0.005;
+        const g = foldedTowel(w3, d3, TH2, 0.012 + r2 * 0.022);
+        g.rotateY((hash2(k, 3) - 0.5) * 0.2 + (k % 2 ? Math.PI : 0));
+        g.translate(0, slatTop + 0.0015 + TH2 / 2 + k * (TH2 + 0.009), 0.33 + (r2 - 0.5) * 0.016);
+        tput(g, k % 2 ? M.towelWarm : M.towel);
       }
     }
     b.endMark();
@@ -4430,6 +5340,19 @@ function serverRack(b, u, v, ax, face, M, seed, pose = 'closed') {
     const s = sz(wa, h, dp);
     b.box(s[0], s[1], s[2], at(a, p, y), m, 0);
   };
+  // 정면 데칼 — 표시등·통풍띠·베이 선처럼 **두께가 뜻이 없는 1~3cm 조각**은
+  // 상자가 아니라 정면 판 한 장으로 낸다 (12 -> 2 삼각형). 망문과 옆 랙에
+  // 가려 옆면이 보일 각 자체가 없는데, 상자로 내면 랙 56대가 그 안 보이는
+  // 면에만 4만 삼각형을 쓴다 (2026-08-08 __tris 실측 — 랙이 층 전체의 18%).
+  // 자리(p 오프셋)는 상자 시절 그대로 둔다 — 겹평면을 피해 띄운 값들이다
+  const decalYaw = ax === 'x' ? (face > 0 ? 0 : Math.PI) : face > 0 ? Math.PI / 2 : -Math.PI / 2;
+  const decal = (a, p, y, wa, h, m) => {
+    const g = new THREE.PlaneGeometry(wa, h);
+    g.rotateY(decalYaw);
+    const c = at(a, p, y);
+    g.translate(c[0], c[1], c[2]);
+    b.add(g, m);
+  };
 
   box(0, 0, 0.04, W_, 0.08, D_, M.rack); // 굽
   box(0, 0, HT - 0.03, W_, 0.06, D_, M.rack); // 천판
@@ -4464,18 +5387,19 @@ function serverRack(b, u, v, ax, face, M, seed, pose = 'closed') {
     const blank = r > 0.72;
     box(0, front, cy, W_ - 0.12, uH - 0.008, 0.04, blank ? M.rack : M.bezel);
     if (!blank) {
-      // 통풍구 — 앞판 가운데의 어두운 띠
-      box(-0.02, front + 0.022, cy, W_ * 0.46, uH * 0.5, 0.008, M.rubber);
+      // 통풍구 — 앞판 가운데의 어두운 띠 (옛 상자의 앞면 자리 그대로)
+      decal(-0.02, front + 0.026, cy, W_ * 0.46, uH * 0.5, M.rubber);
       // 표시등. **망문(불투명도 0.4) 너머로 보여야 하고, 랙을 비스듬히 보면
       // 가장자리가 옆 랙에 가린다.** 그래서 가운데 쪽으로 모으고 셋을 둔다.
       for (let k = 0; k < 3; k++) {
-        box(-W_ / 2 + 0.11 + k * 0.045, front + 0.026, cy + uH * 0.1, 0.032, 0.015, 0.01,
+        decal(-W_ / 2 + 0.11 + k * 0.045, front + 0.031, cy + uH * 0.1, 0.032, 0.015,
           (i + k) % 4 === 0 ? M.ledAmber : M.led);
       }
       // 활동 표시 — 가로로 긴 띠. 멀리서도 이것이 제일 먼저 읽힌다
-      if (uH > 0.06) box(W_ / 2 - 0.14, front + 0.026, cy + uH * 0.12, 0.13, 0.012, 0.01, M.led);
-      // 드라이브 베이 — 오른쪽에 얇은 가로선
-      if (uH > 0.06) box(W_ / 2 - 0.14, front + 0.022, cy - uH * 0.2, 0.16, 0.014, 0.008, M.rack);
+      if (uH > 0.06) decal(W_ / 2 - 0.14, front + 0.031, cy + uH * 0.12, 0.13, 0.012, M.led);
+      // 드라이브 베이 — 오른쪽에 얇은 가로선. 통풍 띠(0.026)와 y 대역이
+      // 스치므로 같은 평면에 두지 않는다 — 1.5mm 뒤
+      if (uH > 0.06) decal(W_ / 2 - 0.14, front + 0.0245, cy - uH * 0.2, 0.16, 0.014, M.rack);
     }
     y -= uH;
     i++;
@@ -4493,7 +5417,7 @@ function serverRack(b, u, v, ax, face, M, seed, pose = 'closed') {
     box(W_ / 2 - 0.07, dz + 0.035, HT / 2, 0.022, 0.26, 0.022, M.trim); // 손잡이
     box(W_ / 2 - 0.07, dz + 0.022, HT / 2 - 0.2, 0.05, 0.05, 0.016, M.trim); // 잠금
     // 랙 번호 — 종이(알베도 0.7)로 뒀더니 어두운 랙 위에서 흰 판때기로 튀었다
-    box(-W_ / 2 + 0.13, dz + 0.02, HT - 0.13, 0.1, 0.036, 0.008, M.trim);
+    decal(-W_ / 2 + 0.13, dz + 0.024, HT - 0.13, 0.1, 0.036, M.trim);
   } else {
     // 문짝 조립체 전체(망판·테두리·손잡이·잠금)를 로컬에서 짓고 — 경첩변이
     // 원점 — 스윙 각으로 돌린 뒤 경첩 자리에 앉힌다. 프레임에 남는 것은 없다.
@@ -4635,8 +5559,8 @@ function serverRoom(b, c, M, tally, I) {
   // 바닥 케이블 트레이 — 유리벽 앞을 가로지르고 서쪽 통로로 꺾어 오른다.
   // 랙 밑으로 들어가는 것이 실제지만, 보이는 것은 이 간선이다.
   b.mark('service', `tray:${c.id}`);
-  cableTray(b, 'x', zSouth, c.x0 + 0.5, c.x1 - 0.5, M, 3);
-  cableTray(b, 'z', xTray, zSouth + 0.5, zNorth - 1.1, M, 5);
+  cableTray(b, 'x', zSouth, c.x0 + 0.5, c.x1 - 0.5, M);
+  cableTray(b, 'z', xTray, zSouth + 0.5, zNorth - 1.1, M);
   tally.cableTray = (tally.cableTray ?? 0) + 2;
   b.endMark();
 
@@ -5194,7 +6118,8 @@ function office(b, c, M, tally, I) {
       b.endMark();
       tally.meeting = (tally.meeting ?? 0) + 1;
 
-      // 화이트보드 — **북쪽(복도 쪽) 벽**. 원탁 정면이고, 문에서 먼 조각을 고른다
+      // 화이트보드 — **남쪽(복도 쪽) 벽** (at 최소 = z 가 작은 쪽 — 띠 복도는
+      // 사무실 남쪽이다). 같은 벽의 두 조각은 at 이 같아 배열 순서가 가른다
       const ww = interiorWalls(c.id)
         .filter((q) => q.axis === 'x' && q.b - q.a > 2.8)
         .sort((p, q) => p.at - q.at)[0];
@@ -5219,16 +6144,19 @@ function office(b, c, M, tally, I) {
     const cm = (eastW.a + eastW.b) / 2;
     b.mark('furniture', `supply:${c.id}`);
     // 비품 서랍장 둘 — 하나는 서랍이 열려 속이 보인다 (쓰던 방이다)
+    const cabH = 1.28;
+    const cabTop = cabH + 0.09; // 천판 윗면 — 잡동사니는 여기서 잰다
     for (const [du, open] of [[-1.5, -1], [-0.72, 1]]) {
-      drawerCabinet(b, eastW, cm + du, M, 0.72, 1.28, 0.46, 4, open);
+      drawerCabinet(b, eastW, cm + du, M, 0.72, cabH, 0.46, 4, open);
       tally.supplyCab = (tally.supplyCab ?? 0) + 1;
     }
-    // 서랍장 위의 잡동사니 — 복사용지 묶음과 상자. 천판 윗면(1.37)에 앉힌다
+    // 서랍장 위의 잡동사니 — 복사용지 묶음과 상자. 리터럴로 적으면 서랍장
+    // 높이를 바꿀 때 이것들만 공중에 남는다 (2026-08-08 코드리뷰)
     const [sx4, , sz4] = wallAt(eastW, cm - 1.5, 0.23, 0);
-    b.box(0.3, 0.11, 0.22, [sx4, 1.425, sz4], M.paper, 0);
-    b.box(0.28, 0.02, 0.2, [sx4, 1.49, sz4], M.trim, 0); // 묶음 띠
+    b.box(0.3, 0.11, 0.22, [sx4, cabTop + 0.055, sz4], M.paper, 0);
+    b.box(0.28, 0.02, 0.2, [sx4, cabTop + 0.12, sz4], M.trim, 0); // 묶음 띠
     const [bx5, , bz5] = wallAt(eastW, cm - 0.72, 0.23, 0);
-    carton(b, [bx5, 1.37, bz5], [0.34, 0.24, 0.28], 0.2, M);
+    carton(b, [bx5, cabTop, bz5], [0.34, 0.24, 0.28], 0.2, M);
     tally.carton = (tally.carton ?? 0) + 1;
     b.endMark();
 
@@ -5759,36 +6687,6 @@ function panel(b, w, u, h, M, pose = 'closed') {
   }
 }
 
-function utility(b, c, M, tally, I) {
-  // 배전반과 배관 — 사람이 안 쓰는 방. 배전반은 약탈(여닫는 문) 대상이다.
-  b.mark('furniture', `plant:${c.id}`);
-  for (const w of interiorWalls(c.id)) {
-    const len = w.b - w.a;
-    for (const t of fit(0, len, 2.4, 1.0).map((v) => v / len)) {
-      const pr = I.spawnPair('panel');
-      panel(pr.closed, w, w.a + len * t, c.h, M);
-      panel(pr.open, w, w.a + len * t, c.h, M, 'open');
-      tally.panel = (tally.panel ?? 0) + 1;
-    }
-  }
-  // 천장 배관 — **원기둥이다.** 상자로 내면 각목이다 (services 의 같은 대목)
-  const cz = (c.z0 + c.z1) / 2;
-  const cx = (c.x0 + c.x1) / 2;
-  const len = c.x1 - c.x0 - 0.4;
-  for (const [off, r, m] of [
-    [-0.55, 0.09, M.steel],
-    [0, 0.13, M.steelDark],
-    [0.55, 0.07, M.steel],
-  ]) {
-    tube(b, r, len, [cx, 2.34 + off * 0.2, cz + off], m, 'x', 8);
-    // 행어 — 천장에 매달려 있어야 뜬 것으로 안 보인다
-    for (const t of fit(cx - len / 2, cx + len / 2, 2.6, 0.6)) {
-      b.box(0.03, c.h - 2.34 - off * 0.2, 0.03, [t, (c.h + 2.34 + off * 0.2) / 2, cz + off], M.trim, 0);
-    }
-  }
-  b.endMark();
-}
-
 // 화장실 — 덕트 탈출 스토리의 경유 방 (story.md 2장의 5).
 //
 // 프로토타입 수준이다 — 형태 단계라 조각은 상자다 (lessons 3.13.1: 그러라고
@@ -5842,16 +6740,25 @@ function washroom(b, c, M, tally, I) {
     // 경첩 바깥 36cm 허공에 떠 있었다 (2026-08-07 코드리뷰). 열림 포즈는
     // 화면에 안 나오므로 눈으로는 영영 안 잡힌다 — 로커·배전반에서 네 번
     // 겪은 그 병이라, 이번엔 **좌표를 하나만 두어** 어긋날 자리를 없앤다.
+    // **손잡이는 경첩 반대쪽에 있어야 한다.** du 를 경첩 기준으로 적으면서
+    // 0.11 로 뒀더니 손잡이가 경첩 옆 11cm 에 붙어, 문이 "손잡이 쪽으로"
+    // 열리는 꼴이 됐다 (2026-08-08 지적). 잡는 곳은 **자유단**이다 —
+    // 걸쇠(안쪽)와 손잡이(바깥쪽)가 둘 다 그 끝에 모인다.
+    // **안팎이 같은 자리에 있어야 한다** — 문 한 장을 사이에 두고 앞뒤로
+    // 붙는 물건이니까. 손잡이 1.0 / 걸쇠 1.18 로 18cm 어긋나 있어서, 문
+    // 모서리에서 보면 둘이 딴 데 붙은 것으로 보였다 (2026-08-08 지적).
+    const HY = 1.06; // 손잡이·걸쇠 공통 높이
+    const HU = DW - 0.105; // 자유단에서 안쪽으로 — 안팎이 같은 u
     const PARTS = [
       [DW / 2, 0, DY, DW, DH, 0.04, M.laminate], // 문판
       // 바깥 D자 손잡이 — 다리 둘 + 가로대
-      [0.065, 0.042, 1.02, 0.018, 0.018, 0.045, M.trim],
-      [0.155, 0.042, 1.02, 0.018, 0.018, 0.045, M.trim],
-      [0.11, 0.062, 1.02, 0.12, 0.022, 0.018, M.trim],
-      // 안쪽 걸쇠 — 밑판 · 빗장 · 손잡이 혹
-      [DW - 0.12, -0.038, 1.06, 0.05, 0.05, 0.014, M.steelDark],
-      [DW - 0.07, -0.05, 1.06, 0.09, 0.016, 0.016, M.trim],
-      [DW - 0.16, -0.046, 1.06, 0.016, 0.03, 0.012, M.trim],
+      [HU - 0.045, 0.042, HY, 0.018, 0.018, 0.045, M.trim],
+      [HU + 0.045, 0.042, HY, 0.018, 0.018, 0.045, M.trim],
+      [HU, 0.062, HY, 0.12, 0.022, 0.018, M.trim],
+      // 안쪽 걸쇠 — 밑판 · 빗장 · 손잡이 혹 (같은 자리, 반대 면)
+      [HU, -0.038, HY, 0.05, 0.05, 0.014, M.steelDark],
+      [HU + 0.05, -0.05, HY, 0.09, 0.016, 0.016, M.trim],
+      [HU - 0.04, -0.046, HY, 0.016, 0.03, 0.012, M.trim],
     ];
     for (const [du, dv, y, wid, hh, th, mm] of PARTS) {
       wallBox(pr.closed, w, hinge + du, dFace + dv, y, wid, hh, th, mm);
@@ -5927,7 +6834,7 @@ function washroom(b, c, M, tally, I) {
     // 반대로 잡아(안쪽=개구, 바깥=테+2.6cm) 패드가 도기 밖으로 떠 있는
     // 선반이 됐다 (2026-08-07). 바깥에서 유도한다: SR + ST ≒ 사발 테 0.175.
     const ST = 0.022; // 패드 반폭 — y 로 0.5 눌러 두께 2.2cm, 폭 4.4cm
-    const SR = 0.158; // 중심 반지름 = 테 0.18 - 반폭
+    const SR = 0.158; // 중심 반지름 — SR + ST = 0.18 ≒ 사발 테 0.175 + 5mm
     const GAP = 0.42; // 앞이 트인 반각
     const BUMP = 0.007; // 완충 고무 높이 — 테와 패드 사이의 틈
     // **arc 를 준 토러스는 잘린 두 끝이 뚫려 있다.** 후면 컬링이라 그 구멍으로
@@ -6259,7 +7166,6 @@ function startOffice(b, c, M, tally, I) {
   // 전 상태를 켜는 동안 이걸 꺼야 한다 — 병합에 넣으면 정갈한 방 한가운데
   // 잔해가 남는다. (나중에 "잔해 치우기" 상호작용이 될 수도 있는 자리다.)
   const db = I.spawn('rubble');
-  b.mark('furniture', `start:${c.id}`);
   // 문을 막은 잔해 더미 — 상자를 쌓으면 낙석이 아니라 짐짝이다 (#13).
   // **저폴리 암석(이코사헤드론)** 을 비균등 스케일·회전으로 우그려 쌓는다
   // (lessons.md 3.13.2 — 기하 형태를 아끼지 않는다).
@@ -6337,7 +7243,8 @@ function startOffice(b, c, M, tally, I) {
     const z = c.z0 + 0.8 + r2 * (c.z1 - c.z0 - 1.6);
     boxAt(db, 0.21, 0.004, 0.3, [x, 0.004, z], M.paper, r1 * 3.1);
   }
-  b.endMark();
+  // (원장 마크는 안 건다 — 이 절의 조각은 전부 rubble 노드(db)로 들어가고,
+  //  b 로 들어가는 것이 없어 마크가 빈 채로 남는다. 2026-08-08 코드리뷰)
 
   // ── 전 — 인트로 전용 (씬 밖) ──────────────────────────────────────────
   // 방 자체(책상·의자·브라운관)는 전/후가 **같으므로 복제하지 않는다** —
@@ -6349,13 +7256,16 @@ function startOffice(b, c, M, tally, I) {
   const dw = g1 - g0;
   const leaf = at(gm, 0, H.door / 2 - 0.01);
   boxAt(pre, run.axis === 'x' ? dw - 0.04 : 0.05, H.door - 0.06, run.axis === 'x' ? 0.05 : dw - 0.04, leaf, M.laminate, 0);
-  // 손잡이
+  // 손잡이 — 문짝처럼 굵기 축이 벽 축을 따른다 (x 런이 아니면 돌려 놓는다)
   const hnd = at(gm + dw / 2 - 0.12, 0.05, 1.02);
-  boxAt(pre, 0.04, 0.04, 0.16, hnd, M.trim, 0);
+  boxAt(pre, run.axis === 'x' ? 0.04 : 0.16, 0.04, run.axis === 'x' ? 0.16 : 0.04, hnd, M.trim, 0);
 }
 
 // ── 조립 ───────────────────────────────────────────────────────────────────
 
+// layout.CELLS 의 use 만 싣는다 — 없는 용도의 항목은 도달 불가 코드가 된다.
+// 옛 설비실 use 'util'(utility 함수)과 'office' 항목이 그렇게 죽어 있었다:
+// 설비실은 기계실(machine)로 병합됐고, 사무실은 use 'start' 다 (2026-08-08).
 const BY_USE = {
   dining,
   cafe,
@@ -6368,9 +7278,7 @@ const BY_USE = {
   stair: stairwell,
   elev: elevatorHall,
   plaza,
-  office,
   store: storage,
-  util: utility,
   wash: washroom,
   start: startOffice,
   corridor: () => {},
@@ -6544,7 +7452,7 @@ export function createProps(scene, M, lp) {
   roomSigns(b, M, tally);
   // 잔소품은 종류마다 하한을 달면 경보가 여섯 줄이 된다 — **한 계통이므로
   // 하나로 신고한다.** 클러터 생성이 통째로 죽으면 이 합이 0 이 된다
-  // (audit.EXPECT.clutter). 종류별 수는 tally 에 그대로 남는다.
+  // (씬 meta.audit 의 clutter 하한). 종류별 수는 tally 에 그대로 남는다.
   tally.clutter = [
     'tray', 'plateStack', 'canned', 'soap', 'clock', 'bin', 'drum', 'toolbox',
     'cutlery', 'bookcase', 'meeting', 'bed', 'washer', 'basket', 'detergent',

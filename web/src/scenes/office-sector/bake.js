@@ -36,8 +36,8 @@ export const BAKED = true;
 const SPILL = { open: 1, wide: 0.35, glass: 0.3, door: 0.22, solid: 0 };
 
 // 빛이 넘어갈 수 있는 **높이 구간**. 문 위로는 벽이라 못 넘어간다.
-// 'open' 은 두 칸 중 낮은 천장까지 — 그 위는 소핏이 막는다. 플라자의 5.25m
-// 등이 고리 복도 바닥을 못 비추는 것이 이 한 줄이다.
+// 'open' 은 두 칸 중 낮은 천장까지 — 그 위는 소핏이 막는다. 플라자의 5.52m
+// (c.h - 0.08) 등이 고리 복도 바닥을 못 비추는 것이 이 한 줄이다.
 const APERTURE = { wide: [0, H.door], door: [0, H.door], glass: [0, 2.4] };
 
 // 등을 반지름 SOFT 의 구로 본다. 점으로 두면 가까이서 세기가 발산해
@@ -218,6 +218,24 @@ export function bakeVertexLight(groups, plan) {
   const dark = [FLOORLIT, FLOORLIT, FLOORLIT];
   const em = plan.emitters;
 
+  // 칸별 광원 목록 — 정점마다 전 광원을 돌며 `${칸}|${칸}` 문자열 키로
+  // 링크를 찾던 것을 (수십만 정점 x 광원 백여 개 = 수천만 번의 문자열 생성)
+  // 칸당 한 번의 사전 계산으로 내린다 (2026-08-08 __steps 실측 — 빛 굽기
+  // 1.2초의 태반이 이 조회였다). **목록 순서는 emitters 순서 그대로**다 —
+  // 부동소수 덧셈 순서가 바뀌면 구운 색이 비트 단위로 달라져 기준선이 흔들린다.
+  const emByCell = new Map();
+  for (const c of CELLS) {
+    const list = [];
+    for (const L of em) {
+      if (L.cell === c.id) list.push([L, 1, null]);
+      else {
+        const lk = link.get(`${c.id}|${L.cell}`);
+        if (lk) list.push([L, lk.w, lk]);
+      }
+    }
+    emByCell.set(c.id, list);
+  }
+
   // 칸별 바닥 밝기 — 위계를 **숫자로** 재기 위한 것. 이 씬이 계측을 형태보다
   // 먼저 세운 이유가 여기 있다 (status.md 2장).
   const acc = {};
@@ -267,13 +285,10 @@ export function bakeVertexLight(groups, plan) {
         let b = f[2] * bo + FLOORLIT;
 
         if (c) {
-          for (let e = 0; e < em.length; e++) {
-            const L = em[e];
-            let w = 1;
-            if (L.cell !== c.id) {
-              const lk = link.get(`${c.id}|${L.cell}`);
-              if (!lk) continue;
-              w = lk.w;
+          const lst = emByCell.get(c.id);
+          for (let e = 0; e < lst.length; e++) {
+            const [L, w, lk] = lst[e];
+            if (lk) {
               // 두 칸을 가르는 면을 **어느 높이로** 넘는가
               const p0 = lk.axis === 'x' ? px : pz;
               const p1 = lk.axis === 'x' ? L.x : L.z;

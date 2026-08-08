@@ -10,6 +10,13 @@
 import { bake, hash2 } from '../../core/textures.js';
 import { tiledFbm, lerp, clamp, smoothstep } from '../../core/noise.js';
 
+const frac = (x) => x - Math.floor(x); // 신문 괘선·CRT 주사선이 같이 쓴다
+
+// 가로 중앙 정렬 글줄의 글자칸 인덱스 — x(픽셀), 텍스처 폭, 총 칸수, 칸 픽셀.
+// 팻말·신문 제호·병 라벨·세제 갑이 같은 수식을 제각기 복붙하고 있었다
+// (2026-08-08 코드리뷰) — 한 곳만 고치면 나머지가 어긋나는 자리였다.
+const glyphCol = (x, W, cols, px) => Math.floor((x - (W - cols * px) / 2) / px);
+
 // ── 바닥 ───────────────────────────────────────────────────────────────────
 
 // 비닐 타일. 30cm 격자에 얼룩덜룩한 반점, 이음매마다 때.
@@ -241,6 +248,7 @@ const FONT = {
   7: ['#####', '....#', '...#.', '..#..', '.#...', '.#...', '.#...'],
   8: ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'],
   9: ['.###.', '#...#', '#...#', '.####', '....#', '...#.', '.##..'],
+  ':': ['.....', '..#..', '..#..', '.....', '..#..', '..#..', '.....'],
   ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
 };
 
@@ -250,7 +258,10 @@ function inkAt(label, cx, cy) {
   const ci = Math.floor(cx / 6);
   const col = cx - ci * 6;
   if (col > 4 || ci < 0 || ci >= label.length) return false;
-  const g = FONT[label[ci]] ?? FONT[' '];
+  const g = FONT[label[ci]];
+  // 미등록 문자를 조용히 공백으로 내면 글자가 **말없이 사라진다** — 숫자가
+  // 그렇게 사라진 적이 있다 (위 FONT 주석). 조용한 구멍보다 즉사가 낫다.
+  if (!g) throw new Error(`FONT 에 '${label[ci]}' 가 없다 — textures.FONT 에 추가한다`);
   return g[cy][col] === '#';
 }
 
@@ -278,7 +289,7 @@ export function signTextures(label, tint = [38, 44, 56]) {
     if (edge < 3) h = 0.3;
 
     // 글자 — 가운데 정렬. v 는 위가 0 이므로 행 인덱스가 그대로다.
-    const cx = Math.floor((x - (256 - w) / 2) / px);
+    const cx = glyphCol(x, 256, cols, px);
     const cy = Math.floor((y - (64 - 7 * px) / 2) / px);
     if (inkAt(text, cx, cy)) {
       r = 232;
@@ -449,17 +460,19 @@ export function bottleLabelTextures(kind = 'shampoo', circ = 0.22, hgt = 0.078, 
     let c = [242, 238, 228]; // 라벨 종이
     let rough = 0.66;
     let h = 0.5;
-    const put = (col, rr = 0.6, hh = 0.52) => { c = col.slice(); rough = rr; h = hh; };
+    // 인자 순서는 vendSide 의 put 과 같다 (col, 높이, 거칠기) — 같은 이름에
+    // 순서가 달라 이식할 때 h/rough 가 맞바뀌는 함정이었다 (2026-08-08)
+    const put = (col, hh = 0.52, rr = 0.6) => { c = col.slice(); rough = rr; h = hh; };
     // 글줄 하나 — 가로는 정면 중심, 세로는 vc 를 한가운데로
     const lineAt = (G, vc) => {
-      const cx = Math.floor((ux - (256 - G.cols * G.cu) / 2) / G.cu);
+      const cx = glyphCol(ux, 256, G.cols, G.cu);
       const cy = Math.floor((v * 128 - (vc * 128 - 3.5 * G.cv)) / G.cv);
       return inkAt(G.text, cx, cy);
     };
 
     // 위아래 색 띠 — 따로 감던 조각을 여기로 들여왔다
-    if (v > 0.06 && v < 0.2) put(INK.key, 0.6, 0.54);
-    if (v > 0.93 && v < 0.97) put(INK.key2, 0.6, 0.54);
+    if (v > 0.06 && v < 0.2) put(INK.key, 0.54, 0.6);
+    if (v > 0.93 && v < 0.97) put(INK.key2, 0.54, 0.6);
 
     // 그림기호 — 정면에 하나. 좌표가 미터라 원이 원으로 나온다
     const sx = wx;
@@ -470,8 +483,8 @@ export function bottleLabelTextures(kind = 'shampoo', circ = 0.22, hgt = 0.078, 
       if (t > 0 && t < 1) {
         const rr = 0.0068 * Math.sqrt(Math.max(0, 1 - t * t)) + 0.004 * (1 - t);
         if (Math.abs(sx) < rr) {
-          put(INK.key2, 0.5, 0.58);
-          if (sx < -rr * 0.3 && sx > -rr * 0.75) put([236, 248, 250], 0.45, 0.6); // 하이라이트
+          put(INK.key2, 0.58, 0.5);
+          if (sx < -rr * 0.3 && sx > -rr * 0.75) put([236, 248, 250], 0.6, 0.45); // 하이라이트
         }
       }
       // 머리카락 세 가닥 — 물방울 양옆으로 흐르는 곡선
@@ -479,7 +492,7 @@ export function bottleLabelTextures(kind = 'shampoo', circ = 0.22, hgt = 0.078, 
         const off = 0.0105 + k * 0.0038;
         const curve = off + Math.sin((sy + 0.012) * 105) * 0.0018;
         if (Math.abs(Math.abs(sx) - curve) < 0.001 && sy > -0.009 && sy < 0.014) {
-          put(INK.key, 0.6, 0.55);
+          put(INK.key, 0.55, 0.6);
         }
       }
     } else {
@@ -491,19 +504,19 @@ export function bottleLabelTextures(kind = 'shampoo', circ = 0.22, hgt = 0.078, 
         if (Math.abs(sx - fx) < 0.0016 && sy > -0.002 && sy < top) hand = true;
       }
       if (Math.abs(sx + 0.0098) < 0.0033 && Math.abs(sy + 0.0016) < 0.0023) hand = true; // 엄지
-      if (hand) put(INK.key, 0.6, 0.56);
+      if (hand) put(INK.key, 0.56, 0.6);
       // 손 위로 떨어지는 방울 둘
       for (const [dx, dy, dr] of [[-0.002, 0.0118, 0.0023], [0.0042, 0.0168, 0.0017]]) {
-        if ((sx - dx) ** 2 + (sy - dy) ** 2 < dr * dr) put(INK.key2, 0.5, 0.58);
+        if ((sx - dx) ** 2 + (sy - dy) ** 2 < dr * dr) put(INK.key2, 0.58, 0.5);
       }
     }
 
     // 글자 — 색 띠 안의 작은 부제, 그림 아래의 큰 제품명
-    if (lineAt(GS, 0.13)) put([246, 244, 238], 0.62, 0.58);
-    if (lineAt(GT, 0.74)) put([36, 40, 48], 0.68, 0.62);
+    if (lineAt(GS, 0.13)) put([246, 244, 238], 0.58, 0.62);
+    if (lineAt(GT, 0.74)) put([36, 40, 48], 0.62, 0.68);
 
     // 이음매 — 라벨의 끝이 맞물리는 자리. **정면 반대편(u=0.5)** 에 둔다
-    if (Math.abs(u - 0.5) < 0.007) put([214, 208, 196], 0.7, 0.46);
+    if (Math.abs(u - 0.5) < 0.007) put([214, 208, 196], 0.46, 0.7);
 
     const wear = (g - 0.5) * 12;
     o.c[0] = clamp(c[0] + wear, 0, 255);
@@ -511,6 +524,323 @@ export function bottleLabelTextures(kind = 'shampoo', circ = 0.22, hgt = 0.078, 
     o.c[2] = clamp(c[2] + wear, 0, 255);
     o.r = clamp(rough + (g - 0.5) * 0.1, 0.05, 1);
     o.h = h;
+  });
+}
+
+// ── 신문 지면 ──────────────────────────────────────────────────────────────
+//
+// 제호·괘선·글줄·사진을 **얇은 상자 열여덟 개**로 쌓고 있었다 (2026-08-08
+// 지적: "이것도 텍스처로"). 인쇄물은 표면이지 부피가 아니다 — 조각으로
+// 내면 글줄 하나가 삼각형 열둘이고, 비스듬히 보면 그 두께가 다 보인다.
+//
+// 여기서 쓰는 도구는 자판기 옆면·병 라벨과 같다: uv 를 받아 부등식으로
+// 판정하고 색을 칠한다. 글줄은 **가는 가로선**의 반복이면 충분하다 —
+// 이 거리에서 글자를 읽는 사람은 없고, 읽히는 것은 단(段)의 리듬이다.
+export function newsprintTextures(seed = 5101) {
+  const grain = tiledFbm(seed, 120, 2); // 갱지 결
+  const stain = tiledFbm(seed + 1, 6, 3); // 누런 얼룩
+  const cols = 'DAILY' .length * 6 - 1;
+  const px = (256 * 0.42) / cols; // 제호 글자칸
+  const BP = 0.028; // 본문 줄 간격 — 이 지면에 단마다 열여덟 줄쯤 들어간다
+  // 위에서 아래로 사슬 — 제호 아래끝에서 괘선·날짜·단 머리가 차례로 나온다
+  const MH_TOP = 0.055;
+  const MH_BOT = MH_TOP + (7 * px) / 256; // 글꼴이 5x7 이다
+  const R1 = MH_BOT + 0.022; // 굵은 괘선
+  const R2 = R1 + 0.015; // 가는 괘선
+  const DATE = R2 + 0.013; // 날짜·판 표시
+  const CTOP = DATE + 0.014; // 단이 시작하는 높이
+  return bake([256, 256], 1, 1, (u0, v0, o) => {
+    // **상자 윗면의 uv 는 뒤집혀 있다** — 그대로 그렸더니 제호가 앞쪽 모서리에
+    // 거울상으로 찍혔다 (2026-08-08). 윗면은 u 가 -x 로, v 가 +z 로 가므로
+    // 둘 다 뒤집어 지면 좌표로 삼는다. 얹는 면이 정해져 있으면 uv 규약도
+    // 그 면 것을 따른다 (병 라벨의 u=0 정면과 같은 이야기다).
+    const u = 1 - u0;
+    const v = 1 - v0;
+    const g = grain(u, v);
+    const st = stain(u, v);
+    let c = [222, 218, 205]; // 갱지 — 흰 종이보다 누렇다
+    let rough = 0.9;
+    const ink = (t) => { c = [40 + t * 30, 38 + t * 30, 36 + t * 30]; rough = 0.82; };
+
+    // 여백
+    const m = 0.055;
+    if (u > m && u < 1 - m && v > m && v < 1 - m) {
+      // ── 제호 — 맨 위 굵은 글자 + 아래 괘선 ────────────────────────────
+      // 괘선 자리를 손으로 적었더니 **글자 밑동을 가로질렀다** (2026-08-08
+      // "DAILY 랑 선 안 겹치게"). 글자칸 크기는 지면 폭에서 나오는데 괘선은
+      // 그걸 모르는 상수였다 — 제호 아래끝을 재서 거기서 사슬로 잇는다.
+      const cx = glyphCol(u * 256, 256, cols, px);
+      const cy = Math.floor((v * 256 - MH_TOP * 256) / px);
+      if (inkAt('DAILY', cx, cy)) ink(0);
+      if (Math.abs(v - R1) < 0.004) ink(0); // 굵은 괘선
+      if (Math.abs(v - R2) < 0.002) ink(0.4); // 가는 괘선
+      // 날짜·판 표시 — 괘선 아래의 아주 가는 줄
+      if (Math.abs(v - DATE) < 0.0025 && u > 0.1 && u < 0.35) ink(0.5);
+      if (Math.abs(v - DATE) < 0.0025 && u > 0.68 && u < 0.9) ink(0.5);
+
+      if (v > CTOP) {
+        // ── 단(段) 셋 — 세로 괘선으로 가른다 ──────────────────────────
+        const gut = [0.365, 0.635];
+        for (const x of gut) if (Math.abs(u - x) < 0.0018 && v > CTOP + 0.01) ink(0.45);
+        const col = u < gut[0] ? 0 : u < gut[1] ? 1 : 2;
+        const c0 = [m, gut[0], gut[1]][col] + 0.02;
+        const c1 = [gut[0], gut[1], 1 - m][col] - 0.02;
+        const inCol = u > c0 && u < c1;
+        // 사진 — 왼쪽 단 위. 회색 판 + 가는 테
+        const ph = { x0: m + 0.015, x1: gut[0] - 0.02, y0: CTOP + 0.022, y1: 0.4 };
+        const inPh = u > ph.x0 && u < ph.x1 && v > ph.y0 && v < ph.y1;
+        if (inPh) {
+          const e = Math.min(u - ph.x0, ph.x1 - u, v - ph.y0, ph.y1 - v);
+          c = e < 0.004 ? [70, 68, 66] : [150 + (g - 0.5) * 40, 148 + (g - 0.5) * 40, 145 + (g - 0.5) * 40];
+          rough = 0.78;
+        } else if (inCol) {
+          // 표제 — 단 머리의 굵은 두 줄
+          const hy = col === 0 ? ph.y1 + 0.028 : CTOP + 0.012;
+          if (v > hy && v < hy + 0.014) ink(0);
+          else if (v > hy + 0.02 && v < hy + 0.03) ink(0.1);
+          else if (v > hy + 0.042) {
+            // 본문 — **줄 간격을 넓히고 획을 가늘고 옅게.** 촘촘한 검은 줄을
+            // 꽉 채웠더니 글이 아니라 바코드였다 (2026-08-08 "줄이 너무 많아").
+            // 멀리서 본 활자는 회색 결이지 검은 막대가 아니다.
+            const d = v - hy - 0.042;
+            const li = Math.floor(d / BP);
+            const t = (d % BP) / BP;
+            const r = frac(li * 0.7548 + col * 0.317); // 줄마다 오른쪽 끝이 다르다
+            if (t < 0.22 && li % 7 !== 6) {
+              // 문단 끝 줄(6번째)은 짧고, 그 다음 줄은 비어 문단이 끊긴다
+              const w = li % 7 === 5 ? 0.3 + r * 0.32 : 0.88 + r * 0.12;
+              if (u < c0 + (c1 - c0) * w) {
+                const k = 96 + r * 26;
+                c = [k, k - 2, k - 4];
+                rough = 0.85;
+              }
+            }
+          }
+        }
+      }
+    }
+    const n = (g - 0.5) * 10 - Math.max(0, st - 0.62) * 26; // 결 + 누런 얼룩
+    o.c[0] = clamp(c[0] + n, 0, 255);
+    o.c[1] = clamp(c[1] + n * 1.05, 0, 255);
+    o.c[2] = clamp(c[2] + n * 1.25, 0, 255);
+    o.r = clamp(rough + (g - 0.5) * 0.08, 0.3, 1);
+    o.h = 0.5;
+  });
+}
+
+// ── 브라운관 화면 ──────────────────────────────────────────────────────────
+//
+// 단색 발광판이었다 (하늘색 사각형 하나) — 켜져 있다는 것 말고는 아무것도
+// 말하지 않았다 (2026-08-08 "TV 패널 디테일 부족"). 화면은 **재질이 아니라
+// 그림**이다. 신문과 같은 처방으로 한 장에 굽는다 (3.13.6).
+//
+// 그리는 것: 뉴스 화면 한 컷 — 스튜디오 배경 · 오른쪽 위 화면 속 화면 ·
+// 왼쪽 위 방송사 표식 · 아래 자막 띠 · 맨 아래 흐르는 자막. 그 위에
+// **주사선**과 **비네트**를 덮는다. 이 둘이 없으면 LCD 로 보인다.
+//
+// v=0 이 화면 위쪽이다 (bake 규약).
+export function crtScreenTextures(seed = 5201) {
+  const noise = tiledFbm(seed, 40, 2); // 화면 잡티
+  return bake([256, 192], 1, 1, (u, v, o) => {
+    // ── 스튜디오 배경 — 위가 짙고 아래로 밝아지는 청색 ──────────────────
+    let c = [26 + v * 40, 54 + v * 62, 96 + v * 74];
+
+    // 바닥선 — 앵커 뒤 세트의 수평 이음매
+    if (Math.abs(v - 0.58) < 0.006) c = [64, 108, 152];
+
+    // 화면 속 화면 — 오른쪽 위. 테두리 + 옅은 회청색 사진
+    const bx0 = 0.54, bx1 = 0.95, by0 = 0.1, by1 = 0.46;
+    if (u > bx0 && u < bx1 && v > by0 && v < by1) {
+      const e = Math.min(u - bx0, bx1 - u, v - by0, by1 - v);
+      if (e < 0.012) c = [214, 220, 228];
+      else {
+        // 사진 속 — 위는 하늘, 아래는 건물 실루엣 몇 채
+        const s = (v - by0) / (by1 - by0);
+        c = s < 0.62 ? [122, 148, 170] : [58, 62, 70];
+        // 스카이라인 — 건물마다 높이가 다르다. 같은 높이면 톱니바퀴다
+        const bi = Math.floor((u - bx0) * 9);
+        const bh = 0.34 + frac(bi * 0.6180) * 0.28;
+        if (s > bh && frac((u - bx0) * 9) < 0.78) c = [50, 54, 62];
+      }
+    }
+
+    // 앵커 — 왼쪽 아래 반신 실루엣. 어깨는 타원, 목으로 이어지고, 머리 위는
+    // 머리카락이다. 살색 원 하나만 두면 **떠 있는 공**이다
+    const hx = 0.24, hy = 0.5, hr = 0.082;
+    const dx = (u - hx) / hr, dy = (v - hy) / (hr * 1.2);
+    const sx = (u - hx) / 0.2, sy = (v - 0.95) / 0.38;
+    const inShoulder = sx * sx + sy * sy < 1 && v > hy;
+    if (inShoulder) c = [40, 48, 66]; // 어깨·양복
+    if (Math.abs(u - hx) < 0.032 && v > hy && v < hy + 0.115) c = [168, 140, 116]; // 목
+    if (dx * dx + dy * dy < 1) c = dy < -0.32 ? [46, 38, 34] : [190, 160, 134]; // 머리카락·얼굴
+
+    // 방송사 표식 — 왼쪽 위 모서리의 작은 판
+    if (u > 0.045 && u < 0.155 && v > 0.05 && v < 0.115) {
+      c = frac(u * 26) < 0.55 ? [232, 236, 240] : [190, 42, 46];
+    }
+
+    // 자막 띠 — 아래쪽 두 단. 위는 굵은 제목, 아래는 가는 부제
+    if (u > 0.04 && u < 0.96 && v > 0.7 && v < 0.83) {
+      c = [18, 34, 78];
+      // 글줄은 **잘게**. 성기면 네모 도장을 찍은 것으로 보인다
+      if (v > 0.727 && v < 0.759 && u > 0.07 && u < 0.66) {
+        if (frac((u - 0.07) * 38) < 0.56) c = [238, 240, 244]; // 제목
+      }
+      if (v > 0.786 && v < 0.804 && u > 0.07 && u < 0.5) {
+        if (frac((u - 0.07) * 54) < 0.5) c = [168, 192, 220]; // 부제
+      }
+    }
+
+    // 흐르는 자막 — 맨 아래 붉은 띠. 왼쪽에 머리표, 오른쪽에 글줄
+    if (v > 0.87 && v < 0.955) {
+      c = [24, 30, 44];
+      if (u < 0.2) {
+        c = [176, 38, 42];
+        if (v > 0.898 && v < 0.925 && frac((u - 0.03) * 44) < 0.52) c = [240, 236, 232];
+      } else if (v > 0.898 && v < 0.925 && frac((u - 0.2) * 46) < 0.56) c = [226, 228, 232];
+    }
+
+    // ── 관(管)의 흔적 — 이게 없으면 LCD 다 ────────────────────────────
+    // 주사선: 한 줄 걸러 어둡다. 192줄이라 화면에서 2mm 남짓이다
+    const scan = Math.floor(v * 192) % 2 === 0 ? 1 : 0.82;
+    // 섀도마스크: 세로로 R·G·B 가 번갈아 실린다 (아주 옅게)
+    const tri = Math.floor(u * 256) % 3;
+    const mask = [1.04, 1.0, 1.02][tri];
+    // 비네트 — 모서리로 갈수록 어둡다. 관은 가운데가 밝다
+    const rx = (u - 0.5) * 2, ry = (v - 0.5) * 2;
+    const vig = 1 - 0.3 * Math.pow(clamp(rx * rx * 0.9 + ry * ry * 0.8, 0, 1), 1.4);
+    const nz = (noise(u, v) - 0.5) * 12;
+
+    for (let i = 0; i < 3; i++) {
+      const k = clamp(c[i] * scan * vig * (i === 0 ? mask : i === 1 ? 1 : mask) + nz, 0, 255);
+      o.c[i] = k;
+      o.e[i] = k; // 화면은 제가 낸 빛으로 보인다
+    }
+    o.r = 0.16; // 유리 — 매끄럽다
+    o.h = 0.5;
+  }, { emissive: true });
+}
+
+// ── 비디오 데크 표시창 ─────────────────────────────────────────────────────
+//
+// 하늘색 각재 하나였다. 90년대 데크의 표식은 **아무도 안 맞춘 12:00** 이다 —
+// 그 글자가 있어야 시계이고, 시계가 있어야 비디오다. 조각으로는 못 낸다.
+export function vcrDisplayTextures(seed = 5301) {
+  const dust = tiledFbm(seed, 30, 2);
+  const text = '12:00';
+  const cols = text.length * 6 - 1;
+  const px = Math.min((48 * 0.46) / 7, (128 * 0.52) / cols);
+  return bake([128, 48], 1, 1, (u, v, o) => {
+    let c = [13, 15, 19]; // 창 유리 — 꺼진 자리는 거의 검다
+    let e = [0, 0, 0];
+    const lit = (k) => {
+      // 형광표시관(VFD) — 청록이 흐릿하게 번진다
+      c = [40 + k * 90, 120 + k * 110, 130 + k * 110];
+      e = [22 + k * 60, 108 + k * 120, 120 + k * 125];
+    };
+    // 시계 — 오른쪽으로 밀어 놓는다. 왼쪽에는 표시등 자리를 남긴다
+    const x0 = 128 * 0.4;
+    const cx = Math.floor((u * 128 - x0) / px);
+    const cy = Math.floor((v * 48 - (48 - 7 * px) / 2) / px);
+    if (inkAt(text, cx, cy)) lit(1);
+    // 왼쪽 표시 — 재생 삼각형과 그 아래 가는 막대 둘 (SP/카운터 자리)
+    const tx = (u - 0.11) / 0.075, ty = (v - 0.36) / 0.24;
+    if (tx > 0 && tx < 1 && Math.abs(ty) < 1 - tx) lit(0.8);
+    if (v > 0.68 && v < 0.76 && u > 0.08 && u < 0.3) lit(0.35);
+    if (v > 0.68 && v < 0.76 && u > 0.34 && u < 0.36) lit(0.35);
+    const n = (dust(u, v) - 0.5) * 8;
+    for (let i = 0; i < 3; i++) {
+      o.c[i] = clamp(c[i] + n, 0, 255);
+      o.e[i] = clamp(e[i], 0, 255);
+    }
+    o.r = 0.22;
+    o.h = 0.5;
+  }, { emissive: true });
+}
+
+// ── 가루세제 갑 ────────────────────────────────────────────────────────────
+//
+// 인쇄물이라 **한 장으로 굽는다** (3.13.6). 짙은 파랑 바탕 · 가운데에서
+// 터지는 흰-빨강 섬광 · 그 위에 얹힌 흰 글자판 · 아래 용량 표시 · 위 접지선.
+// 세제 갑을 세제 갑으로 만드는 것은 형태가 아니라 이 요란한 인쇄다.
+export function detergentBoxTextures(seed = 5501) {
+  const grain = tiledFbm(seed, 70, 2);
+  const cols = 'WASH'.length * 6 - 1;
+  const px = Math.min((256 * 0.3) / 7, (170 * 0.6) / cols);
+  return bake([170, 256], 1, 1, (u, v, o) => {
+    const g = grain(u, v);
+    // 바탕 — 위가 짙고 가운데가 밝은 파랑
+    const dy = v - 0.44;
+    const dx = (u - 0.5) * 1.2;
+    const rad = Math.hypot(dx, dy);
+    let c = [26 + (0.5 - rad) * 58, 58 + (0.5 - rad) * 88, 124 + (0.5 - rad) * 104];
+    // 섬광 — 가운데에서 뻗는 흰 살. 각도로 판정하면 부등식 한 줄이다
+    if (rad < 0.34) {
+      const a = Math.atan2(dy, dx);
+      const ray = Math.abs(Math.sin(a * 6)) > 1 - (0.34 - rad) * 1.5;
+      if (ray) c = [216, 228, 240];
+      if (rad < 0.13) c = [232, 240, 248];
+    }
+    // 붉은 띠 둘 — 섬광을 가로지른다
+    for (const t of [-0.06, 0.05]) {
+      if (Math.abs(dy - dx * 0.35 - t) < 0.022 && rad < 0.33) c = [188, 46, 42];
+    }
+    // 글자판 — 가운데 흰 판에 제품명
+    if (u > 0.12 && u < 0.88 && v > 0.4 && v < 0.56) {
+      c = [238, 240, 244];
+      const cx = glyphCol(u * 170, 170, cols, px);
+      const cy = Math.floor((v * 256 - 0.43 * 256) / px);
+      if (inkAt('WASH', cx, cy)) c = [22, 48, 104];
+    }
+    // 위 접지선과 아래 용량 판
+    if (v < 0.055 || (v > 0.075 && v < 0.088)) c = [12, 28, 68];
+    if (u > 0.08 && u < 0.36 && v > 0.82 && v < 0.93) c = [232, 234, 236];
+    if (u > 0.62 && u < 0.92 && v > 0.84 && v < 0.9) c = [200, 210, 222];
+    const n = (g - 0.5) * 12;
+    for (let i = 0; i < 3; i++) o.c[i] = clamp(c[i] + n, 0, 255);
+    o.r = 0.62 + (g - 0.5) * 0.1; // 코팅 골판지
+    o.h = 0.5;
+  });
+}
+
+// ── 담요 ───────────────────────────────────────────────────────────────────
+//
+// 단색 재질 하나로 뒀더니 정점을 아무리 물결치게 해도 **아이스크림**이었다
+// (2026-08-08). 형태만으로는 천이 안 된다 — 굵은 골(능직) · 보풀 · 잔주름이
+// 표면에 있어야 빛이 잘게 갈라진다. 큰 접힘은 정점(drapedSheet), 잔결은 여기.
+//
+// uv 는 **미터**로 들어온다 (repeat 로 축척을 맞춘다).
+// ribK 는 능직 골의 세기 — **밝은 천에서는 낮춘다.** 담요 값(0.12)을 흰
+// 시트에 그대로 썼더니 얼룩말 줄무늬가 됐다 (2026-08-08).
+// foldK 는 잔주름의 세기 — 시트처럼 팽팽하게 씌운 천은 낮춘다. 담요 값을
+// 그대로 썼더니 매트리스가 **누비 조각보**로 보였다 (2026-08-08).
+// mottleK 는 보풀·실올·빛바램의 세기. 담요 값을 베갯잇에 그대로 썼더니
+// 밝기가 ±20% 로 흔들려 천이 아니라 **바위**로 보였다 (2026-08-08).
+// 매끈하게 다린 면직은 얼룩이 거의 없다.
+export function blanketTextures(tint = [30, 42, 74], seed = 5401, ribK = 0.12, foldK = 1, mottleK = 1) {
+  // **한 골이 텍셀 여섯은 먹어야 한다.** 보풀 90 · 실올 220 으로 구웠더니
+  // 256px 안에서 나이퀴스트를 넘어, 밉맵이 그걸 뭉개 **누비 조각보 격자**로
+  // 보였다 (2026-08-08). 주기를 낮추고 repeat 로 실물 크기를 맞춘다.
+  const nap = tiledFbm(seed, 34, 2); // 보풀
+  const fibre = tiledFbm(seed + 1, 45, 1); // 실올
+  const crease = tiledFbm(seed + 2, 6, 3); // 잔주름 — 큰 접힘 사이의 자국
+  const worn = tiledFbm(seed + 3, 3, 2); // 빛바램
+  return bake(256, 1, 1, (u, v, o) => {
+    const n = nap(u, v);
+    const f = fibre(u, v);
+    const cr = crease(u, v);
+    // 능직 — 사선으로 지나가는 굵은 골. 담요를 담요로 만드는 것은 이 결이다
+    const twill = Math.sin((u + v) * Math.PI * 2 * 18);
+    const rib = twill * 0.5 + 0.5;
+    let k = 1 + ((n - 0.5) * 0.22 + (f - 0.5) * 0.1) * mottleK + (rib - 0.5) * ribK;
+    k *= 1 + (worn(u, v) - 0.5) * 0.16 * mottleK; // 빛바랜 자리
+    const c = [tint[0] * k, tint[1] * k, tint[2] * k];
+    // 잔주름 — 골에서 어둡고 마루에서 밝다. 높이맵이 이걸 노말로 바꾼다
+    const fold = Math.abs(cr - 0.5) * 2;
+    for (let i = 0; i < 3; i++) o.c[i] = clamp(c[i] + (0.5 - fold) * 16 * foldK, 0, 255);
+    o.r = clamp(0.9 - (n - 0.5) * 0.14, 0.6, 1); // 모직은 거칠다
+    o.h = clamp(0.5 + (rib - 0.5) * (0.45 * (ribK / 0.12))
+      + (n - 0.5) * 0.3 * mottleK + (0.5 - fold) * 0.5 * foldK, 0, 1);
   });
 }
 
@@ -522,6 +852,12 @@ export function bottleLabelTextures(kind = 'shampoo', circ = 0.22, hgt = 0.078, 
 //
 // 덤으로 **테리 고리 결**이 생긴다. 흰 상자에 흰 재질이면 아무리 굴려도
 // 플라스틱인데, 결이 있으면 그 자체로 천이다.
+// stripe 가 null 이면 **줄 없는 민 테리**를 굽는다 — 지금은 호출자가 없다.
+// 한때 둥근 끝조각용이었다: 원기둥의 uv 는 평면과 뜻이 달라, 같은 텍스처를
+// 돌려 쓰면 줄이 **둥근 코를 감고 돈다** (2026-08-07 "선이 있으면 안 되는
+// 곳에 선이 있음"). 지금은 props.foldedTowel 이 uv 를 정점 좌표에서 직접
+// 짜므로 줄무늬 한 장이 접힌 자리를 돌아 이어진다 — 민 테리가 필요해지면
+// 이 스위치가 그대로 산다.
 export function towelTextures(tint = [240, 238, 232], stripe = [38, 96, 114], seed = 5001) {
   const pile = tiledFbm(seed, 52, 2); // 고리 결 — 성글고 도톰하다
   const weave = tiledFbm(seed + 1, 150, 1); // 바탕 실
@@ -533,10 +869,14 @@ export function towelTextures(tint = [240, 238, 232], stripe = [38, 96, 114], se
     // 짜 넣은 줄무늬 둘 — **u** 를 따라 자른다. 상자 윗면에서 u 는 길이
     // 방향이므로 이러면 줄이 **폭을 가로지르는** 띠가 된다 (실물이 그렇다).
     // v 로 잘랐더니 길이 방향으로 길게 흐르는 선이었다.
-    for (const s of [0.77, 0.845]) {
-      if (Math.abs(u - s) < 0.016) {
-        c = stripe.slice();
-        rough = 0.8;
+    if (stripe) {
+      // 자리는 **접힌 수건의 uv** 기준이다 (props.towel 이 정점 좌표에서 짠다)
+      // — 0.5 근처가 접힌 자리와 갈라지는 자리 사이의 윗면이다
+      for (const s of [0.5, 0.556]) {
+        if (Math.abs(u - s) < 0.011) {
+          c = stripe.slice();
+          rough = 0.8;
+        }
       }
     }
     const n = (p - 0.5) * 18 + (w - 0.5) * 12;
@@ -552,12 +892,14 @@ export function towelTextures(tint = [240, 238, 232], stripe = [38, 96, 114], se
 // ── 설비 ───────────────────────────────────────────────────────────────────
 
 // 도장 강판 — 문·로커·덕트
-export function steelTextures(seed = 4501, tint = [138, 146, 150]) {
+// rust 는 벗겨진 자리에 녹이 번지는 정도. 가전(세탁기) 도장판은 0.2 쯤이다 —
+// 강판 값(1)을 그대로 썼더니 세탁기가 아니라 **고물통**으로 보였다 (2026-08-08).
+export function steelTextures(seed = 4501, tint = [138, 146, 150], rust = 1) {
   const scr = tiledFbm(seed, 160, 2);
   const wear = tiledFbm(seed + 1, 7, 3);
   return bake(256, 1, 1, (u, v, o) => {
     const s = scr(u, v);
-    const w = smoothstep(0.6, 0.95, wear(u, v));
+    const w = smoothstep(0.6, 0.95, wear(u, v)) * rust;
     let r = tint[0] + (s - 0.5) * 12;
     let g = tint[1] + (s - 0.5) * 12;
     let b = tint[2] + (s - 0.5) * 12;

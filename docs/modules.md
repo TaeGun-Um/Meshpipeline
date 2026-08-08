@@ -139,6 +139,7 @@ a === b   // true — 값이 같으면 같은 객체
 | `glyphs.js` | 폰트 없는 표의문자 간판 (배너·세로 간판·광고판) |
 | `lightpool.js` | 가산합성 빛 웅덩이 |
 | `movers.js` | 직선 항로 왕복 운동 (지상·공중 교통 공유) |
+| `rain.js` | 카메라를 따라다니는 상자 안에만 뿌리는 가산합성 비 (인스턴싱 14,000줄기) |
 | `sky.js` | 그라디언트 하늘돔 |
 | `masters.js` | 파생 마스터 (NeonTube · SoftGlow · Beacon · LightPool · Headlight) |
 
@@ -274,11 +275,14 @@ WASD·달리기·점프·프리캠(언리얼 에디터식). 지형 충돌은 `su
 구조물 충돌은 원-AABB 밀어내기로 한다. 상수는 `WALK 3.3 / SPRINT 6.4 / GRAVITY 23 /
 JUMP_V 7.4 / RADIUS 0.32 / STEP 0.45`.
 
-### 스크린샷 하네스
+### 스크린샷 하네스 (`src/harness.js`)
 
-`window.__shot({ name, pos, target, time })` 이 고정 해상도·고정 카메라·고정 시간으로
-한 프레임만 그리고 `gl.readPixels` 로 프레임버퍼를 읽어 서버에 올린다.
-`window.__sim(keys, frames)` 는 입력을 코드로 주입해 조작을 검증한다.
+main.js 에 섞여 있던 것을 2026-08-08 계층 정리에서 떼어 냈다 — 부트·루프와
+검증은 수명이 다르다. `window.__shot({ name, pos, target, time })` 이 고정
+해상도·고정 카메라·고정 시간으로 한 프레임만 그리고 `gl.readPixels` 로
+프레임버퍼를 읽어 서버에 올린다. `window.__sim(keys, frames)` 는 입력을
+코드로 주입해 조작을 검증한다. 씬 전용 진단(`__shops`·`__rig` 류)은 씬이
+`world.debug` 로 신고한 것을 하네스가 이름만 옮겨 단다.
 
 **시드 고정이 전제다.** `Math.random()` 을 하나라도 쓰면 두 스크린샷의 차이가 수정
 때문인지 난수 때문인지 구분되지 않는다.
